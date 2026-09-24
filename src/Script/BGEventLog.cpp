@@ -6,10 +6,14 @@
 // Battleground roster event log, for diagnosing uneven teams and mid-game departures.
 // Enabled with AiPlayerbot.BGEventLog = 1. Writes one key=value line per event to the
 // "playerbots.bgevents" logger; route it to its own file in worldserver.conf, e.g.
-//   Appender.BGEvents=2,4,0,BGEvents.log,a
+//   Appender.BGEvents=2,4,1,BGEvents.log,a      (flags 1 = timestamp prefix)
 //   Logger.playerbots.bgevents=4,BGEvents
 
+#include <mutex>
+#include <unordered_map>
+
 #include "Battleground.h"
+#include "BattlegroundWS.h"
 #include "Config.h"
 #include "Log.h"
 #include "Player.h"
@@ -76,6 +80,38 @@ void LogPlayer(char const* event, Battleground* bg, Player* player, std::string 
              uint32(player->GetLevel()), player->IsAlive() ? 1 : 0, bg->GetPlayersCountByTeam(TEAM_ALLIANCE),
              bg->GetPlayersCountByTeam(TEAM_HORDE), extra);
 }
+// Last logged WSG objective state per BG instance. BG updates run on their map's thread, so
+// different instances can update concurrently; the lock only guards this small map.
+struct WSGState
+{
+    // Indexed by the flag's owning team: flagState[TEAM_ALLIANCE] is the Alliance flag, and
+    // keeper[TEAM_ALLIANCE] is the (Horde) player carrying it. Matches BattlegroundWS internals.
+    uint8 flagState[2] = {0, 0};  // BG_WS_FLAG_STATE_*
+    uint32 keeper[2] = {0, 0};    // carrier's low guid, 0 if none
+    uint32 score[2] = {0, 0};
+    bool operator!=(WSGState const& o) const
+    {
+        return flagState[0] != o.flagState[0] || flagState[1] != o.flagState[1] || keeper[0] != o.keeper[0] ||
+               keeper[1] != o.keeper[1] || score[0] != o.score[0] || score[1] != o.score[1];
+    }
+};
+std::mutex wsgStateLock;
+std::unordered_map<uint32, WSGState> wsgStates;
+
+char const* WSFlagStateName(uint8 state)
+{
+    switch (state)
+    {
+        case BG_WS_FLAG_STATE_ON_BASE:
+            return "base";
+        case BG_WS_FLAG_STATE_ON_PLAYER:
+            return "carried";
+        case BG_WS_FLAG_STATE_ON_GROUND:
+            return "ground";
+        default:
+            return "wait";  // respawning after a capture
+    }
+}
 }  // namespace
 
 class PlayerbotsBGEventLogScript : public BGScript
@@ -84,8 +120,49 @@ public:
     PlayerbotsBGEventLogScript()
         : BGScript("PlayerbotsBGEventLogScript",
                    {ALLBATTLEGROUNDHOOK_ON_BATTLEGROUND_START, ALLBATTLEGROUNDHOOK_ON_BATTLEGROUND_ADD_PLAYER,
-                    ALLBATTLEGROUNDHOOK_ON_BATTLEGROUND_REMOVE_PLAYER_AT_LEAVE, ALLBATTLEGROUNDHOOK_ON_BATTLEGROUND_END})
+                    ALLBATTLEGROUNDHOOK_ON_BATTLEGROUND_REMOVE_PLAYER_AT_LEAVE, ALLBATTLEGROUNDHOOK_ON_BATTLEGROUND_END,
+                    ALLBATTLEGROUNDHOOK_ON_BATTLEGROUND_UPDATE, ALLBATTLEGROUNDHOOK_ON_BATTLEGROUND_DESTROY})
     {
+    }
+
+    // WSG objective events: logs a "wsg" line whenever either flag's state, either carrier, or
+    // the score changes (pickups, drops, returns, captures). Only compares a few fields per tick.
+    void OnBattlegroundUpdate(Battleground* bg, uint32 /*diff*/) override
+    {
+        if (bg->GetBgTypeID() != BATTLEGROUND_WS || bg->GetStatus() != STATUS_IN_PROGRESS || !BGEventLogEnabled())
+            return;
+        BattlegroundWS* ws = dynamic_cast<BattlegroundWS*>(bg);
+        if (!ws)
+            return;
+
+        WSGState now;
+        for (TeamId team : {TEAM_ALLIANCE, TEAM_HORDE})
+        {
+            now.flagState[team] = ws->GetFlagState(team);
+            now.keeper[team] = ws->GetFlagPickerGUID(team).GetCounter();
+            now.score[team] = ws->GetTeamScore(team);
+        }
+
+        {
+            std::lock_guard<std::mutex> guard(wsgStateLock);
+            WSGState& last = wsgStates[bg->GetInstanceID()];
+            if (!(now != last))
+                return;
+            last = now;
+        }
+
+        LOG_INFO("playerbots.bgevents",
+                 "event=wsg bg={} type={} bg_ms={} a_flag={} h_flag={} a_keeper={} h_keeper={} score_a={} score_h={} "
+                 "A={} H={}",
+                 bg->GetInstanceID(), uint32(bg->GetBgTypeID()), bg->GetStartTime(), WSFlagStateName(now.flagState[0]),
+                 WSFlagStateName(now.flagState[1]), now.keeper[0], now.keeper[1], now.score[0], now.score[1],
+                 bg->GetPlayersCountByTeam(TEAM_ALLIANCE), bg->GetPlayersCountByTeam(TEAM_HORDE));
+    }
+
+    void OnBattlegroundDestroy(Battleground* bg) override
+    {
+        std::lock_guard<std::mutex> guard(wsgStateLock);
+        wsgStates.erase(bg->GetInstanceID());
     }
 
     void OnBattlegroundStart(Battleground* bg) override
