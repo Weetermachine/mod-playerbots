@@ -124,8 +124,19 @@ class PlayerbotsBGEventLogPlayerScript : public PlayerScript
 public:
     PlayerbotsBGEventLogPlayerScript()
         : PlayerScript("PlayerbotsBGEventLogPlayerScript",
-                       {PLAYERHOOK_ON_LEVEL_CHANGED, PLAYERHOOK_ON_LOGOUT, PLAYERHOOK_ON_BEFORE_TELEPORT})
+                       {PLAYERHOOK_ON_LEVEL_CHANGED, PLAYERHOOK_ON_LOGOUT, PLAYERHOOK_ON_BEFORE_TELEPORT,
+                        PLAYERHOOK_ON_PLAYER_JUST_DIED, PLAYERHOOK_ON_PLAYER_RELEASED_GHOST,
+                        PLAYERHOOK_ON_PLAYER_RESURRECT})
     {
+    }
+
+    // Death -> release -> revive, with positions, so time spent dead (and where players die)
+    // can be measured per game.
+    void OnPlayerJustDied(Player* player) override { LogLifecycle("death", player); }
+    void OnPlayerReleasedGhost(Player* player) override { LogLifecycle("release", player); }
+    void OnPlayerResurrect(Player* player, float /*restore_percent*/, bool& /*applySickness*/) override
+    {
+        LogLifecycle("revive", player);
     }
 
     bool OnPlayerBeforeTeleport(Player* player, uint32 mapid, float x, float y, float z, float /*orientation*/,
@@ -155,6 +166,20 @@ public:
             return;
         if (Battleground* bg = player->GetBattleground())
             LogPlayer("logout", bg, player);
+    }
+
+private:
+    static void LogLifecycle(char const* event, Player* player)
+    {
+        if (!BGEventLogEnabled())
+            return;
+        Battleground* bg = player->GetBattleground();
+        if (!bg || bg->GetMapId() != player->GetMapId())
+            return;
+        LogPlayer(event, bg, player,
+                  " xyz=" + std::to_string(int32(player->GetPositionX())) + "," +
+                      std::to_string(int32(player->GetPositionY())) + "," +
+                      std::to_string(int32(player->GetPositionZ())));
     }
 };
 
