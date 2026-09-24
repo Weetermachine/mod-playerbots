@@ -7,6 +7,8 @@
 #ifndef PLAYERBOTS_RANDOMPLAYERBOTMGR_H
 #define PLAYERBOTS_RANDOMPLAYERBOTMGR_H
 
+#include <algorithm>
+
 #include "NewRpgInfo.h"
 #include "ObjectGuid.h"
 #include "PlayerbotMgr.h"
@@ -42,6 +44,22 @@ struct BattlegroundInfo
     // Players (Battleground)
     uint32 bgHordePlayerCount = 0;
     uint32 bgAlliancePlayerCount = 0;
+
+    // Battleground instances that contain real players, and how many bot-only instances
+    // auto-join wants for this bracket (0 when auto-join doesn't cover it).
+    std::vector<uint32> bgPlayerInstances;
+    uint32 bgAutoJoinTarget = 0;
+
+    // Instances bots should fill: an open player queue, every instance with real players, and
+    // bot-only instances up to the auto-join target. Counting every bot-only instance made demand
+    // self-sustaining: each new bot instance raised demand, bots queued, and the queue formed yet
+    // another instance until the bot pool was spread over many under-filled games.
+    uint32 DemandedBgInstances() const
+    {
+        uint32 playerInstances = bgPlayerInstances.size();
+        uint32 botOnlyInstances = bgInstanceCount > playerInstances ? bgInstanceCount - playerInstances : 0;
+        return activeBgQueue + playerInstances + std::min(botOnlyInstances, bgAutoJoinTarget);
+    }
 };
 
 class ChatHandler;
