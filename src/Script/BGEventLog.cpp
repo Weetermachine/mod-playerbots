@@ -17,6 +17,7 @@
 #include "Playerbots.h"
 #include "RandomPlayerbotMgr.h"
 #include "ScriptMgr.h"
+#include "Timer.h"
 
 namespace
 {
@@ -47,6 +48,16 @@ char const* PlayerKind(Player* player)
 }
 
 char const* TeamName(TeamId team) { return team == TEAM_ALLIANCE ? "A" : team == TEAM_HORDE ? "H" : "N"; }
+
+// " last_action=<name> last_action_ago_ms=<n>" for bots, empty for humans.
+std::string LastAction(Player* player)
+{
+    PlayerbotAI* botAI = GET_PLAYERBOT_AI(player);
+    if (!botAI || botAI->lastBGAction.empty())
+        return "";
+    return " last_action=\"" + botAI->lastBGAction +
+           "\" last_action_ago_ms=" + std::to_string(GetMSTimeDiffToNow(botAI->lastBGActionTime));
+}
 
 void LogBG(char const* event, Battleground* bg)
 {
@@ -94,7 +105,7 @@ public:
     void OnBattlegroundRemovePlayerAtLeave(Battleground* bg, Player* player) override
     {
         if (BGEventLogEnabled())
-            LogPlayer("leave", bg, player);
+            LogPlayer("leave", bg, player, LastAction(player));
     }
 
     void OnBattlegroundEnd(Battleground* bg, TeamId winnerTeam) override
@@ -106,14 +117,28 @@ public:
     }
 };
 
-// Level changes and logouts inside a BG: catches bots being reset (e.g. by mod-player-bot-reset)
-// or logged out mid-game.
+// Level changes, logouts and teleports off the BG map: catches bots being reset (e.g. by
+// mod-player-bot-reset), logged out, or teleported out (which removes them from the BG) mid-game.
 class PlayerbotsBGEventLogPlayerScript : public PlayerScript
 {
 public:
     PlayerbotsBGEventLogPlayerScript()
-        : PlayerScript("PlayerbotsBGEventLogPlayerScript", {PLAYERHOOK_ON_LEVEL_CHANGED, PLAYERHOOK_ON_LOGOUT})
+        : PlayerScript("PlayerbotsBGEventLogPlayerScript",
+                       {PLAYERHOOK_ON_LEVEL_CHANGED, PLAYERHOOK_ON_LOGOUT, PLAYERHOOK_ON_BEFORE_TELEPORT})
     {
+    }
+
+    bool OnPlayerBeforeTeleport(Player* player, uint32 mapid, float x, float y, float z, float /*orientation*/,
+                                uint32 /*options*/, Unit* /*target*/) override
+    {
+        if (!BGEventLogEnabled())
+            return true;
+        Battleground* bg = player->GetBattleground();
+        if (bg && mapid != bg->GetMapId())
+            LogPlayer("teleport_out", bg, player,
+                      " to_map=" + std::to_string(mapid) + " to_xyz=" + std::to_string(int32(x)) + "," +
+                          std::to_string(int32(y)) + "," + std::to_string(int32(z)) + LastAction(player));
+        return true;
     }
 
     void OnPlayerLevelChanged(Player* player, uint8 oldLevel) override

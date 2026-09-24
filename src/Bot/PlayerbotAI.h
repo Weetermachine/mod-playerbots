@@ -414,6 +414,9 @@ public:
     bool ContainsStrategy(StrategyType type);
     bool HasStrategy(std::string const name, BotState type);
     BotState GetState() { return currentState; };
+    // Last action executed while in a battleground, for BGEventLog diagnostics.
+    std::string lastBGAction;
+    uint32 lastBGActionTime = 0;  // getMSTime()
     void ResetStrategies(bool load = false);
     void ReInitCurrentEngine();
     void Reset(bool full = false);

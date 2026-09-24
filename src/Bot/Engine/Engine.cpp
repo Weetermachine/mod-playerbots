@@ -215,6 +215,11 @@ bool Engine::DoNextAction(Unit* /*unit*/, uint32 /*depth*/, bool minimal)
                 if (actionExecuted)
                 {
                     LogAction("A:%s - OK", action->getName().c_str());
+                    if (botAI->GetBot()->InBattleground())
+                    {
+                        botAI->lastBGAction = action->getName();
+                        botAI->lastBGActionTime = getMSTime();
+                    }
                     MultiplyAndPush(actionNode->getContinuers(), relevance, false, event, "cont");
                     lastRelevance = relevance;
                     delete actionNode;  // Safe memory management
