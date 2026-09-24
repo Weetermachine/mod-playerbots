@@ -1266,6 +1266,13 @@ AiPlayerbot.AutoTeleportForLevel = 1
 # Enable battlegrounds/arenas for randombots
 AiPlayerbot.RandomBotJoinBG = 1
 
+# Log battleground roster events (start, join, leave, level change, logout, end) to the
+# "playerbots.bgevents" logger. Route it to a file in worldserver.conf, e.g.:
+#   Appender.BGEvents=2,4,0,BGEvents.log,a
+#   Logger.playerbots.bgevents=4,BGEvents
+# Default: 0 (disabled)
+AiPlayerbot.BGEventLog = 0
+
 # Enable auto-joining of battlegrounds - have bots start battlegrounds and arenas on their own
 AiPlayerbot.RandomBotAutoJoinBG = 0
 
