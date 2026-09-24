@@ -1273,6 +1273,17 @@ AiPlayerbot.RandomBotJoinBG = 1
 # Default: 0 (disabled)
 AiPlayerbot.BGEventLog = 0
 
+# Warsong Gulch flag-carrier tactics, per faction (so one side can run the new behavior and the
+# other the old one in the same games, for A/B comparison).
+#   FCEscort: escorts (about 40% of the team) regroup on our flag carrier, breaking off fights
+#             once it is more than 35 yd ahead.
+#   FCChase:  any bot near the enemy flag carrier targets it, not only our own carrier.
+# Default: 0 (disabled, stock behavior)
+AiPlayerbot.BGTactics.WSG.FCEscort.Alliance = 0
+AiPlayerbot.BGTactics.WSG.FCEscort.Horde = 0
+AiPlayerbot.BGTactics.WSG.FCChase.Alliance = 0
+AiPlayerbot.BGTactics.WSG.FCChase.Horde = 0
+
 # Enable auto-joining of battlegrounds - have bots start battlegrounds and arenas on their own
 AiPlayerbot.RandomBotAutoJoinBG = 0
 

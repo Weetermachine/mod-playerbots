@@ -27,8 +27,16 @@ bool AttackEnemyPlayerAction::isUseful()
 bool AttackEnemyFlagCarrierAction::isUseful()
 {
     Unit* target = context->GetValue<Unit*>("enemy flag carrier")->Get();
-    return target && ServerFacade::instance().IsDistanceLessOrEqualThan(ServerFacade::instance().GetDistance2d(bot, target), 100.0f) &&
-           PlayerHasFlag::IsCapturingFlag(bot);
+    if (!target ||
+        !ServerFacade::instance().IsDistanceLessOrEqualThan(ServerFacade::instance().GetDistance2d(bot, target), 100.0f))
+        return false;
+
+    if (PlayerHasFlag::IsCapturingFlag(bot))
+        return true;
+
+    // WSG FC chase: let every bot on this team go after the enemy FC, not only our own FC.
+    // "enemy flagcarrier near" already skips this when another enemy is much closer.
+    return bot->GetBattlegroundTypeId() == BATTLEGROUND_WS && sPlayerbotAIConfig.wsgFCChase[bot->GetBgTeamId()];
 }
 
 bool AggressiveTargetAction::isUseful()

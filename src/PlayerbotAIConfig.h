@@ -239,6 +239,11 @@ public:
     bool randomBotJoinBG;
     bool randomBotAutoJoinBG;
 
+    // Warsong Gulch flag-carrier tactics, indexed by TeamId (0 = Alliance, 1 = Horde) so each
+    // faction can run old vs new behavior in the same game for A/B comparison.
+    bool wsgFCEscort[2];  // escorts (bg role 3-6) regroup on our flag carrier
+    bool wsgFCChase[2];   // any bot near the enemy flag carrier targets it, not just our FC
+
     std::string randomBotAutoJoinICBrackets;
     std::string randomBotAutoJoinEYBrackets;
     std::string randomBotAutoJoinAVBrackets;

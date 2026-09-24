@@ -363,6 +363,11 @@ bool PlayerbotAIConfig::Initialize()
     randomBotJoinBG = sConfigMgr->GetOption<bool>("AiPlayerbot.RandomBotJoinBG", true);
     randomBotAutoJoinBG = sConfigMgr->GetOption<bool>("AiPlayerbot.RandomBotAutoJoinBG", false);
 
+    wsgFCEscort[TEAM_ALLIANCE] = sConfigMgr->GetOption<bool>("AiPlayerbot.BGTactics.WSG.FCEscort.Alliance", false);
+    wsgFCEscort[TEAM_HORDE] = sConfigMgr->GetOption<bool>("AiPlayerbot.BGTactics.WSG.FCEscort.Horde", false);
+    wsgFCChase[TEAM_ALLIANCE] = sConfigMgr->GetOption<bool>("AiPlayerbot.BGTactics.WSG.FCChase.Alliance", false);
+    wsgFCChase[TEAM_HORDE] = sConfigMgr->GetOption<bool>("AiPlayerbot.BGTactics.WSG.FCChase.Horde", false);
+
     randomBotAutoJoinArenaBracket = sConfigMgr->GetOption<int32>("AiPlayerbot.RandomBotAutoJoinArenaBracket", 14);
 
     randomBotAutoJoinWSBrackets = sConfigMgr->GetOption<std::string>("AiPlayerbot.RandomBotAutoJoinWSBrackets", "7");

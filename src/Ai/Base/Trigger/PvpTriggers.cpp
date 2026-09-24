@@ -269,6 +269,16 @@ bool EnemyFlagCarrierNear::IsActive()
 
 bool TeamFlagCarrierNear::IsActive()
 {
+    // Only used by WarsongStrategy ("team flagcarrier near" -> "bg protect fc"). Off unless the
+    // WSG FC escort tactic is enabled for this bot's team, and then only for the escort roles
+    // (bg role 3-6, ~40% of the team) so defenders keep defending and attackers keep attacking.
+    if (!sPlayerbotAIConfig.wsgFCEscort[bot->GetBgTeamId()])
+        return false;
+
+    uint32 role = AI_VALUE(uint32, "bg role");
+    if (role < 3 || role > 6)
+        return false;
+
     if (bot->GetBattlegroundTypeId() == BATTLEGROUND_WS)
     {
         BattlegroundWS* bg = dynamic_cast<BattlegroundWS*>(bot->GetBattleground());
