@@ -207,19 +207,29 @@ bool Engine::DoNextAction(Unit* /*unit*/, uint32 /*depth*/, bool minimal)
                     }
                 }
 
+                // BGEventLog diagnostics: "running:<name>" while an action executes in a BG,
+                // so a teleport out of the BG can be attributed to the action doing it.
+                bool const inBG = botAI->GetBot()->InBattleground();
+                if (inBG)
+                {
+                    botAI->lastBGAction = "running:" + action->getName();
+                    botAI->lastBGActionTime = getMSTime();
+                }
+
                 PerfMonitorOperation* pmo = sPerfMonitor.start(PERF_MON_ACTION, action->getName(), &aiObjectContext->performanceStack);
                 actionExecuted = ListenAndExecute(action, event);
                 if (pmo)
                     pmo->finish();
 
+                if (inBG)
+                {
+                    botAI->lastBGAction = action->getName() + (actionExecuted ? ":ok" : ":failed");
+                    botAI->lastBGActionTime = getMSTime();
+                }
+
                 if (actionExecuted)
                 {
                     LogAction("A:%s - OK", action->getName().c_str());
-                    if (botAI->GetBot()->InBattleground())
-                    {
-                        botAI->lastBGAction = action->getName();
-                        botAI->lastBGActionTime = getMSTime();
-                    }
                     MultiplyAndPush(actionNode->getContinuers(), relevance, false, event, "cont");
                     lastRelevance = relevance;
                     delete actionNode;  // Safe memory management
