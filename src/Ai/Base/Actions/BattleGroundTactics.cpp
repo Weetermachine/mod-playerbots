@@ -1648,6 +1648,9 @@ bool BGTactics::Execute(Event /*event*/)
     if (getName() == "select objective")
         return selectObjective();
 
+    if (getName() == "catch fc")
+        return catchEnemyFC();
+
     if (getName() == "protect fc")
     {
         if (protectFC())
@@ -4064,6 +4067,92 @@ bool BGTactics::protectFC()
 
         return MoveNear(mapId, fcX, fcY, fcZ, 5.0f, MovementPriority::MOVEMENT_NORMAL);
     }
+
+    return false;
+}
+
+// WSG FC chase: spells that reach the enemy flag carrier, best first. Unknown spells (other classes)
+// fail CanCastSpell's spellbook lookup, so one list serves every class.
+static char const* const FC_PULLS[] = {"death grip", "intercept", "charge", "feral charge - cat",
+                                       "feral charge - bear", "shadowstep"};
+static char const* const FC_SPRINTS[] = {"sprint", "dash"};
+static char const* const FC_SLOWS[] = {"hamstring", "chains of ice", "wing clip", "frost shock", "concussive shot",
+                                       "kidney shot", "hammer of justice", "slow"};
+
+static bool FCChaseOn(Player* bot)
+{
+    return bot->GetBattlegroundTypeId() == BATTLEGROUND_WS &&
+           BGTacticArms::IsOn(bot->GetBattleground(), bot->GetBgTeamId(), BGTactic::FCChase);
+}
+
+bool BGTactics::CanCatchEnemyFC(PlayerbotAI* botAI, Unit* fc)
+{
+    Player* bot = botAI->GetBot();
+    for (char const* spell : FC_PULLS)
+        if (botAI->CanCastSpell(spell, fc))
+            return true;
+
+    // sprinting only helps melee that are close enough to get there
+    if (botAI->IsMelee(bot) && bot->GetDistance(fc) <= 30.0f)
+        for (char const* spell : FC_SPRINTS)
+            if (botAI->CanCastSpell(spell, bot))
+                return true;
+
+    return false;
+}
+
+// Healers put an instant DoT/slow on the enemy FC without switching target, when nobody needs healing.
+static char const* const FC_HEALER_DOTS[] = {"frost shock", "flame shock", "shadow word: pain", "moonfire",
+                                             "insect swarm", "hammer of justice"};
+
+bool BGTactics::catchEnemyFC()
+{
+    if (!FCChaseOn(bot) || PlayerHasFlag::IsCapturingFlag(bot))
+        return false;
+
+    Unit* fc = AI_VALUE(Unit*, "enemy flag carrier");
+    if (!fc || !fc->IsAlive())
+        return false;
+
+    if (PlayerbotAI::IsHeal(bot))
+    {
+        if (bot->GetDistance(fc) > 30.0f || !bot->IsWithinLOSInMap(fc))
+            return false;
+        Unit* hurt = AI_VALUE(Unit*, "party member to heal");
+        if (hurt && hurt->GetHealthPct() < sPlayerbotAIConfig.almostFullHealth)
+            return false;
+        for (char const* spell : FC_HEALER_DOTS)
+        {
+            uint32 id = AI_VALUE2(uint32, "spell id", spell);
+            if (id && !fc->HasAura(id, bot->GetGUID()) && botAI->CanCastSpell(spell, fc))
+                return botAI->CastSpell(spell, fc);
+        }
+        return false;
+    }
+
+    if (AI_VALUE(Unit*, "current target") != fc)
+        return false;
+
+    if (!bot->IsWithinMeleeRange(fc))
+    {
+        for (char const* spell : FC_PULLS)
+            if (botAI->CanCastSpell(spell, fc))
+                return botAI->CastSpell(spell, fc);
+
+        if (botAI->IsMelee(bot) && bot->GetDistance(fc) <= 30.0f)
+            for (char const* spell : FC_SPRINTS)
+                if (botAI->CanCastSpell(spell, bot))
+                    return botAI->CastSpell(spell, bot);
+    }
+
+    // slow or stun it, unless something already does
+    if (fc->HasAuraType(SPELL_AURA_MOD_DECREASE_SPEED) || fc->HasAuraType(SPELL_AURA_MOD_STUN) ||
+        fc->HasAuraType(SPELL_AURA_MOD_ROOT))
+        return false;
+
+    for (char const* spell : FC_SLOWS)
+        if (botAI->CanCastSpell(spell, fc))
+            return botAI->CastSpell(spell, fc);
 
     return false;
 }

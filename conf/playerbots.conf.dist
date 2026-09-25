@@ -1277,8 +1277,10 @@ AiPlayerbot.BGEventLog = 0
 # other the old one in the same games, for A/B comparison).
 #   FCEscort: escorts (about 40% of the team, never flag-room defenders) within 60 yd of our flag
 #             carrier regroup on it when out of combat.
-#   FCChase:  bots within 40 yd of the enemy flag carrier target it, not only our own carrier;
-#             healers only when it is at 10% health or less.
+#   FCChase:  bots switch to the enemy flag carrier (within 40 yd) only when they can reach it: ranged in
+#             range and sight, melee with a pull/gap closer/sprint ready or when it is close and below 35%;
+#             then they pull, sprint and slow it. Healers dot/slow it when nobody needs healing and
+#             switch to it at 10% health or less.
 # Default: 0 (disabled, stock behavior)
 AiPlayerbot.BGTactics.WSG.FCEscort.Alliance = 0
 AiPlayerbot.BGTactics.WSG.FCEscort.Horde = 0

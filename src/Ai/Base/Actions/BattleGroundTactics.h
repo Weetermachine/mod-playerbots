@@ -114,6 +114,8 @@ class BGTactics : public MovementAction
 public:
     static bool HandleConsoleCommand(ChatHandler* handler, char const* args);
     uint8 static GetBotStrategyForTeam(Battleground* bg, TeamId teamId);
+    // WSG FC chase: can this bot use a pull, gap closer or sprint to reach the enemy flag carrier now?
+    static bool CanCatchEnemyFC(PlayerbotAI* botAI, Unit* fc);
 
     BGTactics(PlayerbotAI* botAI, std::string const name = "bg tactics") : MovementAction(botAI, name) {}
 
@@ -135,6 +137,7 @@ private:
     bool flagTaken();
     bool teamFlagTaken();
     bool protectFC();
+    bool catchEnemyFC();
     bool useBuff();
     uint32 getPlayersInArea(TeamId teamId, Position point, float range, bool combat = true);
     bool IsLockedInsideKeep();

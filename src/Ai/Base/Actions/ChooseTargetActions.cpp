@@ -6,6 +6,7 @@
 
 #include "ChooseTargetActions.h"
 #include "BGTacticArms.h"
+#include "BattleGroundTactics.h"
 
 #include "ChooseRpgTargetAction.h"
 #include "Event.h"
@@ -35,19 +36,31 @@ bool AttackEnemyFlagCarrierAction::isUseful()
     if (PlayerHasFlag::IsCapturingFlag(bot))
         return true;
 
-    // WSG FC chase: let other bots on this team go after the enemy FC, not only our own FC.
-    // "enemy flagcarrier near" already skips this when another enemy is much closer. This runs
-    // above every heal and attack, so the FC must be close (at 100 yd melee dropped fights they
-    // were winning to chase a carrier running at full speed), and healers only finish off an FC
-    // that is nearly dead (otherwise they kept switching to the FC instead of healing).
+    // WSG FC chase: other bots on this team switch to the enemy FC only when they can actually reach
+    // it. This runs above every heal and attack, and switching whenever the FC was near made melee
+    // drop fights they were winning to run after a carrier they couldn't catch (v1 went 4-13).
+    // Stock target selection already prefers the FC when a bot picks a new target.
     if (bot->GetBattlegroundTypeId() != BATTLEGROUND_WS ||
         !BGTacticArms::IsOn(bot->GetBattleground(), bot->GetBgTeamId(), BGTactic::FCChase))
         return false;
 
-    if (!ServerFacade::instance().IsDistanceLessOrEqualThan(ServerFacade::instance().GetDistance2d(bot, target), 40.0f))
+    float const dist = ServerFacade::instance().GetDistance2d(bot, target);
+    if (dist > 40.0f)
         return false;
 
-    return !PlayerbotAI::IsHeal(bot) || target->GetHealthPct() <= 10.0f;
+    // healers: only to finish off a nearly dead FC
+    if (PlayerbotAI::IsHeal(bot))
+        return target->GetHealthPct() <= 10.0f;
+
+    // ranged: switching costs nothing when the FC is in range and sight
+    if (PlayerbotAI::IsRanged(bot))
+        return dist <= 35.0f && bot->IsWithinLOSInMap(target);
+
+    // melee: finish a weak FC nearby, or go when a pull, gap closer or sprint is ready
+    if (dist <= 20.0f && target->GetHealthPct() <= 35.0f)
+        return true;
+
+    return BGTactics::CanCatchEnemyFC(botAI, target);
 }
 
 bool AggressiveTargetAction::isUseful()

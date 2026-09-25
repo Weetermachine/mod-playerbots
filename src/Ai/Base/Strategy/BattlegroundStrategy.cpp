@@ -28,7 +28,9 @@ void BattlegroundStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 void WarsongStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
     triggers.push_back(new TriggerNode("bg active", { NextAction("bg check flag", ACTION_EMERGENCY )}));
-    triggers.push_back(new TriggerNode("enemy flagcarrier near", { NextAction("attack enemy flag carrier", ACTION_RAID + 1.0f)}));
+    // With the WSG FC chase tactic, bots on the enemy FC also try to reach and slow it (see BGTactics::catchEnemyFC).
+    triggers.push_back(new TriggerNode("enemy flagcarrier near", { NextAction("attack enemy flag carrier", ACTION_RAID + 1.0f),
+                                                                  NextAction("bg catch fc", ACTION_RAID + 0.5f)}));
     // Just above "bg move to objective": escorting replaces the objective, never a heal or an attack.
     triggers.push_back(new TriggerNode("team flagcarrier near", { NextAction("bg protect fc", ACTION_BG + 2.0f)}));
     triggers.push_back(new TriggerNode("often", { NextAction("bg use buff", ACTION_BG)}));
