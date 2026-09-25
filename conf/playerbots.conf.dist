@@ -1305,6 +1305,11 @@ AiPlayerbot.BGTactics.AB.Arms = ""
 # Enable auto-joining of battlegrounds - have bots start battlegrounds and arenas on their own
 AiPlayerbot.RandomBotAutoJoinBG = 0
 
+# Start auto-joining once this percentage of the random bots is online (then keep going even if some
+# log out). Bots still logging in only queue once online and at a matching level.
+# Default: 100 (wait for all bots)
+AiPlayerbot.RandomBotAutoJoinBGMinOnlinePct = 100
+
 # Required Configuration for RandomBotAutoJoinBG
 #
 # Known issue: When enabling many brackets in combination with multiple instances, it can lead to more

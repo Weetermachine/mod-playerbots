@@ -33,6 +33,7 @@
 #include "PerfMonitor.h"
 #include "Player.h"
 #include "PlayerbotAI.h"
+#include "Config.h"
 #include "PlayerbotAIConfig.h"
 #include "PlayerbotFactory.h"
 #include "PlayerbotTextMgr.h"
@@ -1120,8 +1121,17 @@ void RandomPlayerbotMgr::CheckBgQueue()
         }
     }
 
-    // If enabled, wait for all bots to have logged in before queueing for Arena's / BG's
-    if (sPlayerbotAIConfig.randomBotAutoJoinBG && playerBots.size() >= GetMaxAllowedBotCount())
+    // If enabled, wait until enough bots have logged in (RandomBotAutoJoinBGMinOnlinePct, default all)
+    // before queueing for Arena's / BG's. Latched: once reached, a few bots logging out later doesn't
+    // stop queueing (with the old "all bots online" check any logout paused auto-join until refilled).
+    static bool autoJoinReady = false;
+    if (!autoJoinReady && GetMaxAllowedBotCount() && !playerBots.empty())
+    {
+        uint64 const pct = std::min<uint32>(sConfigMgr->GetOption<uint32>("AiPlayerbot.RandomBotAutoJoinBGMinOnlinePct", 100), 100);
+        autoJoinReady = uint64(playerBots.size()) * 100 >= uint64(GetMaxAllowedBotCount()) * pct;
+    }
+
+    if (sPlayerbotAIConfig.randomBotAutoJoinBG && autoJoinReady)
     {
         uint32 randomBotAutoJoinArenaBracket = sPlayerbotAIConfig.randomBotAutoJoinArenaBracket;
         uint32 randomBotAutoJoinBGRatedArena2v2Count = sPlayerbotAIConfig.randomBotAutoJoinBGRatedArena2v2Count;
