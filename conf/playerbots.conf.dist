@@ -1275,8 +1275,8 @@ AiPlayerbot.BGEventLog = 0
 
 # Warsong Gulch flag-carrier tactics, per faction (so one side can run the new behavior and the
 # other the old one in the same games, for A/B comparison).
-#   FCEscort: escorts (about 40% of the team) regroup on our flag carrier, breaking off fights
-#             once it is more than 35 yd ahead.
+#   FCEscort: escorts (about 40% of the team, never flag-room defenders) within 60 yd of our flag
+#             carrier regroup on it when out of combat.
 #   FCChase:  non-healers within 40 yd of the enemy flag carrier target it, not only our own carrier.
 # Default: 0 (disabled, stock behavior)
 AiPlayerbot.BGTactics.WSG.FCEscort.Alliance = 0

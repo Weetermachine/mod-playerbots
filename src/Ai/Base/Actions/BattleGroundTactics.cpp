@@ -4051,12 +4051,7 @@ bool BGTactics::protectFC()
         return false;
     }
 
-    // With the WSG FC escort tactic, escorts also break off a fight to regroup once the FC has
-    // pulled more than 35 yd ahead; otherwise any passing enemy strands them behind the FC.
-    bool const leash = bg->GetBgTypeID() == BATTLEGROUND_WS && sPlayerbotAIConfig.wsgFCEscort[bot->GetBgTeamId()] &&
-                       !bot->IsWithinDistInMap(teamFC, 35.0f);
-
-    if ((!bot->IsInCombat() || leash) && !bot->IsWithinDistInMap(teamFC, 20.0f))
+    if (!bot->IsInCombat() && !bot->IsWithinDistInMap(teamFC, 20.0f))
     {
         // Get the flag carrier's position
         float fcX = teamFC->GetPositionX();

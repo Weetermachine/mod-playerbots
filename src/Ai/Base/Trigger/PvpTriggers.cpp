@@ -271,12 +271,13 @@ bool TeamFlagCarrierNear::IsActive()
 {
     // Only used by WarsongStrategy ("team flagcarrier near" -> "bg protect fc"). Off unless the
     // WSG FC escort tactic is enabled for this bot's team, and then only for the escort roles
-    // (bg role 3-6, ~40% of the team) so defenders keep defending and attackers keep attacking.
+    // (bg role 6-9, ~40% of the team). Defenders are role < 1..6 depending on the team strategy,
+    // so escorts never come out of the flag room.
     if (!sPlayerbotAIConfig.wsgFCEscort[bot->GetBgTeamId()])
         return false;
 
     uint32 role = AI_VALUE(uint32, "bg role");
-    if (role < 3 || role > 6)
+    if (role < 6)
         return false;
 
     if (bot->GetBattlegroundTypeId() == BATTLEGROUND_WS)
@@ -293,8 +294,9 @@ bool TeamFlagCarrierNear::IsActive()
         }
     }
 
+    // 60 yd: close enough to rejoin the FC; bots further away keep their own objective
     Unit* carrier = AI_VALUE(Unit*, "team flag carrier");
-    return carrier && ServerFacade::instance().IsDistanceLessOrEqualThan(ServerFacade::instance().GetDistance2d(bot, carrier), 200.f);
+    return carrier && ServerFacade::instance().IsDistanceLessOrEqualThan(ServerFacade::instance().GetDistance2d(bot, carrier), 60.f);
 }
 
 bool PlayerWantsInBattlegroundTrigger::IsActive()
