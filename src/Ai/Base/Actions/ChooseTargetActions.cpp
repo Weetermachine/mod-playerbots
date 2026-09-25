@@ -5,6 +5,7 @@
  */
 
 #include "ChooseTargetActions.h"
+#include "BGTacticArms.h"
 
 #include "ChooseRpgTargetAction.h"
 #include "Event.h"
@@ -39,7 +40,8 @@ bool AttackEnemyFlagCarrierAction::isUseful()
     // above every heal and attack, so the FC must be close (at 100 yd melee dropped fights they
     // were winning to chase a carrier running at full speed), and healers only finish off an FC
     // that is nearly dead (otherwise they kept switching to the FC instead of healing).
-    if (bot->GetBattlegroundTypeId() != BATTLEGROUND_WS || !sPlayerbotAIConfig.wsgFCChase[bot->GetBgTeamId()])
+    if (bot->GetBattlegroundTypeId() != BATTLEGROUND_WS ||
+        !BGTacticArms::IsOn(bot->GetBattleground(), bot->GetBgTeamId(), BGTactic::FCChase))
         return false;
 
     if (!ServerFacade::instance().IsDistanceLessOrEqualThan(ServerFacade::instance().GetDistance2d(bot, target), 40.0f))

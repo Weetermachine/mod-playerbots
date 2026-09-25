@@ -21,6 +21,7 @@
 #include "PlayerbotCommandScript.h"
 #include "cmath"
 #include "BattleGroundTactics.h"
+#include "BGTacticArms.h"
 
 class PlayerbotsDatabaseScript : public DatabaseScript
 {
@@ -507,6 +508,9 @@ public:
         std::lock_guard<std::mutex> guard(bgStrategiesLock);
         bgStrategies.erase(bg->GetInstanceID());
     }
+
+    // Not at the end: bots still act (and look up their arm) until they leave.
+    void OnBattlegroundDestroy(Battleground* bg) override { BGTacticArms::Forget(bg); }
 };
 
 // Workaround for missing InitEnabledHooksIfNeeded for new BattlefieldScript in ScriptMgr

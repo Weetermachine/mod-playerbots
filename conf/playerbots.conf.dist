@@ -1293,6 +1293,15 @@ AiPlayerbot.BGTactics.WSG.FCChase.Horde = 0
 AiPlayerbot.BGTactics.AB.NodeGuard.Alliance = 0
 AiPlayerbot.BGTactics.AB.NodeGuard.Horde = 0
 
+# Per-game A/B arms. When set for a battleground, each new game of it gets the next arm in the list
+# (round robin) and the per-faction switches above are ignored for that battleground. Arms are
+# separated by commas; an arm is one or more <Tactic>.<Faction> joined by '+'; any other name
+# (e.g. "stock") is an arm with every tactic off. The arm is written to the BG event log (arm=...).
+# Example: "FCEscort.Alliance, FCEscort.Horde, FCChase.Alliance+FCChase.Horde, stock"
+# Default: "" (off)
+AiPlayerbot.BGTactics.WSG.Arms = ""
+AiPlayerbot.BGTactics.AB.Arms = ""
+
 # Enable auto-joining of battlegrounds - have bots start battlegrounds and arenas on their own
 AiPlayerbot.RandomBotAutoJoinBG = 0
 

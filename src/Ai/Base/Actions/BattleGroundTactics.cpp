@@ -5,6 +5,7 @@
  */
 
 #include "BattleGroundTactics.h"
+#include "BGTacticArms.h"
 
 #include <algorithm>
 
@@ -2340,7 +2341,7 @@ bool BGTactics::selectObjective(bool reset)
             bool isSilly = urand(0, 99) < 20;
             // Objectives are re-rolled every time a bot reaches its spot, so the random impulses
             // below pulled stock defenders off their node within seconds. Guards skip them.
-            bool nodeGuard = isDefender && sPlayerbotAIConfig.abNodeGuard[team];
+            bool nodeGuard = isDefender && BGTacticArms::IsOn(bg, team, BGTactic::NodeGuard);
 
             BgObjective = nullptr;
 

@@ -244,6 +244,9 @@ public:
     bool wsgFCEscort[2];  // escorts (bg role 3-6) regroup on our flag carrier
     bool wsgFCChase[2];   // any bot near the enemy flag carrier targets it, not just our FC
     bool abNodeGuard[2];  // Arathi Basin defenders stay on an assigned node, spread across our nodes
+    // Per-game A/B arms (see BGTacticArms.h); when set they replace the per-faction switches above.
+    std::string wsgTacticArms;
+    std::string abTacticArms;
 
     std::string randomBotAutoJoinICBrackets;
     std::string randomBotAutoJoinEYBrackets;

@@ -21,6 +21,7 @@
 #include "BattlegroundEY.h"
 #include "BattlegroundIC.h"
 #include "BattlegroundWS.h"
+#include "BGTacticArms.h"
 #include "Config.h"
 #include "Creature.h"
 #include "Map.h"
@@ -74,10 +75,12 @@ std::string LastAction(Player* player)
 
 void LogBG(char const* event, Battleground* bg)
 {
-    LOG_INFO("playerbots.bgevents", "event={} bg={} type={} name=\"{}\" levels={}-{} status={} bg_ms={} A={} H={}",
+    std::string const arm = BGTacticArms::ArmName(bg);
+    LOG_INFO("playerbots.bgevents", "event={} bg={} type={} name=\"{}\" levels={}-{} status={} bg_ms={} A={} H={}{}",
              event, bg->GetInstanceID(), uint32(bg->GetBgTypeID()), bg->GetName(), uint32(bg->GetMinLevel()),
              uint32(bg->GetMaxLevel()), StatusName(bg->GetStatus()), bg->GetStartTime(),
-             bg->GetPlayersCountByTeam(TEAM_ALLIANCE), bg->GetPlayersCountByTeam(TEAM_HORDE));
+             bg->GetPlayersCountByTeam(TEAM_ALLIANCE), bg->GetPlayersCountByTeam(TEAM_HORDE),
+             arm.empty() ? "" : " arm=" + arm);
 }
 
 void LogPlayer(char const* event, Battleground* bg, Player* player, std::string const& extra = "")

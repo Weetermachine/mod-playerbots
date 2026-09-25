@@ -5,6 +5,7 @@
  */
 
 #include "PvpTriggers.h"
+#include "BGTacticArms.h"
 
 #include "BattleGroundTactics.h"
 #include "BattlegroundEY.h"
@@ -273,7 +274,7 @@ bool TeamFlagCarrierNear::IsActive()
     // WSG FC escort tactic is enabled for this bot's team, and then only for the escort roles
     // (bg role 6-9, ~40% of the team). Defenders are role < 1..6 depending on the team strategy,
     // so escorts never come out of the flag room.
-    if (!sPlayerbotAIConfig.wsgFCEscort[bot->GetBgTeamId()])
+    if (!BGTacticArms::IsOn(bot->GetBattleground(), bot->GetBgTeamId(), BGTactic::FCEscort))
         return false;
 
     uint32 role = AI_VALUE(uint32, "bg role");
