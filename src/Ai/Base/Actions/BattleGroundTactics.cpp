@@ -2336,11 +2336,52 @@ bool BGTactics::selectObjective(bool reset)
 
             bool isDefender = role < defendersProhab;
             bool isSilly = urand(0, 99) < 20;
+            // Objectives are re-rolled every time a bot reaches its spot, so the random impulses
+            // below pulled stock defenders off their node within seconds. Guards skip them.
+            bool nodeGuard = isDefender && sPlayerbotAIConfig.abNodeGuard[team];
 
             BgObjective = nullptr;
 
+            // --- PRIORITY 0 (node guard): stay on one of our nodes
+            if (nodeGuard)
+            {
+                std::vector<GameObject*> ours;
+                GameObject* assaulted = nullptr;
+                float assaultedDist = FLT_MAX;
+                for (uint32 nodeId : AB_AttackObjectives)
+                {
+                    uint8 state = ab->GetCapturePointInfo(nodeId)._state;
+                    bool isOwned = (team == TEAM_ALLIANCE && state == BG_AB_NODE_STATE_ALLY_OCCUPIED) ||
+                                   (team == TEAM_HORDE && state == BG_AB_NODE_STATE_HORDE_OCCUPIED);
+                    // enemy banner up on a node that was ours: still recoverable by clicking it
+                    bool isUnderAssault = (team == TEAM_ALLIANCE && state == BG_AB_NODE_STATE_HORDE_CONTESTED) ||
+                                          (team == TEAM_HORDE && state == BG_AB_NODE_STATE_ALLY_CONTESTED);
+                    if (!isOwned && !isUnderAssault)
+                        continue;
+
+                    GameObject* go = bg->GetBGObject(nodeId * BG_AB_OBJECTS_PER_NODE);
+                    if (!go)
+                        continue;
+
+                    ours.push_back(go);
+                    float dist = bot->GetDistance(go);
+                    if (isUnderAssault && dist < assaultedDist)
+                    {
+                        assaultedDist = dist;
+                        assaulted = go;
+                    }
+                }
+
+                // Nearest node under assault first; otherwise a fixed node per bot, so guards
+                // spread across our nodes instead of all holding the one nearest the graveyard.
+                if (assaulted)
+                    BgObjective = assaulted;
+                else if (!ours.empty())
+                    BgObjective = ours[bot->GetGUID().GetCounter() % ours.size()];
+            }
+
             // --- PRIORITY 1: Nearby enemy (rare aggressive impulse)
-            if (urand(0, 99) < 5)
+            if (!BgObjective && !nodeGuard && urand(0, 99) < 5)
             {
                 if (Unit* enemy = AI_VALUE(Unit*, "enemy player target"))
                 {
@@ -2369,7 +2410,7 @@ bool BGTactics::selectObjective(bool reset)
                 }
             }
 
-            if (!hasValidTarget)
+            if (!hasValidTarget && !BgObjective)
             {
                 if (Unit* enemy = AI_VALUE(Unit*, "enemy player target"))
                 {
@@ -2397,7 +2438,7 @@ bool BGTactics::selectObjective(bool reset)
             }
 
             // --- PRIORITY 3: Defender logic ---
-            if (isDefender && urand(0, 99) < 85)
+            if (!BgObjective && isDefender && urand(0, 99) < 85)
             {
                 float closestDist = FLT_MAX;
                 for (uint32 nodeId : AB_AttackObjectives)

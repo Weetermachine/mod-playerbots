@@ -1284,6 +1284,14 @@ AiPlayerbot.BGTactics.WSG.FCEscort.Horde = 0
 AiPlayerbot.BGTactics.WSG.FCChase.Alliance = 0
 AiPlayerbot.BGTactics.WSG.FCChase.Horde = 0
 
+# Arathi Basin node defense, per faction (for A/B tests).
+#   NodeGuard: defenders (bg role below the team strategy's defender share) stay on a node instead of
+#              wandering off after a few seconds, spread across our nodes, and go to our nearest node
+#              under assault first.
+# Default: 0 (disabled, stock behavior)
+AiPlayerbot.BGTactics.AB.NodeGuard.Alliance = 0
+AiPlayerbot.BGTactics.AB.NodeGuard.Horde = 0
+
 # Enable auto-joining of battlegrounds - have bots start battlegrounds and arenas on their own
 AiPlayerbot.RandomBotAutoJoinBG = 0
 

@@ -243,6 +243,7 @@ public:
     // faction can run old vs new behavior in the same game for A/B comparison.
     bool wsgFCEscort[2];  // escorts (bg role 3-6) regroup on our flag carrier
     bool wsgFCChase[2];   // any bot near the enemy flag carrier targets it, not just our FC
+    bool abNodeGuard[2];  // Arathi Basin defenders stay on an assigned node, spread across our nodes
 
     std::string randomBotAutoJoinICBrackets;
     std::string randomBotAutoJoinEYBrackets;

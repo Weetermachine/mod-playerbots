@@ -367,6 +367,8 @@ bool PlayerbotAIConfig::Initialize()
     wsgFCEscort[TEAM_HORDE] = sConfigMgr->GetOption<bool>("AiPlayerbot.BGTactics.WSG.FCEscort.Horde", false);
     wsgFCChase[TEAM_ALLIANCE] = sConfigMgr->GetOption<bool>("AiPlayerbot.BGTactics.WSG.FCChase.Alliance", false);
     wsgFCChase[TEAM_HORDE] = sConfigMgr->GetOption<bool>("AiPlayerbot.BGTactics.WSG.FCChase.Horde", false);
+    abNodeGuard[TEAM_ALLIANCE] = sConfigMgr->GetOption<bool>("AiPlayerbot.BGTactics.AB.NodeGuard.Alliance", false);
+    abNodeGuard[TEAM_HORDE] = sConfigMgr->GetOption<bool>("AiPlayerbot.BGTactics.AB.NodeGuard.Horde", false);
 
     randomBotAutoJoinArenaBracket = sConfigMgr->GetOption<int32>("AiPlayerbot.RandomBotAutoJoinArenaBracket", 14);
 
