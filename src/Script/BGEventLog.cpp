@@ -295,7 +295,7 @@ private:
             ObjState& last = objStates[bg->GetInstanceID()];
             bool changed = objectives != last.objectives;
             bool scoreDue = (score[0] != last.score[0] || score[1] != last.score[1]) &&
-                            GetMSTimeDiff(last.lastLogMs, now) >= SCORE_HEARTBEAT_MS;
+                            getMSTimeDiff(last.lastLogMs, now) >= SCORE_HEARTBEAT_MS;
             if (!changed && !scoreDue && last.lastLogMs != 0)
                 return;
             last.objectives = objectives;
