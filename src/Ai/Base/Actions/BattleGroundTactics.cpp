@@ -2348,8 +2348,66 @@ bool BGTactics::selectObjective(bool reset)
 
             BgObjective = nullptr;
 
+            // --- ADAPTIVE: split roles by how many nodes we hold (stock AB games: 2 nodes ~51% win,
+            // 3 ~68%, 4 ~91%). Guards hold nodes (under assault first); attackers all go for the same
+            // enemy/neutral node, the one with the fewest enemies at it, instead of spreading out.
+            if (BGTacticArms::IsOn(bg, team, BGTactic::Adaptive))
+            {
+                TeamId const enemyTeam = team == TEAM_ALLIANCE ? TEAM_HORDE : TEAM_ALLIANCE;
+                std::vector<GameObject*> ours, targets;
+                GameObject* assaulted = nullptr;
+                float assaultedDist = FLT_MAX;
+                uint32 held = 0;
+                for (uint32 nodeId : AB_AttackObjectives)
+                {
+                    GameObject* go = bg->GetBGObject(nodeId * BG_AB_OBJECTS_PER_NODE);
+                    if (!go)
+                        continue;
+                    uint8 state = ab->GetCapturePointInfo(nodeId)._state;
+                    bool isOwned = (team == TEAM_ALLIANCE && state == BG_AB_NODE_STATE_ALLY_OCCUPIED) ||
+                                   (team == TEAM_HORDE && state == BG_AB_NODE_STATE_HORDE_OCCUPIED);
+                    bool isUnderAssault = (team == TEAM_ALLIANCE && state == BG_AB_NODE_STATE_HORDE_CONTESTED) ||
+                                          (team == TEAM_HORDE && state == BG_AB_NODE_STATE_ALLY_CONTESTED);
+                    if (isOwned)
+                        ++held;
+                    if (isOwned || isUnderAssault)
+                    {
+                        ours.push_back(go);
+                        if (isUnderAssault && bot->GetDistance(go) < assaultedDist)
+                        {
+                            assaultedDist = bot->GetDistance(go);
+                            assaulted = go;
+                        }
+                    }
+                    else  // neutral, enemy-held, or ours being captured (hold it until it flips)
+                        targets.push_back(go);
+                }
+
+                uint8 guardShare = held >= 4 ? 7 : held == 3 ? 5 : 2;  // of 10 roles
+                if (role < guardShare && !ours.empty())
+                    BgObjective = assaulted ? assaulted : ours[bot->GetGUID().GetCounter() % ours.size()];
+                else if (!targets.empty())
+                {
+                    // one shared target: fewest enemies nearby, ties to the lowest node id
+                    GameObject* best = nullptr;
+                    uint32 bestEnemies = UINT32_MAX;
+                    for (GameObject* go : targets)
+                    {
+                        uint32 enemies = getPlayersInArea(enemyTeam, go->GetPosition(), 50.0f);
+                        if (enemies < bestEnemies)
+                        {
+                            bestEnemies = enemies;
+                            best = go;
+                        }
+                    }
+                    BgObjective = best;
+                }
+                else if (!ours.empty())
+                    BgObjective = assaulted ? assaulted : ours[bot->GetGUID().GetCounter() % ours.size()];
+            }
+
             // --- PRIORITY 0 (node guard): stay on one of our nodes
-            if (nodeGuard)
+            if (!BgObjective && nodeGuard)
             {
                 std::vector<GameObject*> ours;
                 GameObject* assaulted = nullptr;
@@ -2657,6 +2715,83 @@ bool BGTactics::selectObjective(bool reset)
                 }
             }
 
+            // --- ADAPTIVE: roles by towers held (stock EotS games: 2 towers ~59% win, 3 ~85%). With 3+
+            // towers flags are worth 100-500 and holding wins: mostly guards, a flag team, a few attackers.
+            // With 2, push for a third. With 0-1, all in on towers, a couple of bots stop the enemy FC.
+            if (!foundObjective && BGTacticArms::IsOn(bg, team, BGTactic::Adaptive))
+            {
+                TeamId const enemyTeam = team == TEAM_ALLIANCE ? TEAM_HORDE : TEAM_ALLIANCE;
+                std::vector<uint32> owned, targets;
+                int32 threatened = -1;  // node id (Fel Reaver is 0), -1 = none
+                float threatenedDist = FLT_MAX;
+                for (auto const& [nodeId, _, __] : EY_AttackObjectives)
+                {
+                    if (!EY_NodePositions.contains(nodeId))
+                        continue;
+                    Position const& p = EY_NodePositions[nodeId];
+                    if (!IsOwned(nodeId))
+                    {
+                        targets.push_back(nodeId);
+                        continue;
+                    }
+                    owned.push_back(nodeId);
+                    float dist = bot->GetDistance(p);
+                    if (dist < threatenedDist && getPlayersInArea(enemyTeam, p, 40.0f))
+                    {
+                        threatenedDist = dist;
+                        threatened = int32(nodeId);
+                    }
+                }
+
+                size_t const held = owned.size();
+                uint8 const guardEnd = held >= 3 ? 6 : held == 2 ? 3 : 1;  // roles [0, guardEnd) guard
+                uint8 const flagEnd = held >= 3 ? 8 : held == 2 ? 4 : 3;   // [guardEnd, flagEnd) flag team
+
+                auto goTo = [&](Position const& p, float spread)
+                {
+                    float rx, ry, rz;
+                    bot->GetRandomPoint(p, spread, rx, ry, rz);
+                    rz = bot->GetMap()->GetHeight(rx, ry, rz);
+                    pos.Set(rx, ry, rz, bot->GetMapId());
+                    foundObjective = true;
+                };
+
+                if (role < guardEnd && !owned.empty())
+                    goTo(EY_NodePositions[threatened >= 0 ? uint32(threatened) : owned[bot->GetGUID().GetCounter() % owned.size()]], 8.0f);
+                else if (role < flagEnd)
+                {
+                    // flag team: stop the enemy carrier, else escort ours, else take the flag
+                    Unit* enemyFC = AI_VALUE(Unit*, "enemy flag carrier");
+                    Unit* ourFC = AI_VALUE(Unit*, "team flag carrier");
+                    GameObject* flag = bg->GetBGObject(BG_EY_OBJECT_FLAG_NETHERSTORM);
+                    if (enemyFC && enemyFC->IsAlive())
+                        goTo(enemyFC->GetPosition(), 3.0f);
+                    else if (ourFC && ourFC->IsAlive() && held >= 2)
+                        goTo(ourFC->GetPosition(), 5.0f);
+                    else if (flag && flag->isSpawned() && held >= 2)
+                        goTo(flag->GetPosition(), 2.0f);
+                }
+                if (!foundObjective && !targets.empty())
+                {
+                    // attackers: one shared tower, the one with the fewest enemies at it
+                    int32 best = -1;
+                    uint32 bestEnemies = UINT32_MAX;
+                    for (uint32 nodeId : targets)
+                    {
+                        uint32 enemies = getPlayersInArea(enemyTeam, EY_NodePositions[nodeId], 40.0f);
+                        if (enemies < bestEnemies)
+                        {
+                            bestEnemies = enemies;
+                            best = int32(nodeId);
+                        }
+                    }
+                    if (best >= 0)
+                        goTo(EY_NodePositions[uint32(best)], 8.0f);
+                }
+                if (!foundObjective && !owned.empty())
+                    goTo(EY_NodePositions[threatened >= 0 ? uint32(threatened) : owned[bot->GetGUID().GetCounter() % owned.size()]], 8.0f);
+            }
+
             // --- PRIORITY 1b (node guard): hold one of our towers ---
             // Stock defenders only defend a tower as their last option (after chasing/supporting carriers
             // and the flag), half the time, and a 20% "nearby enemy" roll pulls them off on every re-roll.
@@ -2665,7 +2800,7 @@ bool BGTactics::selectObjective(bool reset)
             {
                 TeamId const enemyTeam = team == TEAM_ALLIANCE ? TEAM_HORDE : TEAM_ALLIANCE;
                 std::vector<uint32> owned;
-                uint32 threatened = 0;
+                int32 threatened = -1;  // node id (Fel Reaver is 0), -1 = none
                 float threatenedDist = FLT_MAX;
                 for (auto const& [nodeId, _, __] : EY_AttackObjectives)
                 {
@@ -2677,14 +2812,14 @@ bool BGTactics::selectObjective(bool reset)
                     if (dist < threatenedDist && getPlayersInArea(enemyTeam, p, 40.0f))
                     {
                         threatenedDist = dist;
-                        threatened = nodeId;
+                        threatened = int32(nodeId);
                     }
                 }
 
                 // nearest tower with enemies at it; otherwise a fixed tower per bot so guards spread out
                 if (!owned.empty())
                 {
-                    uint32 chosen = threatened ? threatened : owned[bot->GetGUID().GetCounter() % owned.size()];
+                    uint32 chosen = threatened >= 0 ? uint32(threatened) : owned[bot->GetGUID().GetCounter() % owned.size()];
                     Position const& p = EY_NodePositions[chosen];
                     float rx, ry, rz;
                     bot->GetRandomPoint(p, 8.0f, rx, ry, rz);
