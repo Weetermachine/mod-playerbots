@@ -1303,6 +1303,8 @@ AiPlayerbot.BGTactics.AB.NodeGuard.Horde = 0
 # Default: "" (off)
 AiPlayerbot.BGTactics.WSG.Arms = ""
 AiPlayerbot.BGTactics.AB.Arms = ""
+# Eye of the Storm (arms only): NodeGuard = defenders hold an assigned tower, nearest threatened first.
+AiPlayerbot.BGTactics.EY.Arms = ""
 
 # Re-read the experiment settings above and the RandomBotAutoJoinBG*Count values when this file changes
 # (checked every 5 s), without a restart. Running games keep their arm; a count of 0 drains that BG.

@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "Battleground.h"
+#include "Config.h"
 #include "PlayerbotAIConfig.h"
 
 namespace
@@ -25,6 +26,8 @@ struct Assignment
 std::mutex armsLock;
 std::unordered_map<uint32, Assignment> games;  // by BG instance id
 std::unordered_map<uint32, uint32> nextArm;    // by BG type id
+std::string eyArms;
+bool eyArmsLoaded = false;
 
 BattlegroundTypeId RealType(Battleground* bg)
 {
@@ -41,6 +44,13 @@ std::string const& ArmsConfig(BattlegroundTypeId type)
             return sPlayerbotAIConfig.wsgTacticArms;
         case BATTLEGROUND_AB:
             return sPlayerbotAIConfig.abTacticArms;
+        case BATTLEGROUND_EY:
+            if (!eyArmsLoaded)
+            {
+                eyArms = sConfigMgr->GetOption<std::string>("AiPlayerbot.BGTactics.EY.Arms", "");
+                eyArmsLoaded = true;
+            }
+            return eyArms;
         default:
             return none;
     }
@@ -110,8 +120,11 @@ Assignment const* Assign(Battleground* bg)
     return &(games[bg->GetInstanceID()] = ParseArm(arms[index]));
 }
 
-bool GlobalSwitch(BGTactic tactic, TeamId team)
+bool GlobalSwitch(BGTactic tactic, TeamId team, BattlegroundTypeId type)
 {
+    if (type == BATTLEGROUND_EY)
+        return false;  // EotS tactics only run as arms
+
     switch (tactic)
     {
         case BGTactic::FCEscort:
@@ -136,7 +149,7 @@ bool BGTacticArms::IsOn(Battleground* bg, TeamId team, BGTactic tactic)
             return a->mask[team] & (1 << uint8(tactic));
     }
 
-    return GlobalSwitch(tactic, team);
+    return GlobalSwitch(tactic, team, RealType(bg));
 }
 
 std::string BGTacticArms::ArmName(Battleground* bg)
@@ -147,6 +160,13 @@ std::string BGTacticArms::ArmName(Battleground* bg)
     std::lock_guard<std::mutex> guard(armsLock);
     Assignment const* a = Assign(bg);
     return a ? a->name : "";
+}
+
+void BGTacticArms::SetEYArms(std::string const& arms)
+{
+    std::lock_guard<std::mutex> guard(armsLock);
+    eyArms = arms;
+    eyArmsLoaded = true;
 }
 
 void BGTacticArms::Forget(Battleground* bg)

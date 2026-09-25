@@ -18,7 +18,7 @@ enum class BGTactic : uint8
 {
     FCEscort = 0,   // WSG: escorts regroup on our flag carrier
     FCChase = 1,    // WSG: bots near the enemy flag carrier target it
-    NodeGuard = 2,  // AB: defenders hold an assigned node
+    NodeGuard = 2,  // AB/EotS: defenders hold an assigned node
 };
 
 // Per-game A/B arms. With AiPlayerbot.BGTactics.<BG>.Arms set (e.g.
@@ -36,6 +36,10 @@ namespace BGTacticArms
 
     // Drop a destroyed game's assignment.
     void Forget(Battleground* bg);
+
+    // Eye of the Storm arms (AiPlayerbot.BGTactics.EY.Arms) live here rather than in PlayerbotAIConfig;
+    // the experiment hot reload sets them.
+    void SetEYArms(std::string const& arms);
 }
 
 #endif

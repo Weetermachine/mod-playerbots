@@ -7,7 +7,7 @@
 // Hot reload of the battleground experiment settings, for A/B testing without restarts.
 // With AiPlayerbot.ExperimentHotReload = 1, playerbots.conf is checked every few seconds and, when it
 // changed, these keys are re-read (nothing else):
-//   AiPlayerbot.BGTactics.<WSG|AB>.Arms, the per-faction BGTactics switches, and
+//   AiPlayerbot.BGTactics.<WSG|AB|EY>.Arms, the per-faction BGTactics switches, and
 //   AiPlayerbot.RandomBotAutoJoinBG<WS|AB|AV|EY|IC>Count (0 drains a BG: running games finish, no new ones).
 // Running games keep their arm; new games use the new settings. The file is parsed here directly
 // instead of reloading ConfigMgr, so nothing else changes under running code.
@@ -18,6 +18,7 @@
 #include <string>
 #include <sys/stat.h>
 
+#include "BGTacticArms.h"
 #include "Config.h"
 #include "Log.h"
 #include "PlayerbotAIConfig.h"
@@ -72,6 +73,7 @@ private:
         std::map<std::string, std::function<void(std::string const&)>> const keys = {
             {"AiPlayerbot.BGTactics.WSG.Arms", text(c.wsgTacticArms)},
             {"AiPlayerbot.BGTactics.AB.Arms", text(c.abTacticArms)},
+            {"AiPlayerbot.BGTactics.EY.Arms", [](std::string const& s) { BGTacticArms::SetEYArms(s); }},
             {"AiPlayerbot.BGTactics.WSG.FCEscort.Alliance", flag(c.wsgFCEscort[TEAM_ALLIANCE])},
             {"AiPlayerbot.BGTactics.WSG.FCEscort.Horde", flag(c.wsgFCEscort[TEAM_HORDE])},
             {"AiPlayerbot.BGTactics.WSG.FCChase.Alliance", flag(c.wsgFCChase[TEAM_ALLIANCE])},

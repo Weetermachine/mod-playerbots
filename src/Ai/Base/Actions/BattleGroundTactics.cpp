@@ -2657,6 +2657,43 @@ bool BGTactics::selectObjective(bool reset)
                 }
             }
 
+            // --- PRIORITY 1b (node guard): hold one of our towers ---
+            // Stock defenders only defend a tower as their last option (after chasing/supporting carriers
+            // and the flag), half the time, and a 20% "nearby enemy" roll pulls them off on every re-roll.
+            // EotS towers are captured by standing in range, so a guard present blocks the capture.
+            if (!foundObjective && isDefender && BGTacticArms::IsOn(bg, team, BGTactic::NodeGuard))
+            {
+                TeamId const enemyTeam = team == TEAM_ALLIANCE ? TEAM_HORDE : TEAM_ALLIANCE;
+                std::vector<uint32> owned;
+                uint32 threatened = 0;
+                float threatenedDist = FLT_MAX;
+                for (auto const& [nodeId, _, __] : EY_AttackObjectives)
+                {
+                    if (!IsOwned(nodeId) || !EY_NodePositions.contains(nodeId))
+                        continue;
+                    owned.push_back(nodeId);
+                    Position const& p = EY_NodePositions[nodeId];
+                    float dist = bot->GetDistance(p);
+                    if (dist < threatenedDist && getPlayersInArea(enemyTeam, p, 40.0f))
+                    {
+                        threatenedDist = dist;
+                        threatened = nodeId;
+                    }
+                }
+
+                // nearest tower with enemies at it; otherwise a fixed tower per bot so guards spread out
+                if (!owned.empty())
+                {
+                    uint32 chosen = threatened ? threatened : owned[bot->GetGUID().GetCounter() % owned.size()];
+                    Position const& p = EY_NodePositions[chosen];
+                    float rx, ry, rz;
+                    bot->GetRandomPoint(p, 8.0f, rx, ry, rz);
+                    rz = bot->GetMap()->GetHeight(rx, ry, rz);
+                    pos.Set(rx, ry, rz, bot->GetMapId());
+                    foundObjective = true;
+                }
+            }
+
             // --- PRIORITY 2: Nearby unowned contested node ---
             if (!foundObjective)
             {
