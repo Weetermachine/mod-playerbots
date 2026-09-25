@@ -115,6 +115,7 @@ enum BattleBotWsgWaitSpot
 };
 
 std::unordered_map<uint32, BGStrategyData> bgStrategies;
+std::mutex bgStrategiesLock;
 
 std::vector<uint32> const vFlagsAV = {
     BG_AV_OBJECTID_BANNER_H_B,      BG_AV_OBJECTID_BANNER_H,      BG_AV_OBJECTID_BANNER_A_B,
@@ -1434,6 +1435,7 @@ std::string const BGTactics::HandleConsoleCommandPrivate(WorldSession* session, 
 // Depends on OnBattlegroundStart in playerbots.cpp
 uint8 BGTactics::GetBotStrategyForTeam(Battleground* bg, TeamId teamId)
 {
+    std::lock_guard<std::mutex> guard(bgStrategiesLock);
     auto itr = bgStrategies.find(bg->GetInstanceID());
     if (itr == bgStrategies.end())
         return 0;

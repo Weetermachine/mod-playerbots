@@ -7,6 +7,9 @@
 #ifndef PLAYERBOTS_BATTLEGROUNDTACTICS_H
 #define PLAYERBOTS_BATTLEGROUNDTACTICS_H
 
+#include <mutex>
+#include <unordered_map>
+
 #include "BattlegroundAV.h"
 #include "MovementActions.h"
 
@@ -58,7 +61,10 @@ struct BGStrategyData
     uint8 hordeStrategy = 0;
 };
 
+// Written when a BG starts/ends and read by its bots, on that BG's map thread; with MapUpdate.Threads > 1
+// different BGs touch it concurrently, so every access takes bgStrategiesLock.
 extern std::unordered_map<uint32, BGStrategyData> bgStrategies;
+extern std::mutex bgStrategiesLock;
 
 struct BattleBotWaypoint
 {

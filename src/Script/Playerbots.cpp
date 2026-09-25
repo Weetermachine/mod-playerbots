@@ -498,10 +498,15 @@ public:
                 break;
         }
 
+        std::lock_guard<std::mutex> guard(bgStrategiesLock);
         bgStrategies[bg->GetInstanceID()] = data;
     }
 
-    void OnBattlegroundEnd(Battleground* bg, TeamId /*winnerTeam*/) override { bgStrategies.erase(bg->GetInstanceID()); }
+    void OnBattlegroundEnd(Battleground* bg, TeamId /*winnerTeam*/) override
+    {
+        std::lock_guard<std::mutex> guard(bgStrategiesLock);
+        bgStrategies.erase(bg->GetInstanceID());
+    }
 };
 
 // Workaround for missing InitEnabledHooksIfNeeded for new BattlefieldScript in ScriptMgr
