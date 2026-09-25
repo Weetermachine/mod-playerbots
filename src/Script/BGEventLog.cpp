@@ -9,6 +9,7 @@
 //   Appender.BGEvents=2,4,1,BGEvents.log,a      (flags 1 = timestamp prefix)
 //   Logger.playerbots.bgevents=4,BGEvents
 
+#include <map>
 #include <mutex>
 #include <sstream>
 #include <string>
@@ -21,6 +22,8 @@
 #include "BattlegroundIC.h"
 #include "BattlegroundWS.h"
 #include "Config.h"
+#include "Creature.h"
+#include "Map.h"
 #include "Log.h"
 #include "Player.h"
 #include "PlayerScript.h"
@@ -184,7 +187,149 @@ private:
         std::string objectives;  // node/flag/carrier part; any change is logged at once
         int32 score[2] = {-1, -1};
         uint32 lastLogMs = 0;
+        uint32 lastSampleMs = 0;     // AV generals / IoC vehicles sampling
+        std::string lastSample;      // last logged sample (without time fields)
+        uint32 lastSampleLogMs = 0;
+        ObjectGuid general[2];       // AV: Vanndar (Alliance), Drek'Thar (Horde)
     };
+
+    static constexpr uint32 SAMPLE_MS = 5000;
+    static constexpr uint32 SAMPLE_HEARTBEAT_MS = 60000;
+    static constexpr float GENERAL_RANGE = 50.0f;
+    static constexpr uint32 AV_GENERAL_ENTRY[2] = {11948, 11946};  // Vanndar Stormpike, Drek'Thar
+
+    // Final objective state at game end (the deciding capture happens after the last update).
+    static void LogFinalState(Battleground* bg)
+    {
+        if (BattlegroundWS* ws = dynamic_cast<BattlegroundWS*>(bg))
+        {
+            LOG_INFO("playerbots.bgevents",
+                     "event=wsg bg={} type={} bg_ms={} a_flag={} h_flag={} a_keeper={} h_keeper={} score_a={} "
+                     "score_h={} A={} H={} final=1",
+                     bg->GetInstanceID(), uint32(bg->GetBgTypeID()), bg->GetStartTime(),
+                     WSFlagStateName(ws->GetFlagState(TEAM_ALLIANCE)), WSFlagStateName(ws->GetFlagState(TEAM_HORDE)),
+                     ws->GetFlagPickerGUID(TEAM_ALLIANCE).GetCounter(), ws->GetFlagPickerGUID(TEAM_HORDE).GetCounter(),
+                     ws->GetTeamScore(TEAM_ALLIANCE), ws->GetTeamScore(TEAM_HORDE),
+                     bg->GetPlayersCountByTeam(TEAM_ALLIANCE), bg->GetPlayersCountByTeam(TEAM_HORDE));
+            return;
+        }
+        std::string objectives;
+        int32 score[2] = {0, 0};
+        if (!DescribeObjectives(bg, objectives, score))
+            return;
+        LOG_INFO("playerbots.bgevents", "event=obj bg={} type={} bg_ms={} score_a={} score_h={}{} A={} H={} final=1",
+                 bg->GetInstanceID(), uint32(bg->GetBgTypeID()), bg->GetStartTime(), score[0], score[1], objectives,
+                 bg->GetPlayersCountByTeam(TEAM_ALLIANCE), bg->GetPlayersCountByTeam(TEAM_HORDE));
+    }
+
+    // AV: each general's health, combat state, and enemy/own players within GENERAL_RANGE.
+    // Shows when each side first reaches the enemy general and whether anyone defends their own.
+    static std::string SampleAVGenerals(Battleground* bg, ObjState& state)
+    {
+        Map* map = bg->GetBgMap();
+        if (!map)
+            return "";
+        Creature* gen[2] = {nullptr, nullptr};
+        for (int side = 0; side < 2; ++side)
+        {
+            if (!state.general[side].IsEmpty())
+                gen[side] = map->GetCreature(state.general[side]);
+            if (!gen[side])
+                for (ObjectGuid const& guid : bg->BgCreatures)
+                    if (Creature* c = guid.IsEmpty() ? nullptr : map->GetCreature(guid))
+                        if (c->GetEntry() == AV_GENERAL_ENTRY[side])
+                        {
+                            gen[side] = c;
+                            state.general[side] = guid;
+                            break;
+                        }
+        }
+        uint32 attackers[2] = {0, 0}, defenders[2] = {0, 0};
+        for (auto const& [guid, player] : bg->GetPlayers())
+        {
+            if (!player || !player->IsAlive() || player->GetMapId() != bg->GetMapId())
+                continue;
+            TeamId team = player->GetBgTeamId();
+            for (int side = 0; side < 2; ++side)
+                if (gen[side] && gen[side]->IsAlive() && player->IsWithinDist(gen[side], GENERAL_RANGE))
+                    (team == TeamId(side) ? defenders : attackers)[side]++;
+        }
+        std::ostringstream s;
+        for (int side = 0; side < 2; ++side)
+        {
+            char const* k = side == 0 ? "a" : "h";
+            uint32 hp = gen[side] && gen[side]->IsAlive() ? uint32(gen[side]->GetHealthPct() + 0.5f) : 0;
+            s << " gen_" << k << "_hp=" << hp << " gen_" << k << "_combat=" << (gen[side] && gen[side]->IsInCombat() ? 1 : 0)
+              << " gen_" << k << "_attackers=" << attackers[side] << " gen_" << k << "_defenders=" << defenders[side];
+        }
+        return s.str();
+    }
+
+    // IoC: players riding vehicles, per faction, by vehicle entry.
+    static std::string SampleICVehicles(Battleground* bg)
+    {
+        std::map<uint32, uint32> byEntry[2];
+        uint32 riding[2] = {0, 0};
+        for (auto const& [guid, player] : bg->GetPlayers())
+        {
+            if (!player || player->GetMapId() != bg->GetMapId())
+                continue;
+            if (Unit* base = player->GetVehicleBase())
+            {
+                int side = player->GetBgTeamId() == TEAM_ALLIANCE ? 0 : 1;
+                riding[side]++;
+                byEntry[side][base->GetEntry()]++;
+            }
+        }
+        std::ostringstream s;
+        for (int side = 0; side < 2; ++side)
+        {
+            char const* k = side == 0 ? "a" : "h";
+            s << ' ' << k << "_riding=" << riding[side] << ' ' << k << "_vehicles=";
+            if (byEntry[side].empty())
+                s << '-';
+            bool first = true;
+            for (auto const& [entry, n] : byEntry[side])
+            {
+                s << (first ? "" : ",") << entry << 'x' << n;
+                first = false;
+            }
+        }
+        return s.str();
+    }
+
+    // Periodic samples for AV/IoC: logged when changed, or every SAMPLE_HEARTBEAT_MS.
+    void LogSamples(Battleground* bg, uint32 now)
+    {
+        char const* event = nullptr;
+        BattlegroundTypeId type = bg->GetBgTypeID();
+        if (type == BATTLEGROUND_AV)
+            event = "avgen";
+        else if (type == BATTLEGROUND_IC)
+            event = "veh";
+        else
+            return;
+
+        std::string sample;
+        {
+            std::lock_guard<std::mutex> guard(wsgStateLock);
+            ObjState& st = objStates[bg->GetInstanceID()];
+            if (st.lastSampleMs && getMSTimeDiff(st.lastSampleMs, now) < SAMPLE_MS)
+                return;
+            st.lastSampleMs = now;
+            sample = type == BATTLEGROUND_AV ? SampleAVGenerals(bg, st) : SampleICVehicles(bg);
+            if (sample.empty())
+                return;
+            bool changed = sample != st.lastSample;
+            if (!changed && st.lastSampleLogMs && getMSTimeDiff(st.lastSampleLogMs, now) < SAMPLE_HEARTBEAT_MS)
+                return;
+            st.lastSample = sample;
+            st.lastSampleLogMs = now;
+        }
+        LOG_INFO("playerbots.bgevents", "event={} bg={} type={} bg_ms={}{} A={} H={}", event, bg->GetInstanceID(),
+                 uint32(type), bg->GetStartTime(), sample, bg->GetPlayersCountByTeam(TEAM_ALLIANCE),
+                 bg->GetPlayersCountByTeam(TEAM_HORDE));
+    }
     std::unordered_map<uint32, ObjState> objStates;  // guarded by wsgStateLock
 
     static constexpr uint32 SCORE_HEARTBEAT_MS = 30000;
@@ -284,6 +429,8 @@ private:
 
     void LogObjectives(Battleground* bg)
     {
+        LogSamples(bg, getMSTime());
+
         std::string objectives;
         int32 score[2] = {0, 0};
         if (!DescribeObjectives(bg, objectives, score))
@@ -332,8 +479,12 @@ public:
 
     void OnBattlegroundEnd(Battleground* bg, TeamId winnerTeam) override
     {
-        if (BGEventLogEnabled())
-            LOG_INFO("playerbots.bgevents", "event=end bg={} type={} bg_ms={} winner={} A={} H={}",
+        if (!BGEventLogEnabled())
+            return;
+        // The deciding capture/score change happens after the last in-progress update, so write
+        // the final objective state here (final=1) before the end line.
+        LogFinalState(bg);
+        LOG_INFO("playerbots.bgevents", "event=end bg={} type={} bg_ms={} winner={} A={} H={}",
                      bg->GetInstanceID(), uint32(bg->GetBgTypeID()), bg->GetStartTime(), TeamName(winnerTeam),
                      bg->GetPlayersCountByTeam(TEAM_ALLIANCE), bg->GetPlayersCountByTeam(TEAM_HORDE));
     }
