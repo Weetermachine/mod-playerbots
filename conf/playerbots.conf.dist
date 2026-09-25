@@ -1304,6 +1304,12 @@ AiPlayerbot.BGTactics.AB.NodeGuard.Horde = 0
 AiPlayerbot.BGTactics.WSG.Arms = ""
 AiPlayerbot.BGTactics.AB.Arms = ""
 
+# Re-read the experiment settings above and the RandomBotAutoJoinBG*Count values when this file changes
+# (checked every 5 s), without a restart. Running games keep their arm; a count of 0 drains that BG.
+# Meant for test servers.
+# Default: 0 (off)
+AiPlayerbot.ExperimentHotReload = 0
+
 # Enable auto-joining of battlegrounds - have bots start battlegrounds and arenas on their own
 AiPlayerbot.RandomBotAutoJoinBG = 0
 
