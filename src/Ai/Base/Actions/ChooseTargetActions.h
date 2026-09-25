@@ -92,6 +92,19 @@ public:
     bool isUseful() override;
 };
 
+// WSG escort v2 (peel): switch to the nearest enemy player attacking our flag carrier and slow it
+class AttackFCAttackerAction : public AttackAction
+{
+public:
+    AttackFCAttackerAction(PlayerbotAI* botAI) : AttackAction(botAI, "attack fc attacker") {}
+
+    bool Execute(Event event) override;
+    bool isUseful() override;
+
+private:
+    Unit* FindAttacker();
+};
+
 class DropTargetAction : public Action
 {
 public:

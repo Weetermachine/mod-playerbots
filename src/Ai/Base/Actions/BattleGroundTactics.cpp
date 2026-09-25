@@ -1651,6 +1651,9 @@ bool BGTactics::Execute(Event /*event*/)
     if (getName() == "catch fc")
         return catchEnemyFC();
 
+    if (getName() == "heal fc")
+        return healFC();
+
     if (getName() == "protect fc")
     {
         if (protectFC())
@@ -4330,6 +4333,37 @@ bool BGTactics::catchEnemyFC()
         if (botAI->CanCastSpell(spell, fc))
             return botAI->CastSpell(spell, fc);
 
+    return false;
+}
+
+// WSG escort v2: healers keep our flag carrier up. Topping up: shields and heals over time (skipped when
+// already on him); below 60%: fast heals first. Unknown spells (other classes) fail CanCastSpell.
+static std::vector<char const*> const FC_HEALS_TOPUP = {"power word: shield", "renew", "rejuvenation", "riptide",
+                                                        "lifebloom", "earth shield", "flash of light", "flash heal",
+                                                        "lesser healing wave", "nourish"};
+static std::vector<char const*> const FC_HEALS_LOW = {"holy shock", "flash of light", "flash heal", "nourish",
+                                                      "regrowth", "lesser healing wave", "riptide", "swiftmend",
+                                                      "healing wave", "greater heal", "holy light", "healing touch"};
+
+bool BGTactics::healFC()
+{
+    Unit* fc = AI_VALUE(Unit*, "team flag carrier");
+    if (!fc || fc == bot || !fc->IsAlive())
+        return false;
+
+    // a slowed carrier gets freed first (paladins)
+    if (fc->HasAuraType(SPELL_AURA_MOD_DECREASE_SPEED) && botAI->CanCastSpell("hand of freedom", fc))
+        return botAI->CastSpell("hand of freedom", fc);
+
+    bool const low = fc->GetHealthPct() < 60.0f;
+    for (char const* spell : low ? FC_HEALS_LOW : FC_HEALS_TOPUP)
+    {
+        uint32 id = AI_VALUE2(uint32, "spell id", spell);
+        if (!id || (!low && fc->HasAura(id)))
+            continue;
+        if (botAI->CanCastSpell(spell, fc))
+            return botAI->CastSpell(spell, fc);
+    }
     return false;
 }
 

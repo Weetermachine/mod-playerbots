@@ -274,14 +274,17 @@ bool TeamFlagCarrierNear::IsActive()
     // WSG FC escort tactic is enabled for this bot's team, and then only for the escort roles
     // (bg role 6-9, ~40% of the team). Defenders are role < 1..6 depending on the team strategy,
     // so escorts never come out of the flag room.
-    if (!BGTacticArms::IsOn(bot->GetBattleground(), bot->GetBgTeamId(), BGTactic::FCEscort))
+    // v2 (FCEscort2) also escorts in a standoff (both flags taken), when our carrier waits at home:
+    // ~30% of all carries end with the carrier dying there, more than while running the flag.
+    bool const v2 = BGTacticArms::IsOn(bot->GetBattleground(), bot->GetBgTeamId(), BGTactic::FCEscort2);
+    if (!v2 && !BGTacticArms::IsOn(bot->GetBattleground(), bot->GetBgTeamId(), BGTactic::FCEscort))
         return false;
 
     uint32 role = AI_VALUE(uint32, "bg role");
     if (role < 6)
         return false;
 
-    if (bot->GetBattlegroundTypeId() == BATTLEGROUND_WS)
+    if (!v2 && bot->GetBattlegroundTypeId() == BATTLEGROUND_WS)
     {
         BattlegroundWS* bg = dynamic_cast<BattlegroundWS*>(bot->GetBattleground());
         if (bg)
@@ -298,6 +301,17 @@ bool TeamFlagCarrierNear::IsActive()
     // 60 yd: close enough to rejoin the FC; bots further away keep their own objective
     Unit* carrier = AI_VALUE(Unit*, "team flag carrier");
     return carrier && ServerFacade::instance().IsDistanceLessOrEqualThan(ServerFacade::instance().GetDistance2d(bot, carrier), 60.f);
+}
+
+bool TeamFlagCarrierNeedsHeal::IsActive()
+{
+    if (bot->GetBattlegroundTypeId() != BATTLEGROUND_WS || !PlayerbotAI::IsHeal(bot) ||
+        !BGTacticArms::IsOn(bot->GetBattleground(), bot->GetBgTeamId(), BGTactic::FCEscort2))
+        return false;
+
+    Unit* carrier = AI_VALUE(Unit*, "team flag carrier");
+    return carrier && carrier != bot && carrier->IsAlive() && carrier->GetHealthPct() < 95.0f &&
+           bot->IsWithinDistInMap(carrier, 40.0f) && bot->IsWithinLOSInMap(carrier);
 }
 
 bool PlayerWantsInBattlegroundTrigger::IsActive()

@@ -54,6 +54,15 @@ public:
     bool IsActive() override;
 };
 
+// WSG escort v2: a healer near our flag carrier while he is hurt
+class TeamFlagCarrierNeedsHeal : public Trigger
+{
+public:
+    TeamFlagCarrierNeedsHeal(PlayerbotAI* botAI) : Trigger(botAI, "team flagcarrier needs heal") {}
+
+    bool IsActive() override;
+};
+
 class TeamHasFlag : public Trigger
 {
 public:

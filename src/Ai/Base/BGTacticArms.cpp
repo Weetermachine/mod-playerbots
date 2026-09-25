@@ -93,7 +93,8 @@ Assignment ParseArm(std::string const& arm)
         int bit = tactic == "FCEscort" ? int(BGTactic::FCEscort)
                 : tactic == "FCChase" ? int(BGTactic::FCChase)
                 : tactic == "NodeGuard" ? int(BGTactic::NodeGuard)
-                : tactic == "Adaptive" ? int(BGTactic::Adaptive) : -1;
+                : tactic == "Adaptive" ? int(BGTactic::Adaptive)
+                : tactic == "FCEscort2" ? int(BGTactic::FCEscort2) : -1;
         if (bit < 0)
             continue;
 
@@ -135,6 +136,7 @@ bool GlobalSwitch(BGTactic tactic, TeamId team, BattlegroundTypeId type)
         case BGTactic::NodeGuard:
             return sPlayerbotAIConfig.abNodeGuard[team];
         case BGTactic::Adaptive:
+        case BGTactic::FCEscort2:
             return false;  // arms only
     }
     return false;

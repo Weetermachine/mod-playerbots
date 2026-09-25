@@ -222,3 +222,57 @@ bool AttackRtiTargetAction::isUseful()
 
     return true;
 }
+
+// WSG escort v2 (peel). Spells that slow or stop a pursuer; unknown ones fail CanCastSpell's spellbook lookup.
+static char const* const PEEL_SLOWS[] = {"hamstring", "chains of ice", "wing clip", "frost shock", "concussive shot",
+                                         "kidney shot", "hammer of justice", "frost nova", "slow"};
+
+Unit* AttackFCAttackerAction::FindAttacker()
+{
+    Unit* carrier = AI_VALUE(Unit*, "team flag carrier");
+    if (!carrier || carrier == bot || !carrier->IsAlive() || !bot->IsWithinDistInMap(carrier, 30.0f))
+        return nullptr;
+
+    Unit* best = nullptr;
+    float bestDist = 30.0f;
+    Unit::AttackerSet const attackers(carrier->getAttackers());  // copy: the set changes as fights change
+    for (Unit* attacker : attackers)
+    {
+        if (!attacker || !attacker->IsPlayer() || !attacker->IsAlive())
+            continue;
+        float dist = bot->GetDistance(attacker);
+        if (dist < bestDist && bot->IsWithinLOSInMap(attacker))
+        {
+            bestDist = dist;
+            best = attacker;
+        }
+    }
+    return best;
+}
+
+bool AttackFCAttackerAction::isUseful()
+{
+    return bot->GetBattlegroundTypeId() == BATTLEGROUND_WS && !PlayerbotAI::IsHeal(bot) &&
+           BGTacticArms::IsOn(bot->GetBattleground(), bot->GetBgTeamId(), BGTactic::FCEscort2) && FindAttacker();
+}
+
+bool AttackFCAttackerAction::Execute(Event /*event*/)
+{
+    Unit* attacker = FindAttacker();
+    if (!attacker)
+        return false;
+
+    // switch to it once (Attack returns false when already on it), then slow it unless something already does
+    if (Attack(attacker))
+        return true;
+
+    if (attacker->HasAuraType(SPELL_AURA_MOD_DECREASE_SPEED) || attacker->HasAuraType(SPELL_AURA_MOD_STUN) ||
+        attacker->HasAuraType(SPELL_AURA_MOD_ROOT))
+        return false;
+
+    for (char const* spell : PEEL_SLOWS)
+        if (botAI->CanCastSpell(spell, attacker))
+            return botAI->CastSpell(spell, attacker);
+
+    return false;
+}
