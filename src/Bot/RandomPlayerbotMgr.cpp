@@ -995,6 +995,8 @@ void RandomPlayerbotMgr::CheckBgQueue()
                     std::vector<uint32>& playerInstances = BattlegroundData[queueTypeId][bracketId].bgPlayerInstances;
                     if (std::find(playerInstances.begin(), playerInstances.end(), instanceId) == playerInstances.end())
                         playerInstances.push_back(instanceId);
+                    BattlegroundData[queueTypeId][bracketId].bgInstanceCapacity[instanceId] =
+                        player->GetBattleground()->GetMaxPlayersPerTeam();
                 }
             }
 
@@ -1095,6 +1097,8 @@ void RandomPlayerbotMgr::CheckBgQueue()
                 else
                 {
                     instanceIds = &BattlegroundData[queueTypeId][bracketId].bgInstances;
+                    BattlegroundData[queueTypeId][bracketId].bgInstanceCapacity[instanceId] =
+                        bot->GetBattleground()->GetMaxPlayersPerTeam();
                 }
 
                 if (instanceIds &&

@@ -45,20 +45,36 @@ struct BattlegroundInfo
     uint32 bgHordePlayerCount = 0;
     uint32 bgAlliancePlayerCount = 0;
 
-    // Battleground instances that contain real players, and how many bot-only instances
-    // auto-join wants for this bracket (0 when auto-join doesn't cover it).
+    // Battleground instances that contain real players, each instance's real per-team capacity,
+    // and how many bot-only instances auto-join wants for this bracket (0 when it doesn't cover it).
     std::vector<uint32> bgPlayerInstances;
+    std::map<uint32, uint32> bgInstanceCapacity;  // instance id -> max players per team
     uint32 bgAutoJoinTarget = 0;
 
-    // Instances bots should fill: an open player queue, every instance with real players, and
-    // bot-only instances up to the auto-join target. Counting every bot-only instance made demand
-    // self-sustaining: each new bot instance raised demand, bots queued, and the queue formed yet
-    // another instance until the bot pool was spread over many under-filled games.
-    uint32 DemandedBgInstances() const
+    // Per-team bot+player count bots should fill: one queue's worth for an open player queue, plus
+    // the real capacity of every instance with real players and of bot-only instances up to the
+    // auto-join target.
+    // - Counting every bot-only instance made demand self-sustaining: each new bot instance raised
+    //   demand, bots queued, and the queue formed yet another instance.
+    // - Using real instance capacity (not the queue template's team size) fills Random BG
+    //   instances correctly: an AV from the Random BG queue needs 40 per team, not 10.
+    uint32 DemandedBgSlotsPerTeam(uint32 queueTeamSize) const
     {
-        uint32 playerInstances = bgPlayerInstances.size();
-        uint32 botOnlyInstances = bgInstanceCount > playerInstances ? bgInstanceCount - playerInstances : 0;
-        return activeBgQueue + playerInstances + std::min(botOnlyInstances, bgAutoJoinTarget);
+        uint32 slots = activeBgQueue * queueTeamSize;
+        uint32 botOnlyCounted = 0;
+        for (uint32 instanceId : bgInstances)
+        {
+            auto cap = bgInstanceCapacity.find(instanceId);
+            uint32 capacity = cap != bgInstanceCapacity.end() ? cap->second : queueTeamSize;
+            if (std::find(bgPlayerInstances.begin(), bgPlayerInstances.end(), instanceId) != bgPlayerInstances.end())
+                slots += capacity;
+            else if (botOnlyCounted < bgAutoJoinTarget)
+            {
+                slots += capacity;
+                ++botOnlyCounted;
+            }
+        }
+        return slots;
     }
 };
 

@@ -292,16 +292,16 @@ bool BGJoinAction::shouldJoinBg(BattlegroundQueueTypeId queueTypeId, Battlegroun
     uint32 bgAlliancePlayerCount = sRandomPlayerbotMgr.BattlegroundData[queueTypeId][bracketId].bgAlliancePlayerCount;
     uint32 bgHordeBotCount = sRandomPlayerbotMgr.BattlegroundData[queueTypeId][bracketId].bgHordeBotCount;
     uint32 bgHordePlayerCount = sRandomPlayerbotMgr.BattlegroundData[queueTypeId][bracketId].bgHordePlayerCount;
-    uint32 demandedInstances = sRandomPlayerbotMgr.BattlegroundData[queueTypeId][bracketId].DemandedBgInstances();
+    uint32 demandedSlots = sRandomPlayerbotMgr.BattlegroundData[queueTypeId][bracketId].DemandedBgSlotsPerTeam(TeamSize);
 
     if (teamId == TEAM_ALLIANCE)
     {
-        if ((bgAllianceBotCount + bgAlliancePlayerCount) < TeamSize * demandedInstances)
+        if ((bgAllianceBotCount + bgAlliancePlayerCount) < demandedSlots)
             return true;
     }
     else
     {
-        if ((bgHordeBotCount + bgHordePlayerCount) < TeamSize * demandedInstances)
+        if ((bgHordeBotCount + bgHordePlayerCount) < demandedSlots)
             return true;
     }
 
@@ -622,16 +622,16 @@ bool FreeBGJoinAction::shouldJoinBg(BattlegroundQueueTypeId queueTypeId, Battleg
     uint32 bgAlliancePlayerCount = sRandomPlayerbotMgr.BattlegroundData[queueTypeId][bracketId].bgAlliancePlayerCount;
     uint32 bgHordeBotCount = sRandomPlayerbotMgr.BattlegroundData[queueTypeId][bracketId].bgHordeBotCount;
     uint32 bgHordePlayerCount = sRandomPlayerbotMgr.BattlegroundData[queueTypeId][bracketId].bgHordePlayerCount;
-    uint32 demandedInstances = sRandomPlayerbotMgr.BattlegroundData[queueTypeId][bracketId].DemandedBgInstances();
+    uint32 demandedSlots = sRandomPlayerbotMgr.BattlegroundData[queueTypeId][bracketId].DemandedBgSlotsPerTeam(TeamSize);
 
     if (teamId == TEAM_ALLIANCE)
     {
-        if ((bgAllianceBotCount + bgAlliancePlayerCount) < TeamSize * demandedInstances)
+        if ((bgAllianceBotCount + bgAlliancePlayerCount) < demandedSlots)
             return true;
     }
     else
     {
-        if ((bgHordeBotCount + bgHordePlayerCount) < TeamSize * demandedInstances)
+        if ((bgHordeBotCount + bgHordePlayerCount) < demandedSlots)
             return true;
     }
 
