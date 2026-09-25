@@ -105,6 +105,19 @@ private:
     Unit* FindAttacker();
 };
 
+// AB node guards v2: switch to an enemy player channeling a banner capture nearby and interrupt it
+class AttackBannerCapperAction : public AttackAction
+{
+public:
+    AttackBannerCapperAction(PlayerbotAI* botAI) : AttackAction(botAI, "attack banner capper") {}
+
+    bool Execute(Event event) override;
+    bool isUseful() override;
+};
+
+// Nearest enemy player within range channeling a battleground banner capture (spell 21651), or nullptr.
+Unit* FindBannerCapper(PlayerbotAI* botAI, float range);
+
 class DropTargetAction : public Action
 {
 public:

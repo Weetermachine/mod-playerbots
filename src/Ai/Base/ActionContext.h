@@ -227,6 +227,7 @@ public:
         creators["bg catch fc"] = &ActionContext::bg_catch_fc;
         creators["bg heal fc"] = &ActionContext::bg_heal_fc;
         creators["attack fc attacker"] = &ActionContext::attack_fc_attacker;
+        creators["attack banner capper"] = &ActionContext::attack_banner_capper;
         creators["bg use buff"] = &ActionContext::bg_use_buff;
         creators["attack enemy flag carrier"] = &ActionContext::attack_enemy_fc;
         creators["bg check flag"] = &ActionContext::bg_check_flag;
@@ -437,6 +438,7 @@ private:
     static Action* bg_catch_fc(PlayerbotAI* botAI) { return new BGTactics(botAI, "catch fc"); }
     static Action* bg_heal_fc(PlayerbotAI* botAI) { return new BGTactics(botAI, "heal fc"); }
     static Action* attack_fc_attacker(PlayerbotAI* botAI) { return new AttackFCAttackerAction(botAI); }
+    static Action* attack_banner_capper(PlayerbotAI* botAI) { return new AttackBannerCapperAction(botAI); }
     static Action* attack_enemy_fc(PlayerbotAI* botAI) { return new AttackEnemyFlagCarrierAction(botAI); }
     static Action* bg_use_buff(PlayerbotAI* botAI) { return new BGTactics(botAI, "use buff"); }
     static Action* bg_check_flag(PlayerbotAI* botAI) { return new BGTactics(botAI, "check flag"); }

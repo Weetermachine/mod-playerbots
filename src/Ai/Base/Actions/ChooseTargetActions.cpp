@@ -17,6 +17,8 @@
 #include "PossibleRpgTargetsValue.h"
 #include "PvpTriggers.h"
 #include "ServerFacade.h"
+#include "Spell.h"
+#include "SpellInfo.h"
 
 bool AttackEnemyPlayerAction::isUseful()
 {
@@ -275,4 +277,57 @@ bool AttackFCAttackerAction::Execute(Event /*event*/)
             return botAI->CastSpell(spell, attacker);
 
     return false;
+}
+
+// AB node guards v2: interrupts and stuns that end a banner capture channel (a hit alone also ends it).
+static char const* const CAPPER_INTERRUPTS[] = {"kick", "pummel", "counterspell", "wind shear", "mind freeze",
+                                                "shield bash", "silence", "strangulate", "hammer of justice",
+                                                "kidney shot", "cheap shot", "gouge", "war stomp", "arcane torrent",
+                                                "psychic scream", "concussion blow", "frost nova"};
+
+Unit* FindBannerCapper(PlayerbotAI* botAI, float range)
+{
+    Player* bot = botAI->GetBot();
+    Unit* best = nullptr;
+    float bestDist = range;
+    for (ObjectGuid const guid : botAI->GetAiObjectContext()->GetValue<GuidVector>("nearest enemy players")->Get())
+    {
+        Unit* unit = botAI->GetUnit(guid);
+        if (!unit || !unit->IsAlive())
+            continue;
+        Spell* spell = unit->GetCurrentSpell(CURRENT_GENERIC_SPELL);
+        if (!spell || !spell->m_spellInfo || spell->m_spellInfo->Id != SPELL_CAPTURE_BANNER)
+            spell = unit->GetCurrentSpell(CURRENT_CHANNELED_SPELL);
+        if (!spell || !spell->m_spellInfo || spell->m_spellInfo->Id != SPELL_CAPTURE_BANNER)
+            continue;
+        float dist = bot->GetDistance(unit);
+        if (dist < bestDist && bot->IsWithinLOSInMap(unit))
+        {
+            bestDist = dist;
+            best = unit;
+        }
+    }
+    return best;
+}
+
+bool AttackBannerCapperAction::isUseful()
+{
+    return bot->GetBattlegroundTypeId() == BATTLEGROUND_AB &&
+           BGTacticArms::IsOn(bot->GetBattleground(), bot->GetBgTeamId(), BGTactic::NodeGuard2) &&
+           FindBannerCapper(botAI, 30.0f);
+}
+
+bool AttackBannerCapperAction::Execute(Event /*event*/)
+{
+    Unit* capper = FindBannerCapper(botAI, 30.0f);
+    if (!capper)
+        return false;
+
+    // an interrupt/stun first if one is ready, else switch to it (the first hit ends the channel);
+    // healers only use the interrupt, they keep their own target
+    for (char const* spell : CAPPER_INTERRUPTS)
+        if (botAI->CanCastSpell(spell, capper))
+            return botAI->CastSpell(spell, capper);
+
+    return !PlayerbotAI::IsHeal(bot) && Attack(capper);
 }

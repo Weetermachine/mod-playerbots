@@ -6,6 +6,7 @@
 
 #include "PvpTriggers.h"
 #include "BGTacticArms.h"
+#include "ChooseTargetActions.h"
 
 #include "BattleGroundTactics.h"
 #include "BattlegroundEY.h"
@@ -312,6 +313,13 @@ bool TeamFlagCarrierNeedsHeal::IsActive()
     Unit* carrier = AI_VALUE(Unit*, "team flag carrier");
     return carrier && carrier != bot && carrier->IsAlive() && carrier->GetHealthPct() < 95.0f &&
            bot->IsWithinDistInMap(carrier, 40.0f) && bot->IsWithinLOSInMap(carrier);
+}
+
+bool EnemyCappingBannerNear::IsActive()
+{
+    return bot->GetBattlegroundTypeId() == BATTLEGROUND_AB &&
+           BGTacticArms::IsOn(bot->GetBattleground(), bot->GetBgTeamId(), BGTactic::NodeGuard2) &&
+           FindBannerCapper(botAI, 30.0f);
 }
 
 bool PlayerWantsInBattlegroundTrigger::IsActive()

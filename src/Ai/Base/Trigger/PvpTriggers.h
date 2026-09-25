@@ -63,6 +63,15 @@ public:
     bool IsActive() override;
 };
 
+// AB node guards v2: an enemy player nearby is channeling a banner capture
+class EnemyCappingBannerNear : public Trigger
+{
+public:
+    EnemyCappingBannerNear(PlayerbotAI* botAI) : Trigger(botAI, "enemy capping banner") {}
+
+    bool IsActive() override;
+};
+
 class TeamHasFlag : public Trigger
 {
 public:

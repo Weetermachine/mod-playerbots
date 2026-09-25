@@ -2347,7 +2347,8 @@ bool BGTactics::selectObjective(bool reset)
             bool isSilly = urand(0, 99) < 20;
             // Objectives are re-rolled every time a bot reaches its spot, so the random impulses
             // below pulled stock defenders off their node within seconds. Guards skip them.
-            bool nodeGuard = isDefender && BGTacticArms::IsOn(bg, team, BGTactic::NodeGuard);
+            bool nodeGuard = isDefender && (BGTacticArms::IsOn(bg, team, BGTactic::NodeGuard) ||
+                                            BGTacticArms::IsOn(bg, team, BGTactic::NodeGuard2));
 
             BgObjective = nullptr;
 

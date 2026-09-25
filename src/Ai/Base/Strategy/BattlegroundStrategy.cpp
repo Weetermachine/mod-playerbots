@@ -51,6 +51,8 @@ void AlteracStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 
 void ArathiStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
+    // node guards v2: stop enemy banner captures (a capture is a 10 s channel; any hit or interrupt ends it)
+    triggers.push_back(new TriggerNode("enemy capping banner", { NextAction("attack banner capper", ACTION_RAID + 0.3f)}));
     triggers.push_back(new TriggerNode("bg active", { NextAction("bg check flag", ACTION_EMERGENCY)}));
     triggers.push_back(new TriggerNode("often", { NextAction("bg use buff", ACTION_BG)}));
     triggers.push_back(new TriggerNode("low health", { NextAction("bg use buff", ACTION_MOVE)}));
