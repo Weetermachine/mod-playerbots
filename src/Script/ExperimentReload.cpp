@@ -103,11 +103,11 @@ private:
             }
             catch (std::exception const&)
             {
-                LOG_ERROR("playerbots", "Experiment reload: bad value in line '{}'", line);
+                LOG_ERROR("server", "Experiment reload: bad value in line '{}'", line);
             }
         }
 
-        LOG_INFO("playerbots",
+        LOG_INFO("server",
                  "Experiment reload: {} settings from {} (WSG arms \"{}\", AB arms \"{}\", auto-join WS {} AB {} AV {} EY {} IC {})",
                  applied, path, c.wsgTacticArms, c.abTacticArms, c.randomBotAutoJoinBGWSCount,
                  c.randomBotAutoJoinBGABCount, c.randomBotAutoJoinBGAVCount, c.randomBotAutoJoinBGEYCount,
