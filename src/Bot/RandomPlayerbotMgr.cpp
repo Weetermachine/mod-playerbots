@@ -1154,11 +1154,14 @@ void RandomPlayerbotMgr::CheckBgQueue()
         {
             for (uint32 bracket : brackets)
             {
-                BattlegroundData[queueType][bracket].bgAutoJoinTarget = minCount;
-                if (BattlegroundData[queueType][bracket].activeBgQueue == 0 &&
-                    BattlegroundData[queueType][bracket].bgInstanceCount < minCount &&
-                    BattlegroundData[queueType][bracket].bgInstances.size() < minCount)
-                    BattlegroundData[queueType][bracket].activeBgQueue = 1;
+                BattlegroundInfo& info = BattlegroundData[queueType][bracket];
+                info.bgAutoJoinTarget = minCount;
+                // Ask for every missing instance at once. Asking for one at a time let only one
+                // new game form at a time, so with many target games the count settled well
+                // below the target (games ended faster than single new ones could form).
+                uint32 existing = std::max<uint32>(info.bgInstanceCount, info.bgInstances.size());
+                if (info.activeBgQueue == 0 && existing < minCount)
+                    info.activeBgQueue = minCount - existing;
             }
         };
 

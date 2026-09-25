@@ -27,7 +27,8 @@ struct BattlegroundInfo
     uint32 maxLevel = 0;
     uint32 activeRatedArenaQueue = 0;     // 0 = Inactive, 1 = Active
     uint32 activeSkirmishArenaQueue = 0;  // 0 = Inactive, 1 = Active
-    uint32 activeBgQueue = 0;             // 0 = Inactive, 1 = Active
+    uint32 activeBgQueue = 0;             // 0 = inactive; else queued instances to fill (1 for a player queue,
+                                          // up to the missing count for auto-join)
 
     // Bots (Arena)
     uint32 ratedArenaBotCount = 0;
