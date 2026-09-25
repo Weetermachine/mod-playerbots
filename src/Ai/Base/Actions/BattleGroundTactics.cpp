@@ -2792,42 +2792,11 @@ bool BGTactics::selectObjective(bool reset)
                     goTo(EY_NodePositions[threatened >= 0 ? uint32(threatened) : owned[bot->GetGUID().GetCounter() % owned.size()]], 8.0f);
             }
 
-            // --- PRIORITY 1b (node guard): hold one of our towers ---
-            // Stock defenders only defend a tower as their last option (after chasing/supporting carriers
-            // and the flag), half the time, and a 20% "nearby enemy" roll pulls them off on every re-roll.
-            // EotS towers are captured by standing in range, so a guard present blocks the capture.
-            if (!foundObjective && isDefender && BGTacticArms::IsOn(bg, team, BGTactic::NodeGuard))
-            {
-                TeamId const enemyTeam = team == TEAM_ALLIANCE ? TEAM_HORDE : TEAM_ALLIANCE;
-                std::vector<uint32> owned;
-                int32 threatened = -1;  // node id (Fel Reaver is 0), -1 = none
-                float threatenedDist = FLT_MAX;
-                for (auto const& [nodeId, _, __] : EY_AttackObjectives)
-                {
-                    if (!IsOwned(nodeId) || !EY_NodePositions.contains(nodeId))
-                        continue;
-                    owned.push_back(nodeId);
-                    Position const& p = EY_NodePositions[nodeId];
-                    float dist = bot->GetDistance(p);
-                    if (dist < threatenedDist && getPlayersInArea(enemyTeam, p, 40.0f))
-                    {
-                        threatenedDist = dist;
-                        threatened = int32(nodeId);
-                    }
-                }
-
-                // nearest tower with enemies at it; otherwise a fixed tower per bot so guards spread out
-                if (!owned.empty())
-                {
-                    uint32 chosen = threatened >= 0 ? uint32(threatened) : owned[bot->GetGUID().GetCounter() % owned.size()];
-                    Position const& p = EY_NodePositions[chosen];
-                    float rx, ry, rz;
-                    bot->GetRandomPoint(p, 8.0f, rx, ry, rz);
-                    rz = bot->GetMap()->GetHeight(rx, ry, rz);
-                    pos.Set(rx, ry, rz, bot->GetMapId());
-                    foundObjective = true;
-                }
-            }
+            // Tower guards (NodeGuard in EotS arms, v3): defenders keep the stock flag duties first (chase the
+            // enemy carrier, escort ours, take the flag) - that is how bots win EotS, and v1, which put
+            // towers first, lost 39-61 with half the flag caps. Guards only skip the random impulses, and
+            // their fallback is always a tower: the nearest threatened one, else a front tower by GUID.
+            bool const towerGuard = isDefender && BGTacticArms::IsOn(bg, team, BGTactic::NodeGuard);
 
             // --- PRIORITY 2: Nearby unowned contested node ---
             if (!foundObjective)
@@ -2854,7 +2823,7 @@ bool BGTactics::selectObjective(bool reset)
             }
 
             // --- PRIORITY 3: Random nearby enemy (20%) ---
-            if (!foundObjective && urand(0, 99) < 20)
+            if (!foundObjective && !towerGuard && urand(0, 99) < 20)
             {
                 if (Unit* enemy = AI_VALUE(Unit*, "enemy player target"))
                 {
@@ -2867,7 +2836,7 @@ bool BGTactics::selectObjective(bool reset)
             }
 
             // --- PRIORITY 4: Defender Logic ---
-            if (!foundObjective && isDefender && urand(0, 99) <= 80)
+            if (!foundObjective && isDefender && (towerGuard || urand(0, 99) <= 80))
             {
                 // 1. Chase enemy flag carrier
                 if (Unit* enemyFC = AI_VALUE(Unit*, "enemy flag carrier"))
@@ -2898,6 +2867,41 @@ bool BGTactics::selectObjective(bool reset)
                     if (GameObject* flag = bg->GetBGObject(BG_EY_OBJECT_FLAG_NETHERSTORM); flag && flag->isSpawned())
                     {
                         pos.Set(flag->GetPositionX(), flag->GetPositionY(), flag->GetPositionZ(), flag->GetMapId());
+                        foundObjective = true;
+                    }
+                }
+
+                // 4. Tower guard: nearest owned tower with enemies at it, else a front tower (else any
+                //    owned tower) picked by GUID, so guards spread out
+                if (!foundObjective && towerGuard)
+                {
+                    TeamId const enemyTeam = team == TEAM_ALLIANCE ? TEAM_HORDE : TEAM_ALLIANCE;
+                    std::vector<uint32> owned, ownedFront;
+                    int32 threatened = -1;  // node id (Fel Reaver is 0), -1 = none
+                    float threatenedDist = FLT_MAX;
+                    for (auto const& [nodeId, _, __] : EY_AttackObjectives)
+                    {
+                        if (!IsOwned(nodeId) || !EY_NodePositions.contains(nodeId))
+                            continue;
+                        owned.push_back(nodeId);
+                        if (std::get<0>(front[0]) == nodeId || std::get<0>(front[1]) == nodeId)
+                            ownedFront.push_back(nodeId);
+                        Position const& p = EY_NodePositions[nodeId];
+                        float dist = bot->GetDistance(p);
+                        if (dist < threatenedDist && getPlayersInArea(enemyTeam, p, 40.0f))
+                        {
+                            threatenedDist = dist;
+                            threatened = int32(nodeId);
+                        }
+                    }
+                    std::vector<uint32> const& pool = ownedFront.empty() ? owned : ownedFront;
+                    if (!pool.empty())
+                    {
+                        uint32 chosen = threatened >= 0 ? uint32(threatened) : pool[bot->GetGUID().GetCounter() % pool.size()];
+                        float rx, ry, rz;
+                        bot->GetRandomPoint(EY_NodePositions[chosen], 8.0f, rx, ry, rz);
+                        rz = bot->GetMap()->GetHeight(rx, ry, rz);
+                        pos.Set(rx, ry, rz, bot->GetMapId());
                         foundObjective = true;
                     }
                 }
