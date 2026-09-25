@@ -10,9 +10,15 @@
 //   Logger.playerbots.bgevents=4,BGEvents
 
 #include <mutex>
+#include <sstream>
+#include <string>
 #include <unordered_map>
 
 #include "Battleground.h"
+#include "BattlegroundAB.h"
+#include "BattlegroundAV.h"
+#include "BattlegroundEY.h"
+#include "BattlegroundIC.h"
 #include "BattlegroundWS.h"
 #include "Config.h"
 #include "Log.h"
@@ -125,12 +131,18 @@ public:
     {
     }
 
-    // WSG objective events: logs a "wsg" line whenever either flag's state, either carrier, or
-    // the score changes (pickups, drops, returns, captures). Only compares a few fields per tick.
+    // Objective events. WSG: a "wsg" line whenever either flag's state, either carrier, or the score
+    // changes (pickups, drops, returns, captures). Other BGs: an "obj" line whenever a node, flag or
+    // carrier changes, plus a score heartbeat every 30 s. Only compares a few fields per tick.
     void OnBattlegroundUpdate(Battleground* bg, uint32 /*diff*/) override
     {
-        if (bg->GetBgTypeID() != BATTLEGROUND_WS || bg->GetStatus() != STATUS_IN_PROGRESS || !BGEventLogEnabled())
+        if (bg->GetStatus() != STATUS_IN_PROGRESS || !BGEventLogEnabled())
             return;
+        if (bg->GetBgTypeID() != BATTLEGROUND_WS)
+        {
+            LogObjectives(bg);
+            return;
+        }
         BattlegroundWS* ws = dynamic_cast<BattlegroundWS*>(bg);
         if (!ws)
             return;
@@ -163,8 +175,141 @@ public:
     {
         std::lock_guard<std::mutex> guard(wsgStateLock);
         wsgStates.erase(bg->GetInstanceID());
+        objStates.erase(bg->GetInstanceID());
     }
 
+private:
+    struct ObjState
+    {
+        std::string objectives;  // node/flag/carrier part; any change is logged at once
+        int32 score[2] = {-1, -1};
+        uint32 lastLogMs = 0;
+    };
+    std::unordered_map<uint32, ObjState> objStates;  // guarded by wsgStateLock
+
+    static constexpr uint32 SCORE_HEARTBEAT_MS = 30000;
+
+    static char Owner(TeamId team) { return team == TEAM_ALLIANCE ? 'A' : team == TEAM_HORDE ? 'H' : 'N'; }
+
+    // Builds " key=value ..." for the BG's objectives and fills score[] (resources/reinforcements).
+    // Returns false for BG types without objective logging.
+    static bool DescribeObjectives(Battleground* bg, std::string& out, int32 score[2])
+    {
+        std::ostringstream s;
+        switch (bg->GetBgTypeID())
+        {
+            case BATTLEGROUND_AB:
+            {
+                BattlegroundAB* ab = dynamic_cast<BattlegroundAB*>(bg);
+                if (!ab)
+                    return false;
+                // Node state: N neutral, A/H occupied, a/h assaulted (contested) by that faction.
+                static char const* names[BG_AB_DYNAMIC_NODES_COUNT] = {"stables", "blacksmith", "farm", "lumbermill",
+                                                                        "goldmine"};
+                static char const codes[] = {'N', 'A', 'H', 'a', 'h'};
+                for (uint32 i = 0; i < BG_AB_DYNAMIC_NODES_COUNT; ++i)
+                {
+                    uint8 st = ab->GetCapturePointInfo(i)._state;
+                    s << ' ' << names[i] << '=' << (st < sizeof(codes) ? codes[st] : '?');
+                }
+                score[0] = bg->GetTeamScore(TEAM_ALLIANCE);
+                score[1] = bg->GetTeamScore(TEAM_HORDE);
+                break;
+            }
+            case BATTLEGROUND_EY:
+            {
+                BattlegroundEY* ey = dynamic_cast<BattlegroundEY*>(bg);
+                if (!ey)
+                    return false;
+                static char const* names[EY_POINTS_MAX] = {"felreaver", "bloodelf", "draenei", "magetower"};
+                for (uint32 i = 0; i < EY_POINTS_MAX; ++i)
+                    s << ' ' << names[i] << '=' << Owner(ey->GetCapturePointInfo(i)._ownerTeamId);
+                uint8 fs = ey->GetFlagState();
+                s << " flag="
+                  << (fs == BG_EY_FLAG_STATE_ON_BASE     ? "base"
+                      : fs == BG_EY_FLAG_STATE_ON_PLAYER ? "carried"
+                      : fs == BG_EY_FLAG_STATE_ON_GROUND ? "ground"
+                                                         : "wait")
+                  << " keeper=" << ey->GetFlagPickerGUID().GetCounter();
+                score[0] = bg->GetTeamScore(TEAM_ALLIANCE);
+                score[1] = bg->GetTeamScore(TEAM_HORDE);
+                break;
+            }
+            case BATTLEGROUND_AV:
+            {
+                BattlegroundAV* av = dynamic_cast<BattlegroundAV*>(bg);
+                if (!av)
+                    return false;
+                // Node: owner letter + state digit (0 neutral, 1 assaulted, 2 destroyed, 3 controlled).
+                static char const* names[BG_AV_NODES_MAX] = {"aidstation", "stormpikegy", "stoneheartgy", "snowfallgy",
+                                                              "icebloodgy", "frostwolfgy", "frostwolfhut", "dbsouth",
+                                                              "dbnorth", "icewing", "stoneheart", "icebloodtower",
+                                                              "towerpoint", "fwEast", "fwWest"};
+                for (uint32 i = 0; i < BG_AV_NODES_MAX; ++i)
+                {
+                    BG_AV_NodeInfo const& n = av->GetAVNodeInfo(i);
+                    s << ' ' << names[i] << '=' << Owner(n.OwnerId) << uint32(n.State);
+                }
+                s << " captain_a=" << (av->IsCaptainAlive(TEAM_ALLIANCE) ? 1 : 0)
+                  << " captain_h=" << (av->IsCaptainAlive(TEAM_HORDE) ? 1 : 0)
+                  << " mine_n=" << Owner(av->GetMineOwner(0)) << " mine_s=" << Owner(av->GetMineOwner(1));
+                score[0] = av->GetTeamReinforcements(TEAM_ALLIANCE);
+                score[1] = av->GetTeamReinforcements(TEAM_HORDE);
+                break;
+            }
+            case BATTLEGROUND_IC:
+            {
+                BattlegroundIC* ic = dynamic_cast<BattlegroundIC*>(bg);
+                if (!ic)
+                    return false;
+                // Node: N uncontrolled, a/h in conflict (being taken by), A/H controlled.
+                static char const* names[MAX_NODE_TYPES] = {"refinery", "quarry", "docks", "hangar", "workshop",
+                                                             "gy_alliance", "gy_horde"};
+                static char const codes[] = {'N', 'a', 'h', 'A', 'H'};
+                for (uint8 i = 0; i < MAX_NODE_TYPES; ++i)
+                {
+                    uint32 st = ic->GetNodeState(i);
+                    s << ' ' << names[i] << '=' << (st < sizeof(codes) ? codes[st] : '?');
+                }
+                score[0] = ic->GetTeamReinforcements(TEAM_ALLIANCE);
+                score[1] = ic->GetTeamReinforcements(TEAM_HORDE);
+                break;
+            }
+            default:
+                return false;
+        }
+        out = s.str();
+        return true;
+    }
+
+    void LogObjectives(Battleground* bg)
+    {
+        std::string objectives;
+        int32 score[2] = {0, 0};
+        if (!DescribeObjectives(bg, objectives, score))
+            return;
+
+        uint32 now = getMSTime();
+        {
+            std::lock_guard<std::mutex> guard(wsgStateLock);
+            ObjState& last = objStates[bg->GetInstanceID()];
+            bool changed = objectives != last.objectives;
+            bool scoreDue = (score[0] != last.score[0] || score[1] != last.score[1]) &&
+                            GetMSTimeDiff(last.lastLogMs, now) >= SCORE_HEARTBEAT_MS;
+            if (!changed && !scoreDue && last.lastLogMs != 0)
+                return;
+            last.objectives = objectives;
+            last.score[0] = score[0];
+            last.score[1] = score[1];
+            last.lastLogMs = now;
+        }
+
+        LOG_INFO("playerbots.bgevents", "event=obj bg={} type={} bg_ms={} score_a={} score_h={}{} A={} H={}",
+                 bg->GetInstanceID(), uint32(bg->GetBgTypeID()), bg->GetStartTime(), score[0], score[1], objectives,
+                 bg->GetPlayersCountByTeam(TEAM_ALLIANCE), bg->GetPlayersCountByTeam(TEAM_HORDE));
+    }
+
+public:
     void OnBattlegroundStart(Battleground* bg) override
     {
         if (BGEventLogEnabled())
