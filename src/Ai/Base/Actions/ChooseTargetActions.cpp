@@ -36,14 +36,16 @@ bool AttackEnemyFlagCarrierAction::isUseful()
 
     // WSG FC chase: let other bots on this team go after the enemy FC, not only our own FC.
     // "enemy flagcarrier near" already skips this when another enemy is much closer. This runs
-    // above every heal and attack, so healers are left out (they kept switching to the FC instead
-    // of healing) and the FC must be close: at 100 yd melee dropped fights they were winning to
-    // chase a carrier running at full speed.
+    // above every heal and attack, so the FC must be close (at 100 yd melee dropped fights they
+    // were winning to chase a carrier running at full speed), and healers only finish off an FC
+    // that is nearly dead (otherwise they kept switching to the FC instead of healing).
     if (bot->GetBattlegroundTypeId() != BATTLEGROUND_WS || !sPlayerbotAIConfig.wsgFCChase[bot->GetBgTeamId()])
         return false;
 
-    return !PlayerbotAI::IsHeal(bot) &&
-           ServerFacade::instance().IsDistanceLessOrEqualThan(ServerFacade::instance().GetDistance2d(bot, target), 40.0f);
+    if (!ServerFacade::instance().IsDistanceLessOrEqualThan(ServerFacade::instance().GetDistance2d(bot, target), 40.0f))
+        return false;
+
+    return !PlayerbotAI::IsHeal(bot) || target->GetHealthPct() <= 10.0f;
 }
 
 bool AggressiveTargetAction::isUseful()
