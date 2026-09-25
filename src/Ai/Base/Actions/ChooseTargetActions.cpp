@@ -34,9 +34,16 @@ bool AttackEnemyFlagCarrierAction::isUseful()
     if (PlayerHasFlag::IsCapturingFlag(bot))
         return true;
 
-    // WSG FC chase: let every bot on this team go after the enemy FC, not only our own FC.
-    // "enemy flagcarrier near" already skips this when another enemy is much closer.
-    return bot->GetBattlegroundTypeId() == BATTLEGROUND_WS && sPlayerbotAIConfig.wsgFCChase[bot->GetBgTeamId()];
+    // WSG FC chase: let other bots on this team go after the enemy FC, not only our own FC.
+    // "enemy flagcarrier near" already skips this when another enemy is much closer. This runs
+    // above every heal and attack, so healers are left out (they kept switching to the FC instead
+    // of healing) and the FC must be close: at 100 yd melee dropped fights they were winning to
+    // chase a carrier running at full speed.
+    if (bot->GetBattlegroundTypeId() != BATTLEGROUND_WS || !sPlayerbotAIConfig.wsgFCChase[bot->GetBgTeamId()])
+        return false;
+
+    return !PlayerbotAI::IsHeal(bot) &&
+           ServerFacade::instance().IsDistanceLessOrEqualThan(ServerFacade::instance().GetDistance2d(bot, target), 40.0f);
 }
 
 bool AggressiveTargetAction::isUseful()
