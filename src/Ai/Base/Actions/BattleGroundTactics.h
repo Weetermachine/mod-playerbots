@@ -132,6 +132,8 @@ private:
     // 1: moving along a complete route; -1: on a route but nothing to do this tick (let other actions run, e.g.
     // the mount cast); 0: no complete route (the stock waypoint paths take over)
     int moveDirectRoute(bool evade = false);
+    // SmoothMove: while moving along a direct route, send the next hop before the current one ends
+    bool smoothContinue();
     void tripSample();
     bool allocatorObjective(PositionInfo& out);
     bool selectObjectiveWp(std::vector<BattleBotPath*> const& vPaths);

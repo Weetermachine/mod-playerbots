@@ -34,6 +34,10 @@ enum class BGTactic : uint8
     ChaseStagger = 14,   // with FCChase (WSG): one slow/stun at a time on the enemy carrier, the next near its end
     FCEvade = 15,        // WSG/EotS: our flag carrier takes a danger-weighted route; escorts walk ahead on it
     EscortStick = 16,    // WSG/EotS: escorts keep up with our carrier through fights not aimed at it
+    DirectTime = 17,     // with DirectPath: routes minimise travel time (indoor stretches, no mount, cost 2x)
+    SmoothMove = 18,     // with DirectPath: the next hop is sent before the current one ends (no stops)
+    DirectSafe = 19,     // with DirectPath: routes mildly avoid enemies ahead
+    GroupMove = 20,      // with Allocator: attack/defend groups gather and travel together
 };
 
 // Per-game A/B arms. With AiPlayerbot.BGTactics.<BG>.Arms set (e.g.

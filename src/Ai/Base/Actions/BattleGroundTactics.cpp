@@ -12,6 +12,7 @@
 #include <chrono>
 #include <cmath>
 #include <mutex>
+#include <shared_mutex>
 #include <unordered_map>
 
 #include "ArenaTeam.h"
@@ -34,7 +35,9 @@
 #include "GameObject.h"
 #include "DetourNavMeshQuery.h"
 #include "IVMapMgr.h"
+#include "Map.h"
 #include "MapDefines.h"
+#include "ObjectAccessor.h"
 #include "PathGenerator.h"
 #include "Playerbots.h"
 #include "PositionValue.h"
@@ -1675,7 +1678,7 @@ bool BGTactics::Execute(Event /*event*/)
             return false;
 
         if (bot->isMoving())
-            return false;
+            return smoothContinue();
 
         if (!bot->IsStopped())
             return false;
@@ -3554,10 +3557,36 @@ void DirectStat(BattlegroundTypeId t, uint32 kind)
 // each living enemy (sigma 20 yd); enemies within 15 yd of the carrier are chasers the route cannot avoid and are
 // left to speed and escorts. Friendly players near a stretch cancel part of its danger (the carrier prefers ground
 // its team holds). The cost never drops below the length, so the search stays exact.
+// Indoor lookup for route costs (DirectTime): a 5 yd x 5 yd x 8 yd cell grid per map, filled on first use from the
+// terrain data (vmap area info), then read from the cache. Static geometry: never invalidated.
+std::shared_mutex indoorLock;
+std::unordered_map<uint64, bool> indoorCells;
+
+bool IndoorAt(Map* map, float x, float y, float z)
+{
+    int32 const cx = int32(std::floor(x / 5.0f)), cy = int32(std::floor(y / 5.0f)), cz = int32(std::floor(z / 8.0f));
+    uint64 const key = (uint64(map->GetId()) << 48) ^ (uint64(uint16(cx)) << 32) ^ (uint64(uint16(cy)) << 16) ^
+                       uint64(uint16(cz));
+    {
+        std::shared_lock<std::shared_mutex> guard(indoorLock);
+        auto it = indoorCells.find(key);
+        if (it != indoorCells.end())
+            return it->second;
+    }
+    PositionFullTerrainStatus st;
+    map->GetFullTerrainStatusForPosition(PHASEMASK_NORMAL, cx * 5.0f + 2.5f, cy * 5.0f + 2.5f, z + 1.0f, 2.0f, st);
+    bool const indoor = !st.outdoors;
+    std::unique_lock<std::shared_mutex> guard(indoorLock);
+    indoorCells[key] = indoor;
+    return indoor;
+}
+
 class ThreatFilter : public dtQueryFilter
 {
 public:
     std::vector<G3D::Vector3> enemies, friends;
+    float threatWeight = 3.0f;  // evasive carrier 3; DirectSafe 0.7
+    Map* timeMap = nullptr;     // DirectTime: indoor stretches (no mount) cost double
 
     float getCost(float const* pa, float const* pb, dtPolyRef const prevRef, dtMeshTile const* prevTile,
                   dtPoly const* prevPoly, dtPolyRef const curRef, dtMeshTile const* curTile, dtPoly const* curPoly,
@@ -3579,7 +3608,10 @@ public:
             if (d2 < 3600.0f)
                 cover += 0.4f * std::exp(-d2 / 800.0f);
         }
-        return base * std::max(1.0f, 1.0f + 3.0f * danger - std::min(cover, 1.5f));
+        float mult = std::max(1.0f, 1.0f + threatWeight * danger - std::min(cover, 1.5f));
+        if (timeMap && IndoorAt(timeMap, mx, my, (pa[1] + pb[1]) * 0.5f))
+            mult *= 2.0f;
+        return base * mult;
     }
 };
 
@@ -3758,6 +3790,7 @@ struct AllocTeam
     uint32 builtMs = 0;
     std::unordered_map<ObjectGuid, AllocAssign> assign;
     uint32 attack[2] = {0, 0};  // attack targets (node index + 1), kept while still worth attacking
+    std::unordered_map<uint32, uint32> groupHold;  // GroupMove: slot key -> when its leader started waiting
     std::unordered_map<uint32, uint32> defendUntil;  // defend slot key -> kept raised until (enemies left)
 };
 
@@ -4258,6 +4291,55 @@ bool BGTactics::allocatorObjective(PositionInfo& out)
         if (it == plan.assign.end())
             return false;  // flag carrier or floater: the stock code
         a = it->second;
+
+        // Group movement (GroupMove): a group slot (attack, defend, recover; 3+ bots) travels together. The leader
+        // (lowest guid alive) waits up to 8 s, while over 60 yd from the target, until half the group is within 25 yd;
+        // the others, while over 50 yd from the target, follow 4 yd behind the leader.
+        uint32 const kind = a.key >> 8;
+        if (BGTacticArms::IsOn(bg, team, BGTactic::GroupMove) && (kind == AK_ATTACK || kind == AK_DEFEND || kind == AK_RECOVER))
+        {
+            std::vector<Player*> group;
+            for (auto const& [guid, as] : plan.assign)
+                if (as.key == a.key)
+                    if (Player* p = ObjectAccessor::FindPlayer(guid); p && p->IsAlive() && p->GetMapId() == bot->GetMapId())
+                        group.push_back(p);
+            if (group.size() >= 3)
+            {
+                Player* leader = *std::min_element(group.begin(), group.end(), [](Player* x, Player* y)
+                                                   { return x->GetGUID().GetCounter() < y->GetGUID().GetCounter(); });
+                float const tx = a.pos.GetPositionX(), ty = a.pos.GetPositionY();
+                if (leader == bot)
+                {
+                    uint32 near = 0;
+                    for (Player* p : group)
+                        near += bot->GetExactDist2d(p) < 25.0f;
+                    uint32& hold = plan.groupHold[a.key];
+                    if (bot->GetExactDist2d(tx, ty) > 60.0f && near * 2 < group.size() &&
+                        (!hold || getMSTimeDiff(hold, now) < 8 * IN_MILLISECONDS))
+                    {
+                        if (!hold)
+                            hold = now;
+                        out.Set(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), bot->GetMapId());
+                        return true;  // wait here for the group
+                    }
+                    if (near * 2 >= group.size())
+                        hold = 0;
+                }
+                else if (bot->GetExactDist2d(tx, ty) > 50.0f && bot->GetExactDist2d(leader) > 10.0f)
+                {
+                    float const dx = bot->GetPositionX() - leader->GetPositionX();
+                    float const dy = bot->GetPositionY() - leader->GetPositionY();
+                    float const d = std::max(0.1f, std::hypot(dx, dy));
+                    float const fx = leader->GetPositionX() + dx / d * 4.0f, fy = leader->GetPositionY() + dy / d * 4.0f;
+                    float fz = leader->GetPositionZ();
+                    float const h = bot->GetMap()->GetHeight(fx, fy, fz + 3.0f);
+                    if (h > INVALID_HEIGHT && std::abs(h - fz) < 10.0f)
+                        fz = h;
+                    out.Set(fx, fy, fz, bot->GetMapId());
+                    return true;
+                }
+            }
+        }
     }
     AllocLogStats();
 
@@ -4286,7 +4368,7 @@ struct Trip
 {
     float ox = 0, oy = 0, sx = 0, sy = 0;
     uint32 startMs = 0, lastMs = 0, busyMs = 0;
-    uint32 samples = 0, mounted = 0;
+    uint32 samples = 0, mounted = 0, indoor = 0;
     bool direct = false;
     bool arrived = false;  // reached; the next objective starts a new trip without giving this one up
 };
@@ -4295,7 +4377,7 @@ struct TripStats
 {
     uint32 done = 0, given = 0;
     double dist = 0, sec = 0, busySec = 0;
-    uint32 samples = 0, mounted = 0;
+    uint32 samples = 0, mounted = 0, indoor = 0;
 };
 
 std::mutex tripLock;
@@ -4320,10 +4402,11 @@ void TripLog(uint32 now)  // needs tripLock
             TripStats& s = tripStats[b][d];
             if (s.done + s.given)
                 LOG_INFO("module",
-                         "Trips {} {} (5 min): finished {} given up {} ({:.0f}%), {:.1f} yd/s, mounted {:.0f}%, busy {:.0f}%, "
+                         "Trips {} {} (5 min): finished {} given up {} ({:.0f}%), {:.1f} yd/s, mounted {:.0f}%, indoors {:.0f}%, busy {:.0f}%, "
                          "avg {:.0f} yd in {:.1f} s",
                          names[b], d ? "direct" : "stock", s.done, s.given, 100.0 * s.given / (s.done + s.given),
                          s.sec > 0 ? s.dist / s.sec : 0.0, s.samples ? 100.0 * s.mounted / s.samples : 0.0,
+                         s.samples ? 100.0 * s.indoor / s.samples : 0.0,
                          s.sec > 0 ? 100.0 * s.busySec / s.sec : 0.0, s.done ? s.dist / s.done : 0.0,
                          s.done ? s.sec / s.done : 0.0);
             s = TripStats();
@@ -4424,6 +4507,7 @@ void BGTactics::tripSample()
     t.lastMs = now;
     ++t.samples;
     t.mounted += bot->IsMounted();
+    t.indoor += !bot->IsOutdoors();
     if (!t.arrived && bot->GetExactDist2d(t.ox, t.oy) < 10.0f)
     {
         float const dist = std::hypot(t.ox - t.sx, t.oy - t.sy);
@@ -4436,6 +4520,7 @@ void BGTactics::tripSample()
             s.busySec += t.busyMs / 1000.0;
             s.samples += t.samples;
             s.mounted += t.mounted;
+            s.indoor += t.indoor;
         }
         start();  // parked at the objective until it changes
         t.arrived = true;
@@ -4486,7 +4571,10 @@ int BGTactics::moveDirectRoute(bool evade)
     }
 
     // an evasive carrier re-plans every 2.5 s as the enemies move
-    if (!sameObjective || offRoute || getMSTimeDiff(r.builtMs, now) > (evade ? 2500u : 30u * IN_MILLISECONDS))
+    bool const timeCost = BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::DirectTime);
+    bool const safe = !evade && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::DirectSafe);
+    uint32 const rebuildMs = evade ? 2500u : safe ? 10u * IN_MILLISECONDS : 30u * IN_MILLISECONDS;
+    if (!sameObjective || offRoute || getMSTimeDiff(r.builtMs, now) > rebuildMs)
     {
         // no complete route: the result is kept for 10 s (the stock waypoints run meanwhile), not searched
         // again every tick
@@ -4532,26 +4620,33 @@ int BGTactics::moveDirectRoute(bool evade)
         r.builtMs = r.progressMs = now;
         r.bestDist = dist;
         ThreatFilter threat;
-        if (evade)
+        bool const custom = evade || safe || timeCost;
+        if (custom)
         {
             threat.setIncludeFlags(NAV_GROUND | NAV_WATER | NAV_MAGMA);
             threat.setExcludeFlags(0);
-            for (auto const& ref : bg->GetBgMap()->GetPlayers())
-            {
-                Player* p = ref.GetSource();
-                if (!p || p == bot || !p->IsAlive())
-                    continue;
-                G3D::Vector3 const v(p->GetPositionX(), p->GetPositionY(), p->GetPositionZ());
-                if (p->GetTeamId() == bot->GetTeamId())
-                    threat.friends.push_back(v);
-                else if (bot->GetExactDist2d(p) > 15.0f)  // chasers right behind: the route cannot avoid them
-                    threat.enemies.push_back(v);
-            }
+            threat.threatWeight = evade ? 3.0f : safe ? 0.7f : 0.0f;
+            threat.timeMap = timeCost ? bot->GetMap() : nullptr;
+            if (evade || safe)
+                for (auto const& ref : bg->GetBgMap()->GetPlayers())
+                {
+                    Player* p = ref.GetSource();
+                    if (!p || p == bot || !p->IsAlive())
+                        continue;
+                    G3D::Vector3 const v(p->GetPositionX(), p->GetPositionY(), p->GetPositionZ());
+                    if (p->GetTeamId() == bot->GetTeamId())
+                    {
+                        if (evade)
+                            threat.friends.push_back(v);
+                    }
+                    else if (bot->GetExactDist2d(p) > 15.0f)  // chasers right behind: the route cannot avoid them
+                        threat.enemies.push_back(v);
+                }
         }
         auto const t0 = std::chrono::steady_clock::now();
         r.complete = BuildDirectRoute(bot->GetMap(),
                                       G3D::Vector3(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()),
-                                      G3D::Vector3(pos.x, pos.y, pos.z), r.pts, evade ? &threat : nullptr);
+                                      G3D::Vector3(pos.x, pos.y, pos.z), r.pts, custom ? &threat : nullptr);
         uint32 const us = uint32(
             std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t0).count());
         directSearchUs += us;
@@ -4678,6 +4773,46 @@ int BGTactics::moveDirectRoute(bool evade)
     // a refused move (still waiting for the last one) is retried next tick, and meanwhile other actions run;
     // standing on the hop target with the move refused would stall, so the stock code runs instead
     return moved ? 1 : bot->GetExactDist2d(r.pts[target].x, r.pts[target].y) > 3.0f ? -1 : 0;
+}
+
+// Smooth movement (SmoothMove): a bot moving along a direct route within 8 yd of its hop target gets the next hop
+// now, instead of stopping at the target and waiting for the next tick. The pending move's wait is cleared so the new
+// move is not refused.
+bool BGTactics::smoothContinue()
+{
+    Battleground* bg = bot->GetBattleground();
+    if (!bg || !BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SmoothMove) ||
+        !BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::DirectPath))
+        return false;
+    G3D::Vector3 dest;
+    {
+        std::lock_guard<std::mutex> guard(directRouteLock);
+        auto it = directRoutes.find(bot->GetGUID());
+        if (it == directRoutes.end())
+            return false;
+        DirectRoute& r = it->second;
+        if (!r.complete || r.instanceId != bg->GetInstanceID() || r.next + 1 >= r.pts.size() ||
+            bot->GetExactDist2d(r.pts[r.next].x, r.pts[r.next].y) > 8.0f)
+            return false;
+        size_t const from = r.next + 1;
+        size_t target = from;
+        float along = (r.pts[from] - r.pts[r.next]).length();
+        while (target + 1 < r.pts.size())
+        {
+            float const leg = (r.pts[target] - r.pts[target + 1]).length();
+            if (along + leg > 40.0f)
+                break;
+            along += leg;
+            ++target;
+        }
+        if (target + 1 == r.pts.size())
+            return false;  // the last hop (to the objective itself) goes through the normal path
+        r.hopFrom = from;
+        r.next = target;
+        dest = r.pts[target];
+    }
+    AI_VALUE(LastMovement&, "last movement").lastdelayTime = 0;
+    return MoveTo(bot->GetMapId(), dest.x, dest.y, dest.z);
 }
 
 bool BGTactics::moveToObjective(bool ignoreDist)
