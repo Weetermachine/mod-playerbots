@@ -3575,7 +3575,7 @@ bool BGTactics::moveDirectRoute()
                                       G3D::Vector3(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()),
                                       G3D::Vector3(pos.x, pos.y, pos.z), r.pts);
         // the route has to end at the objective, not somewhere near it
-        if (r.complete && r.pts.back().distance(G3D::Vector3(pos.x, pos.y, pos.z)) > 6.0f)
+        if (r.complete && (r.pts.back() - G3D::Vector3(pos.x, pos.y, pos.z)).length() > 6.0f)
             r.complete = false;
         r.next = r.pts.size() > 1 ? 1 : 0;
         DirectStat(bgType, r.complete ? 0 : 1);
@@ -3604,7 +3604,7 @@ bool BGTactics::moveDirectRoute()
     float along = bot->GetExactDist(r.pts[r.next].x, r.pts[r.next].y, r.pts[r.next].z);
     while (target + 1 < r.pts.size())
     {
-        float const leg = r.pts[target].distance(r.pts[target + 1]);
+        float const leg = (r.pts[target] - r.pts[target + 1]).length();
         if (along + leg > 40.0f)
             break;
         along += leg;
