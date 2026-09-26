@@ -5775,6 +5775,8 @@ bool BGTactics::catchEnemyFC()
     }
 
     Battleground* bg = bot->GetBattleground();
+    if (bg && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::ChaseV3))
+        return chaseV3Control(fc);
     if (bg && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::ChaseStagger))
         return staggeredSlow(fc);
 
@@ -5799,6 +5801,79 @@ namespace
 std::mutex slowClaimLock;
 std::unordered_map<ObjectGuid, std::pair<ObjectGuid, uint32>> slowClaims;  // carrier -> (bot, claimed until)
 }  // namespace
+
+// Chase v3 (arm ChaseV3): everyone keeps trying (a missed, dodged or resisted slow is covered by the next chaser),
+// but per kind of effect: a stun is tried unless the carrier is already stunned (a slowed carrier still reaches its
+// capture point, a stunned one does not); a slow or root unless it is already slowed, rooted or stunned. Cast-time
+// crowd control (frostbolt, entangling roots) is started like the rest and cancelled when someone else's effect
+// lands during the cast. Every call also counts whether the carrier is under control, for the log.
+static char const* const FC_STUNS[] = {"kidney shot", "hammer of justice", "concussion blow", "bash"};
+static char const* const FC_SLOWS_V3[] = {"hamstring", "chains of ice", "wing clip", "frost shock", "concussive shot", "slow"};
+static char const* const FC_CAST_CC[] = {"frostbolt", "entangling roots"};
+
+namespace
+{
+std::atomic<uint32> chaseSamples{0}, chaseControlled{0}, chaseCasts{0}, chaseCancels{0}, chaseLogMs{0};
+
+int32 LongestAura(Unit* u, AuraType type)
+{
+    int32 left = 0;
+    for (AuraEffect const* eff : u->GetAuraEffectsByType(type))
+    {
+        int32 const d = eff->GetBase()->GetDuration();
+        left = d < 0 ? INT32_MAX : std::max(left, d);
+    }
+    return left;
+}
+}  // namespace
+
+bool BGTactics::chaseV3Control(Unit* fc)
+{
+    bool const stunned = LongestAura(fc, SPELL_AURA_MOD_STUN) > 800;
+    bool const slowed = LongestAura(fc, SPELL_AURA_MOD_DECREASE_SPEED) > 1000 || LongestAura(fc, SPELL_AURA_MOD_ROOT) > 1000;
+
+    ++chaseSamples;
+    chaseControlled += stunned || slowed;
+    uint32 const now = getMSTime();
+    uint32 last = chaseLogMs.load();
+    if (!last)
+        chaseLogMs.compare_exchange_strong(last, now);
+    else if (getMSTimeDiff(last, now) > 5 * MINUTE * IN_MILLISECONDS && chaseLogMs.compare_exchange_strong(last, now))
+    {
+        uint32 const n = chaseSamples.exchange(0), c = chaseControlled.exchange(0);
+        LOG_INFO("module", "Chase v3 (5 min): enemy carrier slowed/rooted/stunned in {:.0f}% of {} chase samples; "
+                 "cast-time CC started {}, cancelled {}", n ? 100.0 * c / n : 0.0, n, chaseCasts.exchange(0),
+                 chaseCancels.exchange(0));
+    }
+
+    // our cast-time CC on the carrier: cancel it when someone else's effect landed meanwhile
+    if (Spell* cur = bot->GetCurrentSpell(CURRENT_GENERIC_SPELL))
+        if (cur->m_targets.GetUnitTarget() == fc && (stunned || slowed))
+            for (char const* spell : FC_CAST_CC)
+                if (uint32 const id = AI_VALUE2(uint32, "spell id", spell); id && cur->m_spellInfo->Id == id)
+                {
+                    bot->InterruptNonMeleeSpells(false);
+                    ++chaseCancels;
+                    return false;
+                }
+
+    if (!stunned)
+        for (char const* spell : FC_STUNS)
+            if (botAI->CanCastSpell(spell, fc))
+                return botAI->CastSpell(spell, fc);
+    if (stunned || slowed)
+        return false;
+    for (char const* spell : FC_SLOWS_V3)
+        if (botAI->CanCastSpell(spell, fc))
+            return botAI->CastSpell(spell, fc);
+    for (char const* spell : FC_CAST_CC)
+        if (botAI->CanCastSpell(spell, fc))
+        {
+            ++chaseCasts;
+            return botAI->CastSpell(spell, fc);
+        }
+    return false;
+}
 
 bool BGTactics::staggeredSlow(Unit* fc)
 {

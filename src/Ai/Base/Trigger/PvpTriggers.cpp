@@ -269,6 +269,12 @@ bool EnemyFlagCarrierNear::IsActive()
     return true;
 }
 
+bool FocusTargetDiffers::IsActive()
+{
+    Unit* target = FindFocusTarget(botAI);
+    return target && target != AI_VALUE(Unit*, "current target");
+}
+
 bool EscortFallingBehind::IsActive()
 {
     Battleground* bg = bot->GetBattleground();

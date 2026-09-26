@@ -48,6 +48,15 @@ public:
 
 // Escort discipline (EscortStick): one of our carrier's escorts is over 15 yd behind it, and not fighting someone who
 // is attacking the carrier
+// Focus fire (FocusFire): in a battleground fight, the team's focus target is not this bot's target
+class FocusTargetDiffers : public Trigger
+{
+public:
+    FocusTargetDiffers(PlayerbotAI* botAI) : Trigger(botAI, "focus target differs") {}
+
+    bool IsActive() override;
+};
+
 class EscortFallingBehind : public Trigger
 {
 public:

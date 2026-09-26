@@ -38,6 +38,8 @@ enum class BGTactic : uint8
     SmoothMove = 18,     // with DirectPath: the next hop is sent before the current one ends (no stops)
     DirectSafe = 19,     // with DirectPath: routes mildly avoid enemies ahead
     GroupMove = 20,      // with Allocator: attack/defend groups gather and travel together
+    ChaseV3 = 21,        // with FCChase: everyone tries; per-kind checks (stuns over slows); cast-time CC cancelled
+    FocusFire = 22,      // WSG/AB/EotS: bots in a fight converge on one enemy (carrier, healers, low health first)
 };
 
 // Per-game A/B arms. With AiPlayerbot.BGTactics.<BG>.Arms set (e.g.

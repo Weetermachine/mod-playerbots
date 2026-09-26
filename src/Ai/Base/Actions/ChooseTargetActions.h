@@ -118,6 +118,18 @@ public:
 // Nearest enemy player within range channeling a battleground banner capture (spell 21651), or nullptr.
 Unit* FindBannerCapper(PlayerbotAI* botAI, float range);
 
+// Focus fire (FocusFire): the enemy this bot should attack so that bots in the same fight converge, or nullptr.
+Unit* FindFocusTarget(PlayerbotAI* botAI);
+
+class FocusFireAction : public AttackAction
+{
+public:
+    FocusFireAction(PlayerbotAI* botAI) : AttackAction(botAI, "focus fire") {}
+
+    bool Execute(Event event) override;
+    bool isUseful() override;
+};
+
 class DropTargetAction : public Action
 {
 public:

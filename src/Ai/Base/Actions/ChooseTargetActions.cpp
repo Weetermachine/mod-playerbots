@@ -5,6 +5,10 @@
  */
 
 #include "ChooseTargetActions.h"
+
+#include <mutex>
+#include <unordered_map>
+
 #include "BGTacticArms.h"
 #include "BattleGroundTactics.h"
 
@@ -309,6 +313,80 @@ Unit* FindBannerCapper(PlayerbotAI* botAI, float range)
         }
     }
     return best;
+}
+
+// Focus fire (arm FocusFire): in a battleground fight, bots pick the same enemy instead of each its own. Candidates
+// are living enemy players within 35 yd in sight; each is scored: the enemy flag carrier x4, a healer x2, missing
+// health up to x2, nearer is better (1 / (1 + distance / 25)), melee bots discount targets beyond 8 yd, and every
+// teammate who picked it in the last 3 s adds half (up to x3), which is what makes a fight converge. The current
+// target keeps a 30% bonus so bots do not flip between near-equal targets. Healers keep healing.
+namespace
+{
+std::mutex focusLock;
+std::unordered_map<uint64, std::vector<std::pair<ObjectGuid, uint32>>> focusPicks;  // instance << 1 | team
+
+uint64 FocusKey(Battleground* bg, TeamId team) { return (uint64(bg->GetInstanceID()) << 1) | uint64(team == TEAM_HORDE); }
+}  // namespace
+
+Unit* FindFocusTarget(PlayerbotAI* botAI)
+{
+    Player* bot = botAI->GetBot();
+    Battleground* bg = bot->GetBattleground();
+    if (!bg || !BGTacticArms::IsOn(bg, bot->GetBgTeamId(), BGTactic::FocusFire) || PlayerbotAI::IsHeal(bot) ||
+        !bot->IsInCombat())
+        return nullptr;
+    uint32 const now = getMSTime();
+    std::unordered_map<ObjectGuid, uint32> picks;
+    {
+        std::lock_guard<std::mutex> guard(focusLock);
+        auto& v = focusPicks[FocusKey(bg, bot->GetBgTeamId())];
+        v.erase(std::remove_if(v.begin(), v.end(), [&](auto const& p) { return getMSTimeDiff(p.second, now) > 3000; }), v.end());
+        for (auto const& p : v)
+            ++picks[p.first];
+    }
+    Unit* current = botAI->GetAiObjectContext()->GetValue<Unit*>("current target")->Get();
+    Unit* enemyFC = botAI->GetAiObjectContext()->GetValue<Unit*>("enemy flag carrier")->Get();
+    bool const melee = botAI->IsMelee(bot);
+    Unit* best = nullptr;
+    float bestScore = 0.0f;
+    for (auto const& ref : bg->GetBgMap()->GetPlayers())
+    {
+        Player* p = ref.GetSource();
+        if (!p || !p->IsAlive() || p->GetBgTeamId() == bot->GetBgTeamId() || !bot->IsWithinDistInMap(p, 35.0f) ||
+            !bot->IsWithinLOSInMap(p) || !bot->CanSeeOrDetect(p))
+            continue;
+        float const dist = bot->GetDistance(p);
+        float score = (p == enemyFC ? 4.0f : 1.0f) * (PlayerbotAI::IsHeal(p) ? 2.0f : 1.0f) *
+                      (2.0f - p->GetHealthPct() / 100.0f) / (1.0f + dist / 25.0f);
+        if (melee && dist > 8.0f)
+            score *= 0.6f;
+        if (auto it = picks.find(p->GetGUID()); it != picks.end())
+            score *= std::min(3.0f, 1.0f + 0.5f * it->second);
+        if (p == current)
+            score *= 1.3f;
+        if (score > bestScore)
+        {
+            bestScore = score;
+            best = p;
+        }
+    }
+    return best;
+}
+
+bool FocusFireAction::isUseful()
+{
+    Unit* target = FindFocusTarget(botAI);
+    return target && target != AI_VALUE(Unit*, "current target");
+}
+
+bool FocusFireAction::Execute(Event /*event*/)
+{
+    Unit* target = FindFocusTarget(botAI);
+    if (!target || !Attack(target))
+        return false;
+    std::lock_guard<std::mutex> guard(focusLock);
+    focusPicks[FocusKey(bot->GetBattleground(), bot->GetBgTeamId())].emplace_back(target->GetGUID(), getMSTime());
+    return true;
 }
 
 bool AttackBannerCapperAction::isUseful()
