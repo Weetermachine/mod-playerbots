@@ -3682,6 +3682,7 @@ struct AllocMember
     Player* p;
     float x, y;
     bool alive;
+    bool healer;
 };
 
 bool AllocHasFlag(Player* p)
@@ -3717,7 +3718,7 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
         }
         if (!GET_PLAYERBOT_AI(p))
             continue;  // real players plan for themselves
-        members.push_back({p, p->GetPositionX(), p->GetPositionY(), p->IsAlive()});
+        members.push_back({p, p->GetPositionX(), p->GetPositionY(), p->IsAlive(), PlayerbotAI::IsHeal(p)});
     }
     auto enemiesNear = [&](Position const& p, float r)
     {
@@ -3763,8 +3764,41 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
     }
     else if (type == BATTLEGROUND_EY)
     {
+        // Value-based (v2): every job is worth the points it is expected to gain us or deny them, from measured
+        // rates (997 EotS games: flag captures per minute by towers held, 57% of pickups captured, a tower
+        // held 1.7 min on average between owner changes). A tower is worth the income it adds (and the flag value
+        // it raises) over the time it is typically held; a flag its capture value; the enemy carrier the capture
+        // it would make. Bots are handed out one at a time to the job where one more bot adds the most expected
+        // points, success chance n^2 / (n^2 + (d + 0.5)^2) for n bots against d enemies there.
+        static float const tick[5] = {0.0f, 30.0f, 60.0f, 150.0f, 300.0f};  // points per minute by towers held
+        static float const flagPts[5] = {0.0f, 75.0f, 85.0f, 100.0f, 500.0f};
+        static float const capsPerMin[5] = {0.0f, 0.181f, 0.262f, 0.329f, 0.560f};
+        float const holdMin = 2.5f;  // a taken tower pays for about this long (mean hold 1.7 min, longer guarded)
+        float const pCap = 0.57f;
+        auto rate = [&](int32 t)
+        {
+            t = std::clamp<int32>(t, 0, 4);
+            return tick[t] + capsPerMin[t] * flagPts[t];
+        };
+
         BattlegroundEY* eye = static_cast<BattlegroundEY*>(bg);
-        uint32 held = 0;
+        TeamId const enemyTeam = team == TEAM_ALLIANCE ? TEAM_HORDE : TEAM_ALLIANCE;
+        int32 us = 0, them = 0;
+        for (auto const& [nodeId, _, __] : EY_AttackObjectives)
+        {
+            TeamId const owner = eye->GetCapturePointInfo(nodeId)._ownerTeamId;
+            us += owner == team;
+            them += owner == enemyTeam;
+        }
+
+        struct Job
+        {
+            AllocSlot slot;
+            float value;
+            uint32 enemies;
+            uint8 floor, cap, n = 0;
+        };
+        std::vector<Job> jobs;
         for (uint32 i = 0; i < std::size(EY_AttackObjectives); ++i)
         {
             uint32 const nodeId = std::get<0>(EY_AttackObjectives[i]);
@@ -3772,24 +3806,72 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
             if (it == EY_NodePositions.end())
                 continue;
             Position const& p = it->second;
-            if (eye->GetCapturePointInfo(nodeId)._ownerTeamId == team)
+            TeamId const owner = eye->GetCapturePointInfo(nodeId)._ownerTeamId;
+            uint32 const near = enemiesNear(p, 40.0f);
+            if (owner == team)
             {
-                ++held;
-                slots.push_back({AllocKey(AK_GUARD, i), 3, p, 1, 8.0f});
-                if (uint32 const near = enemiesNear(p, 40.0f))
-                    slots.push_back({AllocKey(AK_DEFEND, i), 2, p, uint8(std::min<uint32>(near + 1, 4)), 10.0f});
+                // losing it: our income and flag value drop, theirs rise (it ends up theirs)
+                float const loss = (rate(us) - rate(us - 1) + rate(them + 1) - rate(them)) * holdMin;
+                if (near)
+                    jobs.push_back({{AllocKey(AK_DEFEND, i), 2, p, 0, 10.0f}, loss, near, 2, uint8(std::min<uint32>(near + 2, 5))});
+                else  // quiet: one guard, worth the chance it is attacked before help arrives
+                    jobs.push_back({{AllocKey(AK_GUARD, i), 3, p, 0, 8.0f}, loss * 0.25f, 0, 1, 1});
             }
             else
-                targets.push_back({i, p});
+            {
+                float const gain = (rate(us + 1) - rate(us) + (owner == enemyTeam ? rate(them) - rate(them - 1) : 0.0f)) * holdMin;
+                jobs.push_back({{AllocKey(AK_ATTACK, i), 3, p, 0, 8.0f}, gain, near, 0, 6});
+            }
         }
-        targetEnemyRange = 40.0f;
         if (enemyFC)
-            slots.push_back({AllocKey(AK_STOPFC, 0), 2, enemyFC->GetPosition(), 3, 3.0f});
+            jobs.push_back({{AllocKey(AK_STOPFC, 0), 2, enemyFC->GetPosition(), 0, 3.0f},
+                            (them ? flagPts[std::min(them, 4)] : 20.0f) * pCap, enemiesNear(enemyFC->GetPosition(), 20.0f), 2, 4});
         if (ourFC)
-            slots.push_back({AllocKey(AK_ESCORT, 0), 3, ourFC->GetPosition(), 3, 5.0f});
+            jobs.push_back({{AllocKey(AK_ESCORT, 0), 3, ourFC->GetPosition(), 0, 5.0f},
+                            flagPts[std::clamp(us, 1, 4)] * 0.25f, enemiesNear(ourFC->GetPosition(), 20.0f), 0, 3});
         GameObject* flag = bg->GetBGObject(BG_EY_OBJECT_FLAG_NETHERSTORM);
-        if (flag && flag->isSpawned() && held)
-            slots.push_back({AllocKey(AK_FLAG, 0), 3, flag->GetPosition(), 3, 2.0f});
+        if (flag && flag->isSpawned() && us)
+            jobs.push_back({{AllocKey(AK_FLAG, 0), 3, flag->GetPosition(), 0, 2.0f}, flagPts[std::min(us, 4)] * pCap,
+                            enemiesNear(flag->GetPosition(), 30.0f), 2, 4});
+
+        auto success = [](uint32 n, uint32 d)
+        {
+            float const a = float(n) * float(n);
+            float const b = (float(d) + 0.5f) * (float(d) + 0.5f);
+            return n ? a / (a + b) : 0.0f;
+        };
+        int32 left = int32(members.size());
+        for (Job& j : jobs)  // floors first: a guard per held tower, a flag team, the carrier chase
+        {
+            j.n = uint8(std::min<int32>(j.floor, std::max(left, 0)));
+            left -= j.n;
+        }
+        while (left > 0)
+        {
+            Job* best = nullptr;
+            float bestGain = 2.0f;  // under ~2 points a bot is better off with the stock picks
+            for (Job& j : jobs)
+            {
+                if (j.n >= j.cap)
+                    continue;
+                float const g = j.value * (success(j.n + 1, j.enemies) - success(j.n, j.enemies));
+                if (g > bestGain)
+                {
+                    bestGain = g;
+                    best = &j;
+                }
+            }
+            if (!best)
+                break;
+            ++best->n;
+            --left;
+        }
+        for (Job& j : jobs)
+            if (j.n)
+            {
+                j.slot.need = j.n;
+                slots.push_back(j.slot);
+            }
     }
     else  // WSG
     {
@@ -3871,8 +3953,12 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
 
     // Fill emergencies first, then roles. Within a tier the cheapest (bot, slot) pair goes first, which
     // approximates the best overall matching (the nearest bot is not spent on one slot when another needs it more).
+    // Role-aware (EotS v2): a healer alone cannot stop a capture, so solo slots cost a healer 80 yd extra;
+    // groups want one healer each (a bonus for the first, a second is skipped).
+    bool const roleAware = type == BATTLEGROUND_EY;
     std::unordered_map<ObjectGuid, AllocAssign> next;
     std::vector<bool> taken(members.size(), false);
+    std::vector<uint8> healersIn(slots.size(), 0);
     std::vector<uint8> left;
     for (AllocSlot const& s : slots)
         left.push_back(s.need);
@@ -3900,6 +3986,8 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
                              std::hypot(prev->second.pos.GetPositionX() - mb.x, prev->second.pos.GetPositionY() - mb.y) < 25.0f)
                         cost += 60.0f;  // standing at its own job: pull others first
                 }
+                if (roleAware && mb.healer)
+                    cost += slots[s].need <= 1 ? 80.0f : slots[s].need >= 3 ? -15.0f : 0.0f;
                 pairs.emplace_back(cost, m, s);
             }
         }
@@ -3908,6 +3996,10 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
         {
             if (taken[m] || !left[s])
                 continue;
+            if (roleAware && members[m].healer && healersIn[s])
+                continue;
+            if (members[m].healer)
+                ++healersIn[s];
             taken[m] = true;
             --left[s];
             next[members[m].p->GetGUID()] = {slots[s].key, slots[s].tier, slots[s].pos, slots[s].spread};
