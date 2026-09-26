@@ -3612,6 +3612,7 @@ struct AllocAssign
     uint8 tier = 0;
     Position pos;
     float spread = 0;
+    uint32 sinceMs = 0;  // when the bot got this slot
 };
 
 struct AllocTeam
@@ -3619,6 +3620,7 @@ struct AllocTeam
     uint32 builtMs = 0;
     std::unordered_map<ObjectGuid, AllocAssign> assign;
     uint32 attack[2] = {0, 0};  // attack targets (node index + 1), kept while still worth attacking
+    std::unordered_map<uint32, uint32> defendUntil;  // defend slot key -> kept raised until (enemies left)
 };
 
 struct AllocBg
@@ -3650,6 +3652,9 @@ bool AllocIsStation(uint32 key)
 std::mutex allocLock;
 std::unordered_map<uint32, AllocBg> allocPlans;  // by battleground instance id
 std::atomic<uint32> allocStats[3][4];            // [WS, AB, EY][plans, bot assignments, changes, emergency slots]
+// why slots changed: died (dead now), slot gone, pulled to an emergency, to the stock picks, reshuffled
+enum AllocWhy : uint32 { AW_DIED, AW_GONE, AW_PULLED, AW_STOCK, AW_RESHUFFLE, AW_N };
+std::atomic<uint32> allocWhy[3][AW_N];
 std::atomic<uint32> allocStatsLogMs{0};
 
 void AllocLogStats()
@@ -3672,8 +3677,14 @@ void AllocLogStats()
         if (!v[0])
             continue;
         // changes / assignments: how often a bot's slot changed at a replan (every 3 s)
-        LOG_INFO("module", "Allocator {} (5 min): plans {} bot assignments {} changed {} ({:.1f}%) emergency slots {}",
-                 names[b], v[0], v[1], v[2], v[1] ? 100.0f * v[2] / v[1] : 0.0f, v[3]);
+        uint32 w[AW_N];
+        for (uint32 k = 0; k < AW_N; ++k)
+            w[k] = allocWhy[b][k].exchange(0);
+        LOG_INFO("module",
+                 "Allocator {} (5 min): plans {} bot assignments {} changed {} ({:.1f}%) emergency slots {}; changes: "
+                 "died {} slot gone {} pulled to emergency {} to stock {} reshuffled {}",
+                 names[b], v[0], v[1], v[2], v[1] ? 100.0f * v[2] / v[1] : 0.0f, v[3], w[AW_DIED], w[AW_GONE],
+                 w[AW_PULLED], w[AW_STOCK], w[AW_RESHUFFLE]);
     }
 }
 
@@ -3753,8 +3764,12 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
             {
                 slots.push_back({AllocKey(state == occupied ? AK_GUARD : AK_HOLD, i), 3, p,
                                  uint8(state == occupied ? 1 : 2), 6.0f});
+                uint32 const dk = AllocKey(AK_DEFEND, i);
                 if (near)
-                    slots.push_back({AllocKey(AK_DEFEND, i), 2, p, uint8(std::min<uint32>(near + 1, 4)), 8.0f});
+                    plan.defendUntil[dk] = now + 20 * IN_MILLISECONDS;
+                // kept raised 20 s after the enemies leave, so the slot does not appear and vanish every few seconds
+                if (near || (plan.defendUntil.count(dk) && plan.defendUntil[dk] > now))
+                    slots.push_back({dk, 2, p, uint8(std::min<uint32>(std::max<uint32>(near, 1) + 1, 4)), 8.0f});
             }
             else if (state == theirBanner)
                 slots.push_back({AllocKey(AK_RECOVER, i), 2, p, 3, 5.0f});
@@ -3807,9 +3822,16 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
                 continue;
             Position const& p = it->second;
             TeamId const owner = eye->GetCapturePointInfo(nodeId)._ownerTeamId;
-            uint32 const near = enemiesNear(p, 40.0f);
+            uint32 near = enemiesNear(p, 40.0f);
             if (owner == team)
             {
+                // keep a defense raised 20 s after the enemies leave (they come back; a slot that appears and
+                // vanishes every few seconds moved bots back and forth)
+                uint32 const dk = AllocKey(AK_DEFEND, i);
+                if (near)
+                    plan.defendUntil[dk] = now + 20 * IN_MILLISECONDS;
+                else if (plan.defendUntil.count(dk) && plan.defendUntil[dk] > now)
+                    near = 1;
                 // losing it: our income and flag value drop, theirs rise (it ends up theirs)
                 float const loss = (rate(us) - rate(us - 1) + rate(them + 1) - rate(them)) * holdMin;
                 if (near)
@@ -3976,12 +3998,15 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
                 if (slots[s].tier != tier)
                     continue;
                 float cost = std::hypot(slots[s].pos.GetPositionX() - mb.x, slots[s].pos.GetPositionY() - mb.y);
-                if (!mb.alive)
-                    cost += 40.0f;  // respawn wait and the run from the graveyard
+                bool const own = prev != plan.assign.end() && prev->second.key == slots[s].key;
+                // respawn wait and the run from the graveyard; a dead bot keeps a role slot (it respawns within
+                // 30 s), but an emergency needs someone alive now
+                if (!mb.alive && !(own && tier == 3))
+                    cost += 40.0f;
                 if (prev != plan.assign.end())
                 {
-                    if (prev->second.key == slots[s].key)
-                        cost -= 30.0f;  // keep the slot unless someone is clearly better placed
+                    if (own)  // keep the slot unless someone is clearly better placed; more so in the first 15 s
+                        cost -= getMSTimeDiff(prev->second.sinceMs, now) < 15 * IN_MILLISECONDS ? 60.0f : 30.0f;
                     else if (AllocIsStation(prev->second.key) && slotExists(prev->second.key) &&
                              std::hypot(prev->second.pos.GetPositionX() - mb.x, prev->second.pos.GetPositionY() - mb.y) < 25.0f)
                         cost += 60.0f;  // standing at its own job: pull others first
@@ -4002,7 +4027,9 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
                 ++healersIn[s];
             taken[m] = true;
             --left[s];
-            next[members[m].p->GetGUID()] = {slots[s].key, slots[s].tier, slots[s].pos, slots[s].spread};
+            auto prev = plan.assign.find(members[m].p->GetGUID());
+            uint32 const since = prev != plan.assign.end() && prev->second.key == slots[s].key ? prev->second.sinceMs : now;
+            next[members[m].p->GetGUID()] = {slots[s].key, slots[s].tier, slots[s].pos, slots[s].spread, since};
         }
     }
 
@@ -4013,9 +4040,18 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
         auto nw = next.find(m.p->GetGUID());
         uint32 const ok = o == plan.assign.end() ? 0 : o->second.key;
         uint32 const nk = nw == next.end() ? 0 : nw->second.key;
-        if (ok && ok != nk)
-            ++changed;
+        if (!ok || ok == nk)
+            continue;
+        ++changed;
+        AllocWhy why = !m.alive ? AW_DIED
+                     : !slotExists(ok) ? AW_GONE
+                     : !nk ? AW_STOCK
+                     : nw->second.tier < o->second.tier ? AW_PULLED
+                     : AW_RESHUFFLE;
+        ++allocWhy[b][why];
     }
+    for (auto it = plan.defendUntil.begin(); it != plan.defendUntil.end();)
+        it = it->second <= now ? plan.defendUntil.erase(it) : std::next(it);
     uint32 emergencies = 0;
     for (AllocSlot const& s : slots)
         if (s.tier == 2)
