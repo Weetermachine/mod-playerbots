@@ -1696,6 +1696,12 @@ bool BGTactics::Execute(Event /*event*/)
             return false;
         }
 
+        // EotS pathing tactic: straight to the objective at any distance (navmesh path). The fixed waypoint
+        // paths below send bots along a random path whenever they stand at a path end, and beyond 100 yd
+        // along a path from its start, often back toward base before a tower.
+        if (bgType == BATTLEGROUND_EY && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::EYPath))
+            return moveToObjective(true);
+
         if (!moveToObjective(false))
             if (!selectObjectiveWp(*vPaths))
                 return moveToObjective(true);
@@ -1847,6 +1853,16 @@ bool BGTactics::moveToStart(bool force)
     }
 
     return true;
+}
+
+// Ground height for an objective point, keeping z when the lookup fails. With the EotS pathing tactic;
+// stock EotS objective code takes an invalid height as is, or uses the lookup only when it failed.
+static float EYGroundZ(Player* bot, float x, float y, float z, bool fix)
+{
+    float const h = bot->GetMap()->GetHeight(x, y, z);
+    if (!fix)
+        return h;
+    return h > INVALID_HEIGHT ? h : z;
 }
 
 bool BGTactics::selectObjective(bool reset)
@@ -2610,6 +2626,8 @@ bool BGTactics::selectObjective(bool reset)
         {
             BattlegroundEY* eyeOfTheStormBG = (BattlegroundEY*)bg;
             TeamId team = bot->GetTeamId();
+            // EotS pathing tactic: correct ground snap for objective points (see EYGroundZ)
+            bool const eyPath = BGTacticArms::IsOn(bg, team, BGTactic::EYPath);
             uint8 role = context->GetValue<uint32>("bg role")->Get();
 
             EYBotStrategy strategyHorde = static_cast<EYBotStrategy>(GetBotStrategyForTeam(bg, TEAM_HORDE));
@@ -2690,7 +2708,7 @@ bool BGTactics::selectObjective(bool reset)
                     if (Map* map = bot->GetMap())
                     {
                         float groundZ = map->GetHeight(rx, ry, rz);
-                        if (groundZ == VMAP_INVALID_HEIGHT_VALUE)
+                        if (eyPath ? groundZ > INVALID_HEIGHT : groundZ == VMAP_INVALID_HEIGHT_VALUE)
                             rz = groundZ;
                     }
 
@@ -2718,7 +2736,7 @@ bool BGTactics::selectObjective(bool reset)
                     if (Map* map = bot->GetMap())
                     {
                         float groundZ = map->GetHeight(rx, ry, rz);
-                        if (groundZ == VMAP_INVALID_HEIGHT_VALUE)
+                        if (eyPath ? groundZ > INVALID_HEIGHT : groundZ == VMAP_INVALID_HEIGHT_VALUE)
                             rz = groundZ;
                     }
 
@@ -2763,7 +2781,7 @@ bool BGTactics::selectObjective(bool reset)
                 {
                     float rx, ry, rz;
                     bot->GetRandomPoint(p, spread, rx, ry, rz);
-                    rz = bot->GetMap()->GetHeight(rx, ry, rz);
+                    rz = EYGroundZ(bot, rx, ry, rz, eyPath);
                     pos.Set(rx, ry, rz, bot->GetMapId());
                     foundObjective = true;
                 };
@@ -2827,7 +2845,7 @@ bool BGTactics::selectObjective(bool reset)
                     {
                         float rx, ry, rz;
                         bot->GetRandomPoint(p, 5.0f, rx, ry, rz);
-                        rz = bot->GetMap()->GetHeight(rx, ry, rz);
+                        rz = EYGroundZ(bot, rx, ry, rz, eyPath);
                         pos.Set(rx, ry, rz, bot->GetMapId());
                         foundObjective = true;
                     }
@@ -2912,7 +2930,7 @@ bool BGTactics::selectObjective(bool reset)
                         uint32 chosen = threatened >= 0 ? uint32(threatened) : pool[bot->GetGUID().GetCounter() % pool.size()];
                         float rx, ry, rz;
                         bot->GetRandomPoint(EY_NodePositions[chosen], 8.0f, rx, ry, rz);
-                        rz = bot->GetMap()->GetHeight(rx, ry, rz);
+                        rz = EYGroundZ(bot, rx, ry, rz, eyPath);
                         pos.Set(rx, ry, rz, bot->GetMapId());
                         foundObjective = true;
                     }
@@ -2937,7 +2955,7 @@ bool BGTactics::selectObjective(bool reset)
                             const Position& p = EY_NodePositions[chosenId];
                             float rx, ry, rz;
                             bot->GetRandomPoint(p, 5.0f, rx, ry, rz);
-                            rz = bot->GetMap()->GetHeight(rx, ry, rz);
+                            rz = EYGroundZ(bot, rx, ry, rz, eyPath);
                             pos.Set(rx, ry, rz, bot->GetMapId());
                             foundObjective = true;
                         }
@@ -2999,7 +3017,7 @@ bool BGTactics::selectObjective(bool reset)
                         const Position& p = EY_NodePositions[*bestNode];
                         float rx, ry, rz;
                         bot->GetRandomPoint(p, 5.0f, rx, ry, rz);
-                        rz = bot->GetMap()->GetHeight(rx, ry, rz);
+                        rz = EYGroundZ(bot, rx, ry, rz, eyPath);
                         pos.Set(rx, ry, rz, bot->GetMapId());
                         foundObjective = true;
                     }
@@ -3067,7 +3085,7 @@ bool BGTactics::selectObjective(bool reset)
                 Position camp = (team == TEAM_HORDE) ? EY_GY_CAMPING_ALLIANCE : EY_GY_CAMPING_HORDE;
                 float rx, ry, rz;
                 bot->GetRandomPoint(camp, 10.0f, rx, ry, rz);
-                rz = bot->GetMap()->GetHeight(rx, ry, rz);
+                rz = EYGroundZ(bot, rx, ry, rz, eyPath);
                 pos.Set(rx, ry, rz, bot->GetMapId());
                 foundObjective = true;
             }
