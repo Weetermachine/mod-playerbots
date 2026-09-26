@@ -1300,7 +1300,7 @@ AiPlayerbot.BGTactics.AB.NodeGuard.Horde = 0
 # separated by commas; an arm is one or more <Tactic>.<Faction> joined by '+'; any other name
 # (e.g. "stock") is an arm with every tactic off. The arm is written to the BG event log (arm=...).
 # Tactics: FCEscort, FCEscort2, FCChase, FlagRoom, DirectPath (WSG); FCEscort2, FCChase, DirectPath (EotS);
-# DirectPath, Allocator (WSG/AB/EotS), NodeGuard, NodeGuard2,
+# DirectPath, Allocator, AllocRoles (WSG/AB/EotS), NodeGuard, NodeGuard2,
 # Adaptive (AB); NodeGuard, Adaptive (EotS).
 # Example: "FCEscort.Alliance, FCEscort.Horde, FCChase.Alliance+FCChase.Horde, stock"
 # Default: "" (off)
@@ -1308,6 +1308,15 @@ AiPlayerbot.BGTactics.WSG.Arms = ""
 AiPlayerbot.BGTactics.AB.Arms = ""
 # Eye of the Storm (arms only): NodeGuard = defenders hold an assigned tower, nearest threatened first.
 AiPlayerbot.BGTactics.EY.Arms = ""
+
+# Baseline: accepted tactics, on for both teams in every game of the battleground (names without a faction,
+# separated by commas). Arms add their tactics on top, so a test measures a new tactic against the current best.
+# A game keeps the baseline it started with.
+# Example: AiPlayerbot.BGTactics.WSG.Baseline = "FCEscort, FCChase"
+# Default: "" (none)
+AiPlayerbot.BGTactics.WSG.Baseline = ""
+AiPlayerbot.BGTactics.AB.Baseline = ""
+AiPlayerbot.BGTactics.EY.Baseline = ""
 
 # Re-read the experiment settings above and the RandomBotAutoJoinBG*Count values when this file changes
 # (checked every 5 s), without a restart. Running games keep their arm; a count of 0 drains that BG.

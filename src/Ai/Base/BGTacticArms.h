@@ -26,6 +26,7 @@ enum class BGTactic : uint8
     DirectPath = 7, // WSG/AB/EotS: move straight to the objective (no waypoint-path detours); EotS also snaps
                     // objective points to the ground correctly (arm name "EYPath" is an alias)
     Allocator = 8,  // WSG/AB/EotS: a team plan assigns bots to objectives (headcounts, nearest first, sticky)
+    AllocRoles = 9, // with Allocator: healers kept off solo slots, one per group (always on in EotS)
 };
 
 // Per-game A/B arms. With AiPlayerbot.BGTactics.<BG>.Arms set (e.g.
@@ -47,6 +48,11 @@ namespace BGTacticArms
     // Eye of the Storm arms (AiPlayerbot.BGTactics.EY.Arms) live here rather than in PlayerbotAIConfig;
     // the experiment hot reload sets them.
     void SetEYArms(std::string const& arms);
+
+    // Baseline (AiPlayerbot.BGTactics.<WSG|AB|EY>.Baseline, e.g. "FCEscort, FCChase"): accepted tactics, on for
+    // both teams in every game of that BG; arms add their tactics on top. A game keeps the baseline it started
+    // with. The experiment hot reload sets it.
+    void SetBaseline(BattlegroundTypeId type, std::string const& tactics);
 }
 
 #endif

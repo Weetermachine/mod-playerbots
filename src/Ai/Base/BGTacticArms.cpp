@@ -28,6 +28,7 @@ std::unordered_map<uint32, Assignment> games;  // by BG instance id
 std::unordered_map<uint32, uint32> nextArm;    // by BG type id
 std::string eyArms;
 bool eyArmsLoaded = false;
+std::unordered_map<uint32, std::string> baselines;  // by BG type id; loaded from the config on first use
 
 BattlegroundTypeId RealType(Battleground* bg)
 {
@@ -77,6 +78,47 @@ std::vector<std::string> Split(std::string const& s, char sep)
     return out;
 }
 
+int TacticBit(std::string const& tactic)
+{
+    return tactic == "FCEscort" ? int(BGTactic::FCEscort)
+         : tactic == "FCChase" ? int(BGTactic::FCChase)
+         : tactic == "NodeGuard" ? int(BGTactic::NodeGuard)
+         : tactic == "Adaptive" ? int(BGTactic::Adaptive)
+         : tactic == "FCEscort2" ? int(BGTactic::FCEscort2)
+         : tactic == "NodeGuard2" ? int(BGTactic::NodeGuard2)
+         : tactic == "FlagRoom" ? int(BGTactic::FlagRoom)
+         : tactic == "DirectPath" || tactic == "EYPath" ? int(BGTactic::DirectPath)
+         : tactic == "Allocator" ? int(BGTactic::Allocator)
+         : tactic == "AllocRoles" ? int(BGTactic::AllocRoles) : -1;
+}
+
+char const* BGName(BattlegroundTypeId type)
+{
+    return type == BATTLEGROUND_WS ? "WSG" : type == BATTLEGROUND_AB ? "AB" : type == BATTLEGROUND_EY ? "EY" : nullptr;
+}
+
+// Baseline tactics of a BG type as a mask (both teams). Needs armsLock.
+uint16 BaselineMask(BattlegroundTypeId type)
+{
+    auto itr = baselines.find(type);
+    if (itr == baselines.end())
+    {
+        char const* name = BGName(type);
+        std::string const cfg =
+            name ? sConfigMgr->GetOption<std::string>(std::string("AiPlayerbot.BGTactics.") + name + ".Baseline", "") : "";
+        itr = baselines.emplace(type, cfg).first;
+    }
+    uint16 mask = 0;
+    for (std::string const& group : Split(itr->second, ','))
+        for (std::string const& part : Split(group, '+'))
+        {
+            int const bit = TacticBit(part.substr(0, part.find('.')));  // a faction suffix is ignored
+            if (bit >= 0)
+                mask |= 1 << bit;
+        }
+    return mask;
+}
+
 // "FCEscort.Alliance+FCChase.Horde" -> masks. Unknown parts (e.g. "stock") switch nothing on.
 Assignment ParseArm(std::string const& arm)
 {
@@ -90,15 +132,7 @@ Assignment ParseArm(std::string const& arm)
 
         std::string const tactic = part.substr(0, dot);
         std::string const faction = part.substr(dot + 1);
-        int bit = tactic == "FCEscort" ? int(BGTactic::FCEscort)
-                : tactic == "FCChase" ? int(BGTactic::FCChase)
-                : tactic == "NodeGuard" ? int(BGTactic::NodeGuard)
-                : tactic == "Adaptive" ? int(BGTactic::Adaptive)
-                : tactic == "FCEscort2" ? int(BGTactic::FCEscort2)
-                : tactic == "NodeGuard2" ? int(BGTactic::NodeGuard2)
-                : tactic == "FlagRoom" ? int(BGTactic::FlagRoom)
-                : tactic == "DirectPath" || tactic == "EYPath" ? int(BGTactic::DirectPath)
-                : tactic == "Allocator" ? int(BGTactic::Allocator) : -1;
+        int bit = TacticBit(tactic);
         if (bit < 0)
             continue;
 
@@ -123,7 +157,11 @@ Assignment const* Assign(Battleground* bg)
         return nullptr;
 
     uint32 index = nextArm[type]++ % arms.size();
-    return &(games[bg->GetInstanceID()] = ParseArm(arms[index]));
+    Assignment a = ParseArm(arms[index]);
+    uint16 const base = BaselineMask(type);  // fixed for the game's lifetime
+    a.mask[TEAM_ALLIANCE] |= base;
+    a.mask[TEAM_HORDE] |= base;
+    return &(games[bg->GetInstanceID()] = a);
 }
 
 bool GlobalSwitch(BGTactic tactic, TeamId team, BattlegroundTypeId type)
@@ -145,6 +183,7 @@ bool GlobalSwitch(BGTactic tactic, TeamId team, BattlegroundTypeId type)
         case BGTactic::FlagRoom:
         case BGTactic::DirectPath:
         case BGTactic::Allocator:
+        case BGTactic::AllocRoles:
             return false;  // arms only
     }
     return false;
@@ -160,6 +199,8 @@ bool BGTacticArms::IsOn(Battleground* bg, TeamId team, BGTactic tactic)
         std::lock_guard<std::mutex> guard(armsLock);
         if (Assignment const* a = Assign(bg))
             return a->mask[team] & (1 << uint8(tactic));
+        if (BaselineMask(RealType(bg)) & (1 << uint8(tactic)))
+            return true;
     }
 
     return GlobalSwitch(tactic, team, RealType(bg));
@@ -180,6 +221,12 @@ void BGTacticArms::SetEYArms(std::string const& arms)
     std::lock_guard<std::mutex> guard(armsLock);
     eyArms = arms;
     eyArmsLoaded = true;
+}
+
+void BGTacticArms::SetBaseline(BattlegroundTypeId type, std::string const& tactics)
+{
+    std::lock_guard<std::mutex> guard(armsLock);
+    baselines[type] = tactics;
 }
 
 void BGTacticArms::Forget(Battleground* bg)

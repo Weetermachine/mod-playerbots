@@ -3975,9 +3975,9 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
 
     // Fill emergencies first, then roles. Within a tier the cheapest (bot, slot) pair goes first, which
     // approximates the best overall matching (the nearest bot is not spent on one slot when another needs it more).
-    // Role-aware (EotS v2): a healer alone cannot stop a capture, so solo slots cost a healer 80 yd extra;
+    // Role-aware (EotS v2; elsewhere arm AllocRoles): a healer alone cannot stop a capture, so solo slots cost a healer 80 yd extra;
     // groups want one healer each (a bonus for the first, a second is skipped).
-    bool const roleAware = type == BATTLEGROUND_EY;
+    bool const roleAware = type == BATTLEGROUND_EY || BGTacticArms::IsOn(bg, team, BGTactic::AllocRoles);
     std::unordered_map<ObjectGuid, AllocAssign> next;
     std::vector<bool> taken(members.size(), false);
     std::vector<uint8> healersIn(slots.size(), 0);
