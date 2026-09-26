@@ -3481,7 +3481,8 @@ void DirectStat(BattlegroundTypeId t, uint32 kind)
             for (uint32 k = 0; k < 3; ++k)
                 v[b][k] = directStats[b][k].exchange(0);
         uint32 const searches = v[0][0] + v[0][1] + v[1][0] + v[1][1] + v[2][0] + v[2][1];
-        LOG_INFO("playerbots",
+        // "module" logs at info level with the default logger config; "playerbots" falls to root (errors only)
+        LOG_INFO("module",
                  "DirectPath routes (5 min, complete/incomplete/stalled): WS {}/{}/{} AB {}/{}/{} EY {}/{}/{}; "
                  "search time total {} ms, avg {} us, max {} us",
                  v[0][0], v[0][1], v[0][2], v[1][0], v[1][1], v[1][2], v[2][0], v[2][1], v[2][2], us / 1000,
