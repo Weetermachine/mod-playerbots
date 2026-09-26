@@ -271,7 +271,7 @@ bool EnemyFlagCarrierNear::IsActive()
 
 bool TeamFlagCarrierNear::IsActive()
 {
-    // Only used by WarsongStrategy ("team flagcarrier near" -> "bg protect fc"). Off unless the
+    // Used by WarsongStrategy and EyeStrategy ("team flagcarrier near" -> "bg protect fc"). Off unless the
     // WSG FC escort tactic is enabled for this bot's team, and then only for the escort roles
     // (bg role 6-9, ~40% of the team). Defenders are role < 1..6 depending on the team strategy,
     // so escorts never come out of the flag room.
@@ -306,7 +306,8 @@ bool TeamFlagCarrierNear::IsActive()
 
 bool TeamFlagCarrierNeedsHeal::IsActive()
 {
-    if (bot->GetBattlegroundTypeId() != BATTLEGROUND_WS || !PlayerbotAI::IsHeal(bot) ||
+    if ((bot->GetBattlegroundTypeId() != BATTLEGROUND_WS && bot->GetBattlegroundTypeId() != BATTLEGROUND_EY) ||
+        !PlayerbotAI::IsHeal(bot) ||
         !BGTacticArms::IsOn(bot->GetBattleground(), bot->GetBgTeamId(), BGTactic::FCEscort2))
         return false;
 

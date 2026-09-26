@@ -65,7 +65,13 @@ void EyeStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode("often", { NextAction("bg use buff", ACTION_BG)}));
     triggers.push_back(new TriggerNode("low health", { NextAction("bg use buff", ACTION_MOVE)}));
     triggers.push_back(new TriggerNode("low mana", { NextAction("bg use buff", ACTION_MOVE)}));
-    triggers.push_back(new TriggerNode("enemy flagcarrier near", { NextAction("attack enemy flag carrier", ACTION_RAID)}));
+    // The WSG flag-carrier tactics also run in EotS when its arms turn them on (FCChase, FCEscort2):
+    // catch and slow the enemy carrier, escort/peel for ours, healers on ours first.
+    triggers.push_back(new TriggerNode("enemy flagcarrier near", { NextAction("attack enemy flag carrier", ACTION_RAID),
+                                                                  NextAction("bg catch fc", ACTION_RAID - 0.5f)}));
+    triggers.push_back(new TriggerNode("team flagcarrier near", { NextAction("bg protect fc", ACTION_BG + 2.0f),
+                                                                 NextAction("attack fc attacker", ACTION_RAID - 0.6f)}));
+    triggers.push_back(new TriggerNode("team flagcarrier needs heal", { NextAction("bg heal fc", ACTION_MEDIUM_HEAL + 5.0f)}));
     triggers.push_back(new TriggerNode("player has flag",{ NextAction("bg move to objective", ACTION_EMERGENCY)}));
 }
 

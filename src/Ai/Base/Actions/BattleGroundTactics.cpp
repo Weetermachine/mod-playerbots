@@ -4261,7 +4261,7 @@ static char const* const FC_SLOWS[] = {"hamstring", "chains of ice", "wing clip"
 
 static bool FCChaseOn(Player* bot)
 {
-    return bot->GetBattlegroundTypeId() == BATTLEGROUND_WS &&
+    return (bot->GetBattlegroundTypeId() == BATTLEGROUND_WS || bot->GetBattlegroundTypeId() == BATTLEGROUND_EY) &&
            BGTacticArms::IsOn(bot->GetBattleground(), bot->GetBgTeamId(), BGTactic::FCChase);
 }
 

@@ -42,7 +42,7 @@ bool AttackEnemyFlagCarrierAction::isUseful()
     // it. This runs above every heal and attack, and switching whenever the FC was near made melee
     // drop fights they were winning to run after a carrier they couldn't catch (v1 went 4-13).
     // Stock target selection already prefers the FC when a bot picks a new target.
-    if (bot->GetBattlegroundTypeId() != BATTLEGROUND_WS ||
+    if ((bot->GetBattlegroundTypeId() != BATTLEGROUND_WS && bot->GetBattlegroundTypeId() != BATTLEGROUND_EY) ||
         !BGTacticArms::IsOn(bot->GetBattleground(), bot->GetBgTeamId(), BGTactic::FCChase))
         return false;
 
@@ -254,7 +254,8 @@ Unit* AttackFCAttackerAction::FindAttacker()
 
 bool AttackFCAttackerAction::isUseful()
 {
-    return bot->GetBattlegroundTypeId() == BATTLEGROUND_WS && !PlayerbotAI::IsHeal(bot) &&
+    return (bot->GetBattlegroundTypeId() == BATTLEGROUND_WS || bot->GetBattlegroundTypeId() == BATTLEGROUND_EY) &&
+           !PlayerbotAI::IsHeal(bot) &&
            BGTacticArms::IsOn(bot->GetBattleground(), bot->GetBgTeamId(), BGTactic::FCEscort2) && FindAttacker();
 }
 
