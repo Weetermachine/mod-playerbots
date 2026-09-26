@@ -1299,7 +1299,8 @@ AiPlayerbot.BGTactics.AB.NodeGuard.Horde = 0
 # (round robin) and the per-faction switches above are ignored for that battleground. Arms are
 # separated by commas; an arm is one or more <Tactic>.<Faction> joined by '+'; any other name
 # (e.g. "stock") is an arm with every tactic off. The arm is written to the BG event log (arm=...).
-# Tactics: FCEscort, FCEscort2, FCChase, FlagRoom (WSG); FCEscort2, FCChase, EYPath (EotS); NodeGuard, NodeGuard2,
+# Tactics: FCEscort, FCEscort2, FCChase, FlagRoom, DirectPath (WSG); FCEscort2, FCChase, DirectPath (EotS);
+# DirectPath, NodeGuard, NodeGuard2,
 # Adaptive (AB); NodeGuard, Adaptive (EotS).
 # Example: "FCEscort.Alliance, FCEscort.Horde, FCChase.Alliance+FCChase.Horde, stock"
 # Default: "" (off)

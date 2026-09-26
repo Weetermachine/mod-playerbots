@@ -1696,10 +1696,11 @@ bool BGTactics::Execute(Event /*event*/)
             return false;
         }
 
-        // EotS pathing tactic: straight to the objective at any distance (navmesh path). The fixed waypoint
+        // Direct pathing tactic: straight to the objective at any distance (navmesh path). The fixed waypoint
         // paths below send bots along a random path whenever they stand at a path end, and beyond 100 yd
-        // along a path from its start, often back toward base before a tower.
-        if (bgType == BATTLEGROUND_EY && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::EYPath))
+        // along a path from its start, often back toward base first. Per bot, from its own team's arm.
+        if ((bgType == BATTLEGROUND_EY || bgType == BATTLEGROUND_WS || bgType == BATTLEGROUND_AB) &&
+            BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::DirectPath))
             return moveToObjective(true);
 
         if (!moveToObjective(false))
@@ -2627,7 +2628,7 @@ bool BGTactics::selectObjective(bool reset)
             BattlegroundEY* eyeOfTheStormBG = (BattlegroundEY*)bg;
             TeamId team = bot->GetTeamId();
             // EotS pathing tactic: correct ground snap for objective points (see EYGroundZ)
-            bool const eyPath = BGTacticArms::IsOn(bg, team, BGTactic::EYPath);
+            bool const eyPath = BGTacticArms::IsOn(bg, team, BGTactic::DirectPath);
             uint8 role = context->GetValue<uint32>("bg role")->Get();
 
             EYBotStrategy strategyHorde = static_cast<EYBotStrategy>(GetBotStrategyForTeam(bg, TEAM_HORDE));

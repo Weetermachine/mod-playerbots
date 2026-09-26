@@ -97,7 +97,7 @@ Assignment ParseArm(std::string const& arm)
                 : tactic == "FCEscort2" ? int(BGTactic::FCEscort2)
                 : tactic == "NodeGuard2" ? int(BGTactic::NodeGuard2)
                 : tactic == "FlagRoom" ? int(BGTactic::FlagRoom)
-                : tactic == "EYPath" ? int(BGTactic::EYPath) : -1;
+                : tactic == "DirectPath" || tactic == "EYPath" ? int(BGTactic::DirectPath) : -1;
         if (bit < 0)
             continue;
 
@@ -142,7 +142,7 @@ bool GlobalSwitch(BGTactic tactic, TeamId team, BattlegroundTypeId type)
         case BGTactic::FCEscort2:
         case BGTactic::NodeGuard2:
         case BGTactic::FlagRoom:
-        case BGTactic::EYPath:
+        case BGTactic::DirectPath:
             return false;  // arms only
     }
     return false;
