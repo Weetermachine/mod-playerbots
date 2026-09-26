@@ -3587,9 +3587,19 @@ bool BGTactics::moveDirectRoute()
 
     bool const sameObjective = r.instanceId == bg->GetInstanceID() && std::abs(r.ox - pos.x) < 5.0f &&
                                std::abs(r.oy - pos.y) < 5.0f;
-    // off the route (a fight, a knockback, a death): the next corner is far away
-    bool const offRoute = sameObjective && r.complete && r.next < r.pts.size() &&
-                          bot->GetExactDist2d(r.pts[r.next].x, r.pts[r.next].y) > 60.0f;
+    // off the route (a fight, a knockback, a death): far from the leg being walked. Not the distance to the next
+    // corner, which on open ground is often 100+ yd on a good route (that rebuilt 3 in 4 routes every tick and
+    // kept resetting the stall timer).
+    bool offRoute = false;
+    if (sameObjective && r.complete && r.next < r.pts.size())
+    {
+        G3D::Vector3 const& b = r.pts[r.next];
+        G3D::Vector3 const& a = r.pts[r.next ? r.next - 1 : 0];
+        float const dx = b.x - a.x, dy = b.y - a.y, len2 = dx * dx + dy * dy;
+        float t = len2 > 0.0f ? ((bot->GetPositionX() - a.x) * dx + (bot->GetPositionY() - a.y) * dy) / len2 : 0.0f;
+        t = std::clamp(t, 0.0f, 1.0f);
+        offRoute = bot->GetExactDist2d(a.x + t * dx, a.y + t * dy) > 20.0f;
+    }
 
     if (!sameObjective || offRoute || getMSTimeDiff(r.builtMs, now) > 30 * IN_MILLISECONDS)
     {
