@@ -25,6 +25,7 @@ enum class BGTactic : uint8
     FlagRoom = 6,   // WSG: defenders hold the flag room while our flag is home
     DirectPath = 7, // WSG/AB/EotS: move straight to the objective (no waypoint-path detours); EotS also snaps
                     // objective points to the ground correctly (arm name "EYPath" is an alias)
+    Allocator = 8,  // WSG/AB/EotS: a team plan assigns bots to objectives (headcounts, nearest first, sticky)
 };
 
 // Per-game A/B arms. With AiPlayerbot.BGTactics.<BG>.Arms set (e.g.

@@ -127,6 +127,7 @@ private:
     bool selectObjective(bool reset = false);
     bool moveToObjective(bool ignoreDist);
     bool moveDirectRoute();
+    bool allocatorObjective(PositionInfo& out);
     bool selectObjectiveWp(std::vector<BattleBotPath*> const& vPaths);
     bool moveToObjectiveWp(BattleBotPath* const& currentPath, uint32 currentPoint, bool reverse = false);
     bool startNewPathBegin(std::vector<BattleBotPath*> const& vPaths);

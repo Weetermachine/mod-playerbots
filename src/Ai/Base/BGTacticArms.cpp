@@ -19,7 +19,7 @@ namespace
 struct Assignment
 {
     std::string name;
-    uint8 mask[2] = {0, 0};  // bit per BGTactic, indexed by TeamId
+    uint16 mask[2] = {0, 0};  // bit per BGTactic, indexed by TeamId
 };
 
 // Games of different BGs update on different map threads, so all access is locked.
@@ -97,7 +97,8 @@ Assignment ParseArm(std::string const& arm)
                 : tactic == "FCEscort2" ? int(BGTactic::FCEscort2)
                 : tactic == "NodeGuard2" ? int(BGTactic::NodeGuard2)
                 : tactic == "FlagRoom" ? int(BGTactic::FlagRoom)
-                : tactic == "DirectPath" || tactic == "EYPath" ? int(BGTactic::DirectPath) : -1;
+                : tactic == "DirectPath" || tactic == "EYPath" ? int(BGTactic::DirectPath)
+                : tactic == "Allocator" ? int(BGTactic::Allocator) : -1;
         if (bit < 0)
             continue;
 
@@ -143,6 +144,7 @@ bool GlobalSwitch(BGTactic tactic, TeamId team, BattlegroundTypeId type)
         case BGTactic::NodeGuard2:
         case BGTactic::FlagRoom:
         case BGTactic::DirectPath:
+        case BGTactic::Allocator:
             return false;  // arms only
     }
     return false;
