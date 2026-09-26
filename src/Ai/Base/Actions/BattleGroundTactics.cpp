@@ -3453,6 +3453,7 @@ struct DirectRoute
     uint32 changedMs = 0;
     std::vector<G3D::Vector3> pts;
     size_t next = 0;
+    size_t hopFrom = 0;  // corner the current hop started toward (a hop can cross several corners)
     bool complete = false;
     uint32 builtMs = 0;
     uint32 progressMs = 0;  // last time the bot got closer to the objective
@@ -3587,18 +3588,24 @@ bool BGTactics::moveDirectRoute()
 
     bool const sameObjective = r.instanceId == bg->GetInstanceID() && std::abs(r.ox - pos.x) < 5.0f &&
                                std::abs(r.oy - pos.y) < 5.0f;
-    // off the route (a fight, a knockback, a death): far from the leg being walked. Not the distance to the next
-    // corner, which on open ground is often 100+ yd on a good route (that rebuilt 3 in 4 routes every tick and
-    // kept resetting the stall timer).
+    // off the route (a fight, a knockback, a death): more than 20 yd from every leg of the current hop. Not the
+    // distance to the next corner, which on open ground is often 100+ yd on a good route (that rebuilt 3 in 4
+    // routes every tick and kept resetting the stall timer).
     bool offRoute = false;
     if (sameObjective && r.complete && r.next < r.pts.size())
     {
-        G3D::Vector3 const& b = r.pts[r.next];
-        G3D::Vector3 const& a = r.pts[r.next ? r.next - 1 : 0];
-        float const dx = b.x - a.x, dy = b.y - a.y, len2 = dx * dx + dy * dy;
-        float t = len2 > 0.0f ? ((bot->GetPositionX() - a.x) * dx + (bot->GetPositionY() - a.y) * dy) / len2 : 0.0f;
-        t = std::clamp(t, 0.0f, 1.0f);
-        offRoute = bot->GetExactDist2d(a.x + t * dx, a.y + t * dy) > 20.0f;
+        float best = FLT_MAX;
+        for (size_t i = r.hopFrom ? r.hopFrom - 1 : 0; i < r.next; ++i)
+        {
+            G3D::Vector3 const& a = r.pts[i];
+            G3D::Vector3 const& b = r.pts[i + 1];
+            float const dx = b.x - a.x, dy = b.y - a.y, len2 = dx * dx + dy * dy;
+            float t = len2 > 0.0f ? ((bot->GetPositionX() - a.x) * dx + (bot->GetPositionY() - a.y) * dy) / len2
+                                  : 0.0f;
+            t = std::clamp(t, 0.0f, 1.0f);
+            best = std::min(best, bot->GetExactDist2d(a.x + t * dx, a.y + t * dy));
+        }
+        offRoute = best > 20.0f;
     }
 
     if (!sameObjective || offRoute || getMSTimeDiff(r.builtMs, now) > 30 * IN_MILLISECONDS)
@@ -3680,8 +3687,11 @@ bool BGTactics::moveDirectRoute()
     }
 
     // skip corners already reached, then aim for the furthest corner up to ~40 yd along the route
+    size_t const reached = r.next;
     while (r.next + 1 < r.pts.size() && bot->GetExactDist2d(r.pts[r.next].x, r.pts[r.next].y) < 3.0f)
         ++r.next;
+    if (r.next != reached)
+        r.hopFrom = r.next;  // a new hop starts here (a resumed hop keeps its start)
     size_t target = r.next;
     float along = bot->GetExactDist(r.pts[r.next].x, r.pts[r.next].y, r.pts[r.next].z);
     while (target + 1 < r.pts.size())
