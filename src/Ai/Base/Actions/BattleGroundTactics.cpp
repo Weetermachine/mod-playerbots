@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <mutex>
 #include <unordered_map>
 
@@ -3448,6 +3449,8 @@ struct DirectRoute
 {
     uint32 instanceId = 0;
     float ox = 0, oy = 0;  // objective the route was built for
+    float px = 0, py = 0;  // the objective before it, and when it changed (to count flips back)
+    uint32 changedMs = 0;
     std::vector<G3D::Vector3> pts;
     size_t next = 0;
     bool complete = false;
@@ -3462,11 +3465,17 @@ std::atomic<uint32> directStats[3][3];  // [WS, AB, EY][complete, incomplete, st
 std::atomic<uint32> directStatsLogMs{0};
 std::atomic<uint64> directSearchUs{0};   // route search time, total and max (for the cost on live, 1 map thread)
 std::atomic<uint32> directSearchMaxUs{0};
+// Why routes were (re)built, per BG: first route in the game, a new objective (and of those: given up with the old
+// objective still > 20 yd away, and a flip back to the objective before within 60 s), the objective moved a
+// little (< 30 yd), the 30 s refresh, knocked off the route, retry after no route / a stall.
+enum DirectRebuild : uint32 { RB_FIRST, RB_NEW, RB_ABANDON, RB_FLIPBACK, RB_NUDGE, RB_TIMER, RB_OFFROUTE, RB_RETRY, RB_N };
+std::atomic<uint32> directRebuilds[3][RB_N];
+
+uint32 DirectBgIdx(BattlegroundTypeId t) { return t == BATTLEGROUND_WS ? 0 : t == BATTLEGROUND_AB ? 1 : 2; }
 
 void DirectStat(BattlegroundTypeId t, uint32 kind)
 {
-    uint32 const i = t == BATTLEGROUND_WS ? 0 : t == BATTLEGROUND_AB ? 1 : 2;
-    ++directStats[i][kind];
+    ++directStats[DirectBgIdx(t)][kind];
     uint32 const now = getMSTime();
     uint32 last = directStatsLogMs.load();
     if (last == 0)
@@ -3487,6 +3496,20 @@ void DirectStat(BattlegroundTypeId t, uint32 kind)
                  "search time total {} ms, avg {} us, max {} us",
                  v[0][0], v[0][1], v[0][2], v[1][0], v[1][1], v[1][2], v[2][0], v[2][1], v[2][2], us / 1000,
                  searches ? us / searches : 0, maxUs);
+        static char const* const names[3] = {"WS", "AB", "EY"};
+        for (uint32 b = 0; b < 3; ++b)
+        {
+            uint32 w[RB_N];
+            for (uint32 k = 0; k < RB_N; ++k)
+                w[k] = directRebuilds[b][k].exchange(0);
+            if (!v[b][0] && !v[b][1])
+                continue;
+            LOG_INFO("module",
+                     "DirectPath rebuilds {} (5 min): first {} new objective {} (given up > 20 yd short {}, flip back "
+                     "within 60 s {}) moved < 30 yd {} refresh {} off route {} retry {}",
+                     names[b], w[RB_FIRST], w[RB_NEW], w[RB_ABANDON], w[RB_FLIPBACK], w[RB_NUDGE], w[RB_TIMER],
+                     w[RB_OFFROUTE], w[RB_RETRY]);
+        }
     }
 }
 
@@ -3574,10 +3597,43 @@ bool BGTactics::moveDirectRoute()
         // again every tick
         if (sameObjective && !r.complete && getMSTimeDiff(r.builtMs, now) < 10 * IN_MILLISECONDS)
             return false;
+        uint32 const b = DirectBgIdx(bgType);
+        bool const sameGame = r.instanceId == bg->GetInstanceID();
+        float px = r.px, py = r.py;
+        uint32 changedMs = r.changedMs;
+        if (!sameGame)
+            ++directRebuilds[b][RB_FIRST];
+        else if (!sameObjective)
+        {
+            float const moved = std::hypot(pos.x - r.ox, pos.y - r.oy);
+            if (moved < 30.0f)
+                ++directRebuilds[b][RB_NUDGE];
+            else
+            {
+                ++directRebuilds[b][RB_NEW];
+                if (r.complete && bot->GetExactDist2d(r.ox, r.oy) > 20.0f)
+                    ++directRebuilds[b][RB_ABANDON];
+                if (changedMs && getMSTimeDiff(changedMs, now) < 60 * IN_MILLISECONDS &&
+                    std::hypot(pos.x - r.px, pos.y - r.py) < 5.0f)
+                    ++directRebuilds[b][RB_FLIPBACK];
+                px = r.ox;
+                py = r.oy;
+                changedMs = now;
+            }
+        }
+        else if (offRoute)
+            ++directRebuilds[b][RB_OFFROUTE];
+        else if (!r.complete)
+            ++directRebuilds[b][RB_RETRY];
+        else
+            ++directRebuilds[b][RB_TIMER];
         r = DirectRoute();
         r.instanceId = bg->GetInstanceID();
         r.ox = pos.x;
         r.oy = pos.y;
+        r.px = px;
+        r.py = py;
+        r.changedMs = changedMs;
         r.builtMs = r.progressMs = now;
         r.bestDist = dist;
         auto const t0 = std::chrono::steady_clock::now();
