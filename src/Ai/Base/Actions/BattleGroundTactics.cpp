@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <mutex>
 #include <unordered_map>
 
@@ -3459,6 +3460,8 @@ std::mutex directRouteLock;
 std::unordered_map<ObjectGuid, DirectRoute> directRoutes;
 std::atomic<uint32> directStats[3][3];  // [WS, AB, EY][complete, incomplete, stalled]
 std::atomic<uint32> directStatsLogMs{0};
+std::atomic<uint64> directSearchUs{0};   // route search time, total and max (for the cost on live, 1 map thread)
+std::atomic<uint32> directSearchMaxUs{0};
 
 void DirectStat(BattlegroundTypeId t, uint32 kind)
 {
@@ -3471,13 +3474,18 @@ void DirectStat(BattlegroundTypeId t, uint32 kind)
     else if (getMSTimeDiff(last, now) > 5 * MINUTE * IN_MILLISECONDS &&
              directStatsLogMs.compare_exchange_strong(last, now))
     {
+        uint64 const us = directSearchUs.exchange(0);
+        uint32 const maxUs = directSearchMaxUs.exchange(0);
         uint32 v[3][3];
         for (uint32 b = 0; b < 3; ++b)
             for (uint32 k = 0; k < 3; ++k)
                 v[b][k] = directStats[b][k].exchange(0);
+        uint32 const searches = v[0][0] + v[0][1] + v[1][0] + v[1][1] + v[2][0] + v[2][1];
         LOG_INFO("playerbots",
-                 "DirectPath routes (5 min, complete/incomplete/stalled): WS {}/{}/{} AB {}/{}/{} EY {}/{}/{}",
-                 v[0][0], v[0][1], v[0][2], v[1][0], v[1][1], v[1][2], v[2][0], v[2][1], v[2][2]);
+                 "DirectPath routes (5 min, complete/incomplete/stalled): WS {}/{}/{} AB {}/{}/{} EY {}/{}/{}; "
+                 "search time total {} ms, avg {} us, max {} us",
+                 v[0][0], v[0][1], v[0][2], v[1][0], v[1][1], v[1][2], v[2][0], v[2][1], v[2][2], us / 1000,
+                 searches ? us / searches : 0, maxUs);
     }
 }
 
@@ -3571,9 +3579,16 @@ bool BGTactics::moveDirectRoute()
         r.oy = pos.y;
         r.builtMs = r.progressMs = now;
         r.bestDist = dist;
+        auto const t0 = std::chrono::steady_clock::now();
         r.complete = BuildDirectRoute(bot->GetMap(),
                                       G3D::Vector3(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()),
                                       G3D::Vector3(pos.x, pos.y, pos.z), r.pts);
+        uint32 const us = uint32(
+            std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t0).count());
+        directSearchUs += us;
+        for (uint32 m = directSearchMaxUs.load(); us > m && !directSearchMaxUs.compare_exchange_weak(m, us);)
+        {
+        }
         // the route has to end at the objective, not somewhere near it
         if (r.complete && (r.pts.back() - G3D::Vector3(pos.x, pos.y, pos.z)).length() > 6.0f)
             r.complete = false;
