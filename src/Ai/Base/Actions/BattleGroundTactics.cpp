@@ -3626,11 +3626,18 @@ bool BGTactics::moveDirectRoute()
         along += leg;
         ++target;
     }
+    // the corners before the hop target are passed on the way: the next call starts from the target (without
+    // this, a bot standing on the target picked it again, the move was refused as a duplicate and the bot
+    // stood still until the stall check)
+    r.next = target;
+    bool moved;
     if (target + 1 == r.pts.size())
-        MoveNear(bot->GetMapId(), pos.x, pos.y, pos.z, 1.5f);  // last hop: the objective itself, as stock
+        moved = MoveNear(bot->GetMapId(), pos.x, pos.y, pos.z, 1.5f);  // last hop: the objective itself, as stock
     else
-        MoveTo(bot->GetMapId(), r.pts[target].x, r.pts[target].y, r.pts[target].z);
-    return true;  // on a complete route: keep following it (a move refused now is retried next tick)
+        moved = MoveTo(bot->GetMapId(), r.pts[target].x, r.pts[target].y, r.pts[target].z);
+    // a refused move (still waiting for the last one) is retried next tick; standing on the hop target with the
+    // move refused would stall, so the stock code runs instead
+    return moved || bot->GetExactDist2d(r.pts[target].x, r.pts[target].y) > 3.0f;
 }
 
 bool BGTactics::moveToObjective(bool ignoreDist)
