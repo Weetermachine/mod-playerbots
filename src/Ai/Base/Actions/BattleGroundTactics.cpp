@@ -1670,6 +1670,7 @@ bool BGTactics::Execute(Event /*event*/)
 
     if (getName() == "move to objective")
     {
+        tripSample();
         if (bg->GetStatus() == STATUS_WAIT_JOIN)
             return false;
 
@@ -4126,6 +4127,132 @@ bool BGTactics::allocatorObjective(PositionInfo& out)
         z = h;
     out.Set(x, y, z, bot->GetMapId());
     return true;
+}
+
+// Trip log (all bots in WSG/AB/EotS, stock movement and direct pathing): from getting an objective to arriving
+// within 10 yd of it, or giving it up (the objective moves 30+ yd). Per 5 minutes, per BG and movement: trips
+// finished and given up, ground covered per second (straight-line distance / time), the share of the time
+// mounted, and the share spent busy elsewhere (gaps of 1.5 s+ between samples: combat or other actions run
+// instead of "move to objective"). To find what makes direct routes lose in WSG/EotS.
+namespace
+{
+struct Trip
+{
+    float ox = 0, oy = 0, sx = 0, sy = 0;
+    uint32 startMs = 0, lastMs = 0, busyMs = 0;
+    uint32 samples = 0, mounted = 0;
+    bool direct = false;
+    bool arrived = false;  // reached; the next objective starts a new trip without giving this one up
+};
+
+struct TripStats
+{
+    uint32 done = 0, given = 0;
+    double dist = 0, sec = 0, busySec = 0;
+    uint32 samples = 0, mounted = 0;
+};
+
+std::mutex tripLock;
+std::unordered_map<ObjectGuid, Trip> trips;
+TripStats tripStats[3][2];  // [WS, AB, EY][stock, direct]
+uint32 tripLogMs = 0;
+
+void TripLog(uint32 now)  // needs tripLock
+{
+    if (!tripLogMs)
+    {
+        tripLogMs = now;
+        return;
+    }
+    if (getMSTimeDiff(tripLogMs, now) <= 5 * MINUTE * IN_MILLISECONDS)
+        return;
+    tripLogMs = now;
+    static char const* const names[3] = {"WS", "AB", "EY"};
+    for (uint32 b = 0; b < 3; ++b)
+        for (uint32 d = 0; d < 2; ++d)
+        {
+            TripStats& s = tripStats[b][d];
+            if (s.done + s.given)
+                LOG_INFO("module",
+                         "Trips {} {} (5 min): finished {} given up {} ({:.0f}%), {:.1f} yd/s, mounted {:.0f}%, busy {:.0f}%, "
+                         "avg {:.0f} yd in {:.1f} s",
+                         names[b], d ? "direct" : "stock", s.done, s.given, 100.0 * s.given / (s.done + s.given),
+                         s.sec > 0 ? s.dist / s.sec : 0.0, s.samples ? 100.0 * s.mounted / s.samples : 0.0,
+                         s.sec > 0 ? 100.0 * s.busySec / s.sec : 0.0, s.done ? s.dist / s.done : 0.0,
+                         s.done ? s.sec / s.done : 0.0);
+            s = TripStats();
+        }
+}
+}  // namespace
+
+void BGTactics::tripSample()
+{
+    Battleground* bg = bot->GetBattleground();
+    if (!bg || bg->GetStatus() != STATUS_IN_PROGRESS || !bot->IsAlive())
+        return;
+    BattlegroundTypeId type = bg->GetBgTypeID();
+    if (type == BATTLEGROUND_RB)
+        type = bg->GetBgTypeID(true);
+    if (type != BATTLEGROUND_WS && type != BATTLEGROUND_AB && type != BATTLEGROUND_EY)
+        return;
+    PositionInfo pos = context->GetValue<PositionMap&>("position")->Get()["bg objective"];
+    if (!pos.isSet())
+        return;
+    uint32 const b = type == BATTLEGROUND_WS ? 0 : type == BATTLEGROUND_AB ? 1 : 2;
+    bool const direct = BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::DirectPath);
+    uint32 const now = getMSTime();
+
+    std::lock_guard<std::mutex> guard(tripLock);
+    Trip& t = trips[bot->GetGUID()];
+    auto start = [&]()
+    {
+        t = Trip();
+        t.ox = pos.x;
+        t.oy = pos.y;
+        t.sx = bot->GetPositionX();
+        t.sy = bot->GetPositionY();
+        t.startMs = t.lastMs = now;
+        t.direct = direct;
+    };
+    // a new trip: first objective, a different objective (30+ yd away; that gives the old one up), or a stale
+    // record (the bot died or left in between)
+    if (!t.startMs || getMSTimeDiff(t.lastMs, now) > 30 * IN_MILLISECONDS)
+    {
+        start();
+        TripLog(now);
+        return;
+    }
+    if (std::hypot(pos.x - t.ox, pos.y - t.oy) > 30.0f)
+    {
+        if (!t.arrived)
+            ++tripStats[b][t.direct].given;
+        start();
+        TripLog(now);
+        return;
+    }
+    uint32 const gap = getMSTimeDiff(t.lastMs, now);
+    if (gap > 1500)
+        t.busyMs += gap;
+    t.lastMs = now;
+    ++t.samples;
+    t.mounted += bot->IsMounted();
+    if (!t.arrived && bot->GetExactDist2d(t.ox, t.oy) < 10.0f)
+    {
+        float const dist = std::hypot(t.ox - t.sx, t.oy - t.sy);
+        if (dist > 40.0f)  // only real trips
+        {
+            TripStats& s = tripStats[b][t.direct];
+            ++s.done;
+            s.dist += dist;
+            s.sec += getMSTimeDiff(t.startMs, now) / 1000.0;
+            s.busySec += t.busyMs / 1000.0;
+            s.samples += t.samples;
+            s.mounted += t.mounted;
+        }
+        start();  // parked at the objective until it changes
+        t.arrived = true;
+    }
+    TripLog(now);
 }
 
 bool BGTactics::moveDirectRoute()
