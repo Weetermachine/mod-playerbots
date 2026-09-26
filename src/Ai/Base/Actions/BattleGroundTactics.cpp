@@ -8,6 +8,9 @@
 #include "BGTacticArms.h"
 
 #include <algorithm>
+#include <atomic>
+#include <mutex>
+#include <unordered_map>
 
 #include "ArenaTeam.h"
 #include "ArenaTeamMgr.h"
@@ -27,7 +30,9 @@
 #include "BattlegroundWS.h"
 #include "Event.h"
 #include "GameObject.h"
+#include "DetourNavMeshQuery.h"
 #include "IVMapMgr.h"
+#include "MapDefines.h"
 #include "PathGenerator.h"
 #include "Playerbots.h"
 #include "PositionValue.h"
@@ -1696,12 +1701,13 @@ bool BGTactics::Execute(Event /*event*/)
             return false;
         }
 
-        // Direct pathing tactic: straight to the objective at any distance (navmesh path). The fixed waypoint
-        // paths below send bots along a random path whenever they stand at a path end, and beyond 100 yd
-        // along a path from its start, often back toward base first. Per bot, from its own team's arm.
+        // Direct pathing tactic: along a complete navmesh route to the objective (moveDirectRoute) instead of
+        // the fixed waypoint paths below, which send bots along a random path whenever they stand at a path
+        // end, and beyond 100 yd along a path from its start, often back toward base first. No complete
+        // route: the waypoint paths as stock. Per bot, from its own team's arm.
         if ((bgType == BATTLEGROUND_EY || bgType == BATTLEGROUND_WS || bgType == BATTLEGROUND_AB) &&
-            BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::DirectPath))
-            return moveToObjective(true);
+            BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::DirectPath) && moveDirectRoute())
+            return true;
 
         if (!moveToObjective(false))
             if (!selectObjectiveWp(*vPaths))
@@ -3427,6 +3433,188 @@ bool BGTactics::selectObjective(bool reset)
     }
 
     return false;
+}
+
+// Direct pathing v2 (arm DirectPath): a complete navmesh route from the bot to its objective, walked in short
+// hops. The stock movement path search (PathGenerator) stops at 74 polygons; a longer route comes back partial,
+// ending at the reachable point nearest the target in a straight line, which on AB/EotS is often the foot of a
+// cliff below a node or tower (v1 stalled there). Here the route is searched with a large node pool; each hop
+// is a corner of that route, short enough for the stock movement to reach. No complete route: the stock
+// waypoint paths take over.
+namespace
+{
+struct DirectRoute
+{
+    uint32 instanceId = 0;
+    float ox = 0, oy = 0;  // objective the route was built for
+    std::vector<G3D::Vector3> pts;
+    size_t next = 0;
+    bool complete = false;
+    uint32 builtMs = 0;
+    uint32 progressMs = 0;  // last time the bot got closer to the objective
+    float bestDist = 0;
+};
+
+std::mutex directRouteLock;
+std::unordered_map<ObjectGuid, DirectRoute> directRoutes;
+std::atomic<uint32> directStats[3][3];  // [WS, AB, EY][complete, incomplete, stalled]
+std::atomic<uint32> directStatsLogMs{0};
+
+void DirectStat(BattlegroundTypeId t, uint32 kind)
+{
+    uint32 const i = t == BATTLEGROUND_WS ? 0 : t == BATTLEGROUND_AB ? 1 : 2;
+    ++directStats[i][kind];
+    uint32 const now = getMSTime();
+    uint32 last = directStatsLogMs.load();
+    if (last == 0)
+        directStatsLogMs.compare_exchange_strong(last, now);
+    else if (getMSTimeDiff(last, now) > 5 * MINUTE * IN_MILLISECONDS &&
+             directStatsLogMs.compare_exchange_strong(last, now))
+    {
+        uint32 v[3][3];
+        for (uint32 b = 0; b < 3; ++b)
+            for (uint32 k = 0; k < 3; ++k)
+                v[b][k] = directStats[b][k].exchange(0);
+        LOG_INFO("playerbots",
+                 "DirectPath routes (5 min, complete/incomplete/stalled): WS {}/{}/{} AB {}/{}/{} EY {}/{}/{}",
+                 v[0][0], v[0][1], v[0][2], v[1][0], v[1][1], v[1][2], v[2][0], v[2][1], v[2][2]);
+    }
+}
+
+// Complete walkable route from `from` to `to` as straight-path corners (WoW coordinates); false if the navmesh
+// has no complete route (target off the mesh, or not connected).
+bool BuildDirectRoute(Map* map, G3D::Vector3 const& from, G3D::Vector3 const& to, std::vector<G3D::Vector3>& out)
+{
+    dtNavMesh const* mesh = map->GetMapCollisionData().GetMMapData().GetNavMesh();
+    if (!mesh)
+        return false;
+    // A query is not thread safe: one per map-update thread, re-initialised for the mesh at hand every time
+    // (cheap once allocated: it only clears the node pool).
+    thread_local std::unique_ptr<dtNavMeshQuery, void (*)(dtNavMeshQuery*)> query(dtAllocNavMeshQuery(),
+                                                                                  dtFreeNavMeshQuery);
+    if (!query || dtStatusFailed(query->init(mesh, 8192)))
+        return false;
+
+    dtQueryFilter filter;
+    filter.setIncludeFlags(NAV_GROUND | NAV_WATER | NAV_MAGMA);
+    filter.setExcludeFlags(0);
+
+    float const start[3] = {from.y, from.z, from.x};
+    float const end[3] = {to.y, to.z, to.x};
+    float const extStart[3] = {3.0f, 5.0f, 3.0f};
+    float const extEnd[3] = {4.0f, 8.0f, 4.0f};
+    dtPolyRef startRef = 0, endRef = 0;
+    float startPt[3], endPt[3];
+    if (dtStatusFailed(query->findNearestPoly(start, extStart, &filter, &startRef, startPt)) || !startRef)
+        return false;
+    if (dtStatusFailed(query->findNearestPoly(end, extEnd, &filter, &endRef, endPt)) || !endRef)
+        return false;
+
+    static constexpr int MAX_POLYS = 1024;
+    dtPolyRef polys[MAX_POLYS];
+    int nPolys = 0;
+    dtStatus st = query->findPath(startRef, endRef, startPt, endPt, &filter, polys, &nPolys, MAX_POLYS);
+    if (dtStatusFailed(st) || (st & DT_PARTIAL_RESULT) || nPolys <= 0 || polys[nPolys - 1] != endRef)
+        return false;
+
+    static constexpr int MAX_CORNERS = 256;
+    float corners[MAX_CORNERS * 3];
+    unsigned char flags[MAX_CORNERS];
+    dtPolyRef refs[MAX_CORNERS];
+    int nCorners = 0;
+    st = query->findStraightPath(startPt, endPt, polys, nPolys, corners, flags, refs, &nCorners, MAX_CORNERS);
+    if (dtStatusFailed(st) || (st & DT_BUFFER_TOO_SMALL) || nCorners < 1)
+        return false;
+
+    out.clear();
+    for (int i = 0; i < nCorners; ++i)
+        out.emplace_back(corners[i * 3 + 2], corners[i * 3], corners[i * 3 + 1]);
+    return true;
+}
+}  // namespace
+
+bool BGTactics::moveDirectRoute()
+{
+    Battleground* bg = bot->GetBattleground();
+    if (!bg)
+        return false;
+    BattlegroundTypeId bgType = bg->GetBgTypeID();
+    if (bgType == BATTLEGROUND_RB)
+        bgType = bg->GetBgTypeID(true);
+
+    PositionInfo pos = context->GetValue<PositionMap&>("position")->Get()["bg objective"];
+    if (!pos.isSet())
+        return false;  // the stock code selects one
+    float const dist = bot->GetDistance(pos.x, pos.y, pos.z);
+    if (dist < 4.0f)
+        return false;  // the stock code resets it
+
+    uint32 const now = getMSTime();
+    std::lock_guard<std::mutex> guard(directRouteLock);
+    DirectRoute& r = directRoutes[bot->GetGUID()];
+
+    bool const sameObjective = r.instanceId == bg->GetInstanceID() && std::abs(r.ox - pos.x) < 5.0f &&
+                               std::abs(r.oy - pos.y) < 5.0f;
+    // off the route (a fight, a knockback, a death): the next corner is far away
+    bool const offRoute = sameObjective && r.complete && r.next < r.pts.size() &&
+                          bot->GetExactDist2d(r.pts[r.next].x, r.pts[r.next].y) > 60.0f;
+
+    if (!sameObjective || offRoute || getMSTimeDiff(r.builtMs, now) > 30 * IN_MILLISECONDS)
+    {
+        // no complete route: the result is kept for 10 s (the stock waypoints run meanwhile), not searched
+        // again every tick
+        if (sameObjective && !r.complete && getMSTimeDiff(r.builtMs, now) < 10 * IN_MILLISECONDS)
+            return false;
+        r = DirectRoute();
+        r.instanceId = bg->GetInstanceID();
+        r.ox = pos.x;
+        r.oy = pos.y;
+        r.builtMs = r.progressMs = now;
+        r.bestDist = dist;
+        r.complete = BuildDirectRoute(bot->GetMap(),
+                                      G3D::Vector3(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()),
+                                      G3D::Vector3(pos.x, pos.y, pos.z), r.pts);
+        // the route has to end at the objective, not somewhere near it
+        if (r.complete && r.pts.back().distance(G3D::Vector3(pos.x, pos.y, pos.z)) > 6.0f)
+            r.complete = false;
+        r.next = r.pts.size() > 1 ? 1 : 0;
+        DirectStat(bgType, r.complete ? 0 : 1);
+    }
+    if (!r.complete || r.pts.empty())
+        return false;
+
+    // no progress toward the objective for 15 s: stalled, let the stock waypoints run for a while
+    if (dist < r.bestDist - 2.0f)
+    {
+        r.bestDist = dist;
+        r.progressMs = now;
+    }
+    else if (getMSTimeDiff(r.progressMs, now) > 15 * IN_MILLISECONDS)
+    {
+        DirectStat(bgType, 2);
+        r.complete = false;
+        r.builtMs = now;
+        return false;
+    }
+
+    // skip corners already reached, then aim for the furthest corner up to ~40 yd along the route
+    while (r.next + 1 < r.pts.size() && bot->GetExactDist2d(r.pts[r.next].x, r.pts[r.next].y) < 3.0f)
+        ++r.next;
+    size_t target = r.next;
+    float along = bot->GetExactDist(r.pts[r.next].x, r.pts[r.next].y, r.pts[r.next].z);
+    while (target + 1 < r.pts.size())
+    {
+        float const leg = r.pts[target].distance(r.pts[target + 1]);
+        if (along + leg > 40.0f)
+            break;
+        along += leg;
+        ++target;
+    }
+    if (target + 1 == r.pts.size())
+        MoveNear(bot->GetMapId(), pos.x, pos.y, pos.z, 1.5f);  // last hop: the objective itself, as stock
+    else
+        MoveTo(bot->GetMapId(), r.pts[target].x, r.pts[target].y, r.pts[target].z);
+    return true;  // on a complete route: keep following it (a move refused now is retried next tick)
 }
 
 bool BGTactics::moveToObjective(bool ignoreDist)
