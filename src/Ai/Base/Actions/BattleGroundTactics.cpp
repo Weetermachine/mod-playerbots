@@ -40,6 +40,7 @@
 #include "PositionValue.h"
 #include "PvpTriggers.h"
 #include "ServerFacade.h"
+#include "SpellAuraEffects.h"
 #include "Vehicle.h"
 
 // common bg positions
