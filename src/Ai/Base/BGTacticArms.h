@@ -33,6 +33,7 @@ enum class BGTactic : uint8
     AllocFlagValue = 13, // with Allocator (EotS): flag, carrier chase and escort jobs worth 2.5x
     ChaseStagger = 14,   // with FCChase (WSG): one slow/stun at a time on the enemy carrier, the next near its end
     FCEvade = 15,        // WSG/EotS: our flag carrier takes a danger-weighted route; escorts walk ahead on it
+    EscortStick = 16,    // WSG/EotS: escorts keep up with our carrier through fights not aimed at it
 };
 
 // Per-game A/B arms. With AiPlayerbot.BGTactics.<BG>.Arms set (e.g.

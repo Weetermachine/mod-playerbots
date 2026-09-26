@@ -269,6 +269,21 @@ bool EnemyFlagCarrierNear::IsActive()
     return true;
 }
 
+bool EscortFallingBehind::IsActive()
+{
+    Battleground* bg = bot->GetBattleground();
+    if (!bg || !bot->IsAlive() || !BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::EscortStick))
+        return false;
+    Unit* carrier = AI_VALUE(Unit*, "team flag carrier");
+    if (!carrier || carrier == bot || !carrier->IsAlive())
+        return false;
+    float const d = bot->GetExactDist2d(carrier);
+    if (d <= 15.0f || d > 80.0f || !BGTactics::IsEscort(bot))
+        return false;
+    Unit* target = AI_VALUE(Unit*, "current target");
+    return !target || target->GetVictim() != carrier;  // fighting the carrier's attacker is escorting
+}
+
 bool TeamFlagCarrierNear::IsActive()
 {
     // Used by WarsongStrategy and EyeStrategy ("team flagcarrier near" -> "bg protect fc"). Off unless the

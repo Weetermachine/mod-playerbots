@@ -46,6 +46,16 @@ public:
     bool IsActive() override;
 };
 
+// Escort discipline (EscortStick): one of our carrier's escorts is over 15 yd behind it, and not fighting someone who
+// is attacking the carrier
+class EscortFallingBehind : public Trigger
+{
+public:
+    EscortFallingBehind(PlayerbotAI* botAI) : Trigger(botAI, "escort falling behind") {}
+
+    bool IsActive() override;
+};
+
 class TeamFlagCarrierNear : public Trigger
 {
 public:

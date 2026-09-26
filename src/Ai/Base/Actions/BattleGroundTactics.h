@@ -117,6 +117,8 @@ public:
     uint8 static GetBotStrategyForTeam(Battleground* bg, TeamId teamId);
     // WSG FC chase: can this bot use a pull, gap closer or sprint to reach the enemy flag carrier now?
     static bool CanCatchEnemyFC(PlayerbotAI* botAI, Unit* fc);
+    // Is this bot one of our carrier's escorts: an escort role (FCEscort, bg role 6+) or the allocator's escort slot?
+    static bool IsEscort(Player* bot);
 
     BGTactics(PlayerbotAI* botAI, std::string const name = "bg tactics") : MovementAction(botAI, name) {}
 
@@ -127,7 +129,9 @@ private:
     bool moveToStart(bool force = false);
     bool selectObjective(bool reset = false);
     bool moveToObjective(bool ignoreDist);
-    bool moveDirectRoute(bool evade = false);
+    // 1: moving along a complete route; -1: on a route but nothing to do this tick (let other actions run, e.g.
+    // the mount cast); 0: no complete route (the stock waypoint paths take over)
+    int moveDirectRoute(bool evade = false);
     void tripSample();
     bool allocatorObjective(PositionInfo& out);
     bool selectObjectiveWp(std::vector<BattleBotPath*> const& vPaths);

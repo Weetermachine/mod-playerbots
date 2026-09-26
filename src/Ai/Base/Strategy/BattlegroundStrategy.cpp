@@ -34,6 +34,8 @@ void WarsongStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     // Just above "bg move to objective": escorting replaces the objective, never a heal or an attack.
     triggers.push_back(new TriggerNode("team flagcarrier near", { NextAction("bg protect fc", ACTION_BG + 2.0f),
                                                                  NextAction("attack fc attacker", ACTION_RAID + 0.4f)}));
+    // Escort discipline: above ordinary fights (and the peel), below chasing the enemy carrier
+    triggers.push_back(new TriggerNode("escort falling behind", { NextAction("bg protect fc", ACTION_RAID + 0.45f)}));
     // Escort v2: healers heal our carrier first (below heals for someone about to die)
     triggers.push_back(new TriggerNode("team flagcarrier needs heal", { NextAction("bg heal fc", ACTION_MEDIUM_HEAL + 5.0f)}));
     triggers.push_back(new TriggerNode("often", { NextAction("bg use buff", ACTION_BG)}));
@@ -71,6 +73,7 @@ void EyeStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
                                                                   NextAction("bg catch fc", ACTION_RAID - 0.5f)}));
     triggers.push_back(new TriggerNode("team flagcarrier near", { NextAction("bg protect fc", ACTION_BG + 2.0f),
                                                                  NextAction("attack fc attacker", ACTION_RAID - 0.6f)}));
+    triggers.push_back(new TriggerNode("escort falling behind", { NextAction("bg protect fc", ACTION_RAID - 0.55f)}));
     triggers.push_back(new TriggerNode("team flagcarrier needs heal", { NextAction("bg heal fc", ACTION_MEDIUM_HEAL + 5.0f)}));
     triggers.push_back(new TriggerNode("player has flag",{ NextAction("bg move to objective", ACTION_EMERGENCY)}));
 }

@@ -95,7 +95,8 @@ int TacticBit(std::string const& tactic)
          : tactic == "AllocFlagFloor" ? int(BGTactic::AllocFlagFloor)
          : tactic == "AllocFlagValue" ? int(BGTactic::AllocFlagValue)
          : tactic == "ChaseStagger" ? int(BGTactic::ChaseStagger)
-         : tactic == "FCEvade" ? int(BGTactic::FCEvade) : -1;
+         : tactic == "FCEvade" ? int(BGTactic::FCEvade)
+         : tactic == "EscortStick" ? int(BGTactic::EscortStick) : -1;
 }
 
 char const* BGName(BattlegroundTypeId type)
@@ -196,6 +197,7 @@ bool GlobalSwitch(BGTactic tactic, TeamId team, BattlegroundTypeId type)
         case BGTactic::AllocFlagValue:
         case BGTactic::ChaseStagger:
         case BGTactic::FCEvade:
+        case BGTactic::EscortStick:
             return false;  // arms only
     }
     return false;
