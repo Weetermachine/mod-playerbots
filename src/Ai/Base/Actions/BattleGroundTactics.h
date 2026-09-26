@@ -127,7 +127,7 @@ private:
     bool moveToStart(bool force = false);
     bool selectObjective(bool reset = false);
     bool moveToObjective(bool ignoreDist);
-    bool moveDirectRoute();
+    bool moveDirectRoute(bool evade = false);
     void tripSample();
     bool allocatorObjective(PositionInfo& out);
     bool selectObjectiveWp(std::vector<BattleBotPath*> const& vPaths);

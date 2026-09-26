@@ -1709,7 +1709,15 @@ bool BGTactics::Execute(Event /*event*/)
         // the fixed waypoint paths below, which send bots along a random path whenever they stand at a path
         // end, and beyond 100 yd along a path from its start, often back toward base first. No complete
         // route: the waypoint paths as stock. Per bot, from its own team's arm.
-        if ((bgType == BATTLEGROUND_EY || bgType == BATTLEGROUND_WS || bgType == BATTLEGROUND_AB) &&
+        bool const carrier = bot->HasAura(BG_WS_SPELL_WARSONG_FLAG) || bot->HasAura(BG_WS_SPELL_SILVERWING_FLAG) ||
+                             bot->HasAura(BG_EY_NETHERSTORM_FLAG_SPELL);
+        // Evasive carrier routing: our carrier takes a danger-weighted route (moveDirectRoute(true)).
+        if (carrier && (bgType == BATTLEGROUND_WS || bgType == BATTLEGROUND_EY) &&
+            BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::FCEvade) && moveDirectRoute(true))
+            return true;
+        // Direct pathing v3: not for flag carriers (on the shortest line through midfield WSG carriers captured
+        // 18% of pickups instead of 28%); they keep the waypoint paths.
+        if (!carrier && (bgType == BATTLEGROUND_EY || bgType == BATTLEGROUND_WS || bgType == BATTLEGROUND_AB) &&
             BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::DirectPath) && moveDirectRoute())
             return true;
 
@@ -3481,6 +3489,7 @@ struct DirectRoute
     uint32 builtMs = 0;
     uint32 progressMs = 0;  // last time the bot got closer to the objective
     float bestDist = 0;
+    uint32 holdMs = 0;  // evasive carrier: when it started holding for its escort
 };
 
 std::mutex directRouteLock;
@@ -3537,9 +3546,124 @@ void DirectStat(BattlegroundTypeId t, uint32 kind)
     }
 }
 
+// Evasive carrier routing (arm FCEvade): the route costs its length times (1 + danger), so a carrier goes around
+// enemies ahead instead of through them, as a player who sees the field would. Danger falls off with distance from
+// each living enemy (sigma 20 yd); enemies within 15 yd of the carrier are chasers the route cannot avoid and are
+// left to speed and escorts. Friendly players near a stretch cancel part of its danger (the carrier prefers ground
+// its team holds). The cost never drops below the length, so the search stays exact.
+class ThreatFilter : public dtQueryFilter
+{
+public:
+    std::vector<G3D::Vector3> enemies, friends;
+
+    float getCost(float const* pa, float const* pb, dtPolyRef const prevRef, dtMeshTile const* prevTile,
+                  dtPoly const* prevPoly, dtPolyRef const curRef, dtMeshTile const* curTile, dtPoly const* curPoly,
+                  dtPolyRef const nextRef, dtMeshTile const* nextTile, dtPoly const* nextPoly) const override
+    {
+        float const base = dtQueryFilter::getCost(pa, pb, prevRef, prevTile, prevPoly, curRef, curTile, curPoly,
+                                                  nextRef, nextTile, nextPoly);
+        float const mx = (pa[2] + pb[2]) * 0.5f, my = (pa[0] + pb[0]) * 0.5f;  // recast (y, z, x) -> WoW x, y
+        float danger = 0.0f, cover = 0.0f;
+        for (G3D::Vector3 const& e : enemies)
+        {
+            float const d2 = (e.x - mx) * (e.x - mx) + (e.y - my) * (e.y - my);
+            if (d2 < 3600.0f)  // within 60 yd
+                danger += std::exp(-d2 / 800.0f);
+        }
+        for (G3D::Vector3 const& f : friends)
+        {
+            float const d2 = (f.x - mx) * (f.x - mx) + (f.y - my) * (f.y - my);
+            if (d2 < 3600.0f)
+                cover += 0.4f * std::exp(-d2 / 800.0f);
+        }
+        return base * std::max(1.0f, 1.0f + 3.0f * danger - std::min(cover, 1.5f));
+    }
+};
+
+// The carrier's current route per battleground and team, for escorts to walk ahead on.
+struct CarrierRoute
+{
+    std::vector<G3D::Vector3> pts;
+    uint32 updatedMs = 0;
+};
+std::mutex carrierRouteLock;
+std::unordered_map<uint64, CarrierRoute> carrierRoutes;  // key: instance id << 1 | team
+
+uint64 CarrierKey(Battleground* bg, TeamId team) { return (uint64(bg->GetInstanceID()) << 1) | uint64(team == TEAM_HORDE); }
+
+// A point `ahead` yards further along our carrier's route than the route point nearest the carrier; false without a
+// fresh route (5 s).
+bool CarrierAhead(Battleground* bg, TeamId team, Position const& fc, float ahead, Position& out)
+{
+    std::lock_guard<std::mutex> guard(carrierRouteLock);
+    auto it = carrierRoutes.find(CarrierKey(bg, team));
+    if (it == carrierRoutes.end() || getMSTimeDiff(it->second.updatedMs, getMSTime()) > 5 * IN_MILLISECONDS ||
+        it->second.pts.size() < 2)
+        return false;
+    std::vector<G3D::Vector3> const& p = it->second.pts;
+    size_t nearest = 0;
+    float best = FLT_MAX;
+    for (size_t i = 0; i < p.size(); ++i)
+    {
+        float const d = std::hypot(p[i].x - fc.GetPositionX(), p[i].y - fc.GetPositionY());
+        if (d < best)
+        {
+            best = d;
+            nearest = i;
+        }
+    }
+    G3D::Vector3 cur(fc.GetPositionX(), fc.GetPositionY(), fc.GetPositionZ());
+    for (size_t i = nearest + 1; i < p.size(); ++i)
+    {
+        float const leg = (p[i] - cur).length();
+        if (leg >= ahead)
+        {
+            G3D::Vector3 const q = cur + (p[i] - cur) * (ahead / leg);
+            out.Relocate(q.x, q.y, q.z);
+            return true;
+        }
+        ahead -= leg;
+        cur = p[i];
+    }
+    out.Relocate(p.back().x, p.back().y, p.back().z);
+    return true;
+}
+
+// Carrier log: per 5 minutes, per BG and carrier routing (stock waypoints / evasive), the share of carrying time
+// with no living friendly player within 20 yd, and how often an evasive carrier held for its escort.
+std::mutex carrierStatLock;
+uint32 carrierSamples[3][2], carrierAlone[3][2], carrierHolds[3];
+uint32 carrierLogMs = 0;
+
+void CarrierLog(uint32 now)  // needs carrierStatLock
+{
+    if (!carrierLogMs)
+    {
+        carrierLogMs = now;
+        return;
+    }
+    if (getMSTimeDiff(carrierLogMs, now) <= 5 * MINUTE * IN_MILLISECONDS)
+        return;
+    carrierLogMs = now;
+    static char const* const names[3] = {"WS", "AB", "EY"};
+    for (uint32 b = 0; b < 3; ++b)
+    {
+        for (uint32 m = 0; m < 2; ++m)
+            if (carrierSamples[b][m])
+                LOG_INFO("module", "Carriers {} {} (5 min): samples {}, alone (no friend within 20 yd) {:.0f}%{}", names[b],
+                         m ? "evasive" : "stock", carrierSamples[b][m],
+                         100.0 * carrierAlone[b][m] / carrierSamples[b][m],
+                         m ? fmt::format(", held for escort {}", carrierHolds[b]) : std::string());
+        for (uint32 m = 0; m < 2; ++m)
+            carrierSamples[b][m] = carrierAlone[b][m] = 0;
+        carrierHolds[b] = 0;
+    }
+}
+
 // Complete walkable route from `from` to `to` as straight-path corners (WoW coordinates); false if the navmesh
-// has no complete route (target off the mesh, or not connected).
-bool BuildDirectRoute(Map* map, G3D::Vector3 const& from, G3D::Vector3 const& to, std::vector<G3D::Vector3>& out)
+// has no complete route (target off the mesh, or not connected). A custom filter (ThreatFilter) weighs the steps.
+bool BuildDirectRoute(Map* map, G3D::Vector3 const& from, G3D::Vector3 const& to, std::vector<G3D::Vector3>& out,
+                      dtQueryFilter const* custom = nullptr)
 {
     dtNavMesh const* mesh = map->GetMapCollisionData().GetMMapData().GetNavMesh();
     if (!mesh)
@@ -3551,9 +3675,10 @@ bool BuildDirectRoute(Map* map, G3D::Vector3 const& from, G3D::Vector3 const& to
     if (!query || dtStatusFailed(query->init(mesh, 8192)))
         return false;
 
-    dtQueryFilter filter;
-    filter.setIncludeFlags(NAV_GROUND | NAV_WATER | NAV_MAGMA);
-    filter.setExcludeFlags(0);
+    dtQueryFilter plain;
+    plain.setIncludeFlags(NAV_GROUND | NAV_WATER | NAV_MAGMA);
+    plain.setExcludeFlags(0);
+    dtQueryFilter const& filter = custom ? *custom : plain;
 
     float const start[3] = {from.y, from.z, from.x};
     float const end[3] = {to.y, to.z, to.x};
@@ -3857,9 +3982,14 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
                             (them ? flagPts[std::min(them, 4)] : 20.0f) * pCap * flagMul,
                             enemiesNear(enemyFC->GetPosition(), 20.0f), uint8(flagFloor ? 3 : 2), uint8(flagFloor ? 5 : 4)});
         if (ourFC)
-            jobs.push_back({{AllocKey(AK_ESCORT, 0), 3, ourFC->GetPosition(), 0, 5.0f},
+        {
+            Position ep = ourFC->GetPosition();
+            if (BGTacticArms::IsOn(bg, team, BGTactic::FCEvade))
+                CarrierAhead(bg, team, ourFC->GetPosition(), 18.0f, ep);  // ahead on the carrier's route
+            jobs.push_back({{AllocKey(AK_ESCORT, 0), 3, ep, 0, 5.0f},
                             flagPts[std::clamp(us, 1, 4)] * 0.25f * flagMul, enemiesNear(ourFC->GetPosition(), 20.0f),
                             uint8(flagFloor ? 3 : 0), uint8(flagFloor ? 4 : 3)});
+        }
         GameObject* flag = bg->GetBGObject(BG_EY_OBJECT_FLAG_NETHERSTORM);
         if (flag && flag->isSpawned() && us)
             jobs.push_back({{AllocKey(AK_FLAG, 0), 3, flag->GetPosition(), 0, 2.0f}, flagPts[std::min(us, 4)] * pCap * flagMul,
@@ -3913,7 +4043,12 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
         if (enemyFC)
             slots.push_back({AllocKey(AK_STOPFC, 0), 2, enemyFC->GetPosition(), 4, 3.0f});
         if (ourFC)
-            slots.push_back({AllocKey(AK_ESCORT, 0), 3, ourFC->GetPosition(), 3, 5.0f});
+        {
+            Position ep = ourFC->GetPosition();
+            if (BGTacticArms::IsOn(bg, team, BGTactic::FCEvade))
+                CarrierAhead(bg, team, ourFC->GetPosition(), 18.0f, ep);  // ahead on the carrier's route
+            slots.push_back({AllocKey(AK_ESCORT, 0), 3, ep, 3, 5.0f});
+        }
         if (ws->GetFlagState(team) == BG_WS_FLAG_STATE_ON_BASE)
             slots.push_back({AllocKey(AK_ROOM, 0), 3, ourFlag, 2, 10.0f});
         if (ws->GetFlagState(enemyTeam) == BG_WS_FLAG_STATE_ON_BASE)
@@ -4195,10 +4330,30 @@ void BGTactics::tripSample()
         type = bg->GetBgTypeID(true);
     if (type != BATTLEGROUND_WS && type != BATTLEGROUND_AB && type != BATTLEGROUND_EY)
         return;
+    uint32 const b = type == BATTLEGROUND_WS ? 0 : type == BATTLEGROUND_AB ? 1 : 2;
+    // carrier log: is our carrier alone (no living friendly player within 20 yd)?
+    if (bot->HasAura(BG_WS_SPELL_WARSONG_FLAG) || bot->HasAura(BG_WS_SPELL_SILVERWING_FLAG) ||
+        bot->HasAura(BG_EY_NETHERSTORM_FLAG_SPELL))
+    {
+        bool alone = true;
+        for (auto const& ref : bg->GetBgMap()->GetPlayers())
+        {
+            Player* p = ref.GetSource();
+            if (p && p != bot && p->IsAlive() && p->GetTeamId() == bot->GetTeamId() && bot->GetExactDist2d(p) < 20.0f)
+            {
+                alone = false;
+                break;
+            }
+        }
+        uint32 const m = BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::FCEvade) ? 1 : 0;
+        std::lock_guard<std::mutex> cg(carrierStatLock);
+        ++carrierSamples[b][m];
+        carrierAlone[b][m] += alone;
+        CarrierLog(getMSTime());
+    }
     PositionInfo pos = context->GetValue<PositionMap&>("position")->Get()["bg objective"];
     if (!pos.isSet())
         return;
-    uint32 const b = type == BATTLEGROUND_WS ? 0 : type == BATTLEGROUND_AB ? 1 : 2;
     bool const direct = BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::DirectPath);
     uint32 const now = getMSTime();
 
@@ -4255,7 +4410,7 @@ void BGTactics::tripSample()
     TripLog(now);
 }
 
-bool BGTactics::moveDirectRoute()
+bool BGTactics::moveDirectRoute(bool evade)
 {
     Battleground* bg = bot->GetBattleground();
     if (!bg)
@@ -4297,7 +4452,8 @@ bool BGTactics::moveDirectRoute()
         offRoute = best > 20.0f;
     }
 
-    if (!sameObjective || offRoute || getMSTimeDiff(r.builtMs, now) > 30 * IN_MILLISECONDS)
+    // an evasive carrier re-plans every 2.5 s as the enemies move
+    if (!sameObjective || offRoute || getMSTimeDiff(r.builtMs, now) > (evade ? 2500u : 30u * IN_MILLISECONDS))
     {
         // no complete route: the result is kept for 10 s (the stock waypoints run meanwhile), not searched
         // again every tick
@@ -4342,10 +4498,27 @@ bool BGTactics::moveDirectRoute()
         r.changedMs = changedMs;
         r.builtMs = r.progressMs = now;
         r.bestDist = dist;
+        ThreatFilter threat;
+        if (evade)
+        {
+            threat.setIncludeFlags(NAV_GROUND | NAV_WATER | NAV_MAGMA);
+            threat.setExcludeFlags(0);
+            for (auto const& ref : bg->GetBgMap()->GetPlayers())
+            {
+                Player* p = ref.GetSource();
+                if (!p || p == bot || !p->IsAlive())
+                    continue;
+                G3D::Vector3 const v(p->GetPositionX(), p->GetPositionY(), p->GetPositionZ());
+                if (p->GetTeamId() == bot->GetTeamId())
+                    threat.friends.push_back(v);
+                else if (bot->GetExactDist2d(p) > 15.0f)  // chasers right behind: the route cannot avoid them
+                    threat.enemies.push_back(v);
+            }
+        }
         auto const t0 = std::chrono::steady_clock::now();
         r.complete = BuildDirectRoute(bot->GetMap(),
                                       G3D::Vector3(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()),
-                                      G3D::Vector3(pos.x, pos.y, pos.z), r.pts);
+                                      G3D::Vector3(pos.x, pos.y, pos.z), r.pts, evade ? &threat : nullptr);
         uint32 const us = uint32(
             std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t0).count());
         directSearchUs += us;
@@ -4357,6 +4530,11 @@ bool BGTactics::moveDirectRoute()
             r.complete = false;
         r.next = r.pts.size() > 1 ? 1 : 0;
         DirectStat(bgType, r.complete ? 0 : 1);
+        if (evade && r.complete)  // escorts walk ahead on it
+        {
+            std::lock_guard<std::mutex> cg(carrierRouteLock);
+            carrierRoutes[CarrierKey(bg, bot->GetTeamId())] = {r.pts, now};
+        }
     }
     if (!r.complete || r.pts.empty())
         return false;
@@ -4373,6 +4551,51 @@ bool BGTactics::moveDirectRoute()
         r.complete = false;
         r.builtMs = now;
         return false;
+    }
+
+    // Evasive carrier alone with danger ahead: hold up to 5 s for the escort (not with an enemy on it already)
+    if (evade)
+    {
+        bool alone = true, pressed = false;
+        uint32 ahead = 0;
+        for (auto const& ref : bg->GetBgMap()->GetPlayers())
+        {
+            Player* p = ref.GetSource();
+            if (!p || p == bot || !p->IsAlive())
+                continue;
+            float const d = bot->GetExactDist2d(p);
+            if (p->GetTeamId() == bot->GetTeamId())
+            {
+                if (d < 25.0f)
+                    alone = false;
+                continue;
+            }
+            if (d < 20.0f)
+                pressed = true;
+            else
+                for (size_t i = r.next; i < r.pts.size() && i < r.next + 6; ++i)
+                    if (std::hypot(r.pts[i].x - p->GetPositionX(), r.pts[i].y - p->GetPositionY()) < 30.0f)
+                    {
+                        ++ahead;
+                        break;
+                    }
+        }
+        if (alone && !pressed && ahead >= 2)
+        {
+            if (!r.holdMs)
+            {
+                r.holdMs = now;
+                std::lock_guard<std::mutex> sg(carrierStatLock);
+                ++carrierHolds[bgType == BATTLEGROUND_WS ? 0 : bgType == BATTLEGROUND_AB ? 1 : 2];
+            }
+            if (getMSTimeDiff(r.holdMs, now) < 5 * IN_MILLISECONDS)
+            {
+                r.progressMs = now;  // waiting is not a stall
+                return true;
+            }
+        }
+        else if (r.holdMs && getMSTimeDiff(r.holdMs, now) > 15 * IN_MILLISECONDS)
+            r.holdMs = 0;  // a new hold is possible again
     }
 
     // skip corners already reached, then aim for the furthest corner up to ~40 yd along the route
@@ -5238,6 +5461,18 @@ bool BGTactics::protectFC()
     if (!teamFC || teamFC == bot)
     {
         return false;
+    }
+
+    // Evasive carrier routing: escorts walk ~18 yd ahead of the carrier on its route, screening it, instead of
+    // trailing it on their own shortest line (which cut through the danger the carrier went around).
+    Position ahead;
+    if (!bot->IsInCombat() && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::FCEvade) &&
+        CarrierAhead(bg, bot->GetTeamId(), teamFC->GetPosition(), 18.0f, ahead))
+    {
+        if (bot->GetExactDist2d(ahead.GetPositionX(), ahead.GetPositionY()) < 6.0f)
+            return false;
+        return MoveNear(bot->GetMapId(), ahead.GetPositionX(), ahead.GetPositionY(), ahead.GetPositionZ(), 3.0f,
+                        MovementPriority::MOVEMENT_NORMAL);
     }
 
     if (!bot->IsInCombat() && !bot->IsWithinDistInMap(teamFC, 20.0f))
