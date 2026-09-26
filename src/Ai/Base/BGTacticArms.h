@@ -22,6 +22,7 @@ enum class BGTactic : uint8
     Adaptive = 3,   // AB/EotS: roles (guard / flag / attack) follow how many nodes the team holds
     FCEscort2 = 4,  // WSG: escort v2 - also guards the carrier in standoffs, peels, healers heal the carrier first
     NodeGuard2 = 5, // AB: node guards v2 - node guards plus interrupting enemies channeling a banner capture
+    FlagRoom = 6,   // WSG: defenders hold the flag room while our flag is home
 };
 
 // Per-game A/B arms. With AiPlayerbot.BGTactics.<BG>.Arms set (e.g.

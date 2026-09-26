@@ -2262,6 +2262,14 @@ bool BGTactics::selectObjective(bool reset)
                         // Defenders attack enemy FC if found
                         target.Relocate(enemyFC->GetPositionX(), enemyFC->GetPositionY(), enemyFC->GetPositionZ());
                     }
+                    else if (BGTacticArms::IsOn(bg, team, BGTactic::FlagRoom) &&
+                             static_cast<BattlegroundWS*>(bg)->GetFlagState(team) == BG_WS_FLAG_STATE_ON_BASE)
+                    {
+                        // Flag-room defense: while our flag is home, defenders hold the flag room instead of
+                        // the stock hide-spot wandering / supporting our carrier / midfield roaming, which left
+                        // the room empty for enemy pickups. Chasing an enemy carrier (above) is unchanged.
+                        SetSafePos(team == TEAM_ALLIANCE ? WS_FLAG_POS_ALLIANCE : WS_FLAG_POS_HORDE, 12.0f);
+                    }
                     else if (urand(0, 99) < 33)
                     {
                         // 33% chance to roam near own base
