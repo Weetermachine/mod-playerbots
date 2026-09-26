@@ -17,6 +17,7 @@ class ChatHandler;
 class Battleground;
 class PlayerbotAI;
 struct Position;
+class PositionInfo;
 
 #define SPELL_CAPTURE_BANNER 21651
 
