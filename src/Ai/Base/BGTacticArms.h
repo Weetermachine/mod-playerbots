@@ -27,6 +27,11 @@ enum class BGTactic : uint8
                     // objective points to the ground correctly (arm name "EYPath" is an alias)
     Allocator = 8,  // WSG/AB/EotS: a team plan assigns bots to objectives (headcounts, nearest first, sticky)
     AllocRoles = 9, // with Allocator: healers kept off solo slots, one per group (always on in EotS)
+    AllocGuard2 = 10,    // with Allocator (AB): 2 guards per held node instead of 1
+    AllocOneGroup = 11,  // with Allocator (AB): one attack group of 7 instead of 5 + 4
+    AllocFlagFloor = 12, // with Allocator (EotS): flag team >= 5, enemy carrier chase >= 3, escort >= 3
+    AllocFlagValue = 13, // with Allocator (EotS): flag, carrier chase and escort jobs worth 2.5x
+    ChaseStagger = 14,   // with FCChase (WSG): one slow/stun at a time on the enemy carrier, the next near its end
 };
 
 // Per-game A/B arms. With AiPlayerbot.BGTactics.<BG>.Arms set (e.g.

@@ -3763,7 +3763,8 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
             if (state == occupied || state == ourBanner)
             {
                 slots.push_back({AllocKey(state == occupied ? AK_GUARD : AK_HOLD, i), 3, p,
-                                 uint8(state == occupied ? 1 : 2), 6.0f});
+                                 uint8(state == occupied ? (BGTacticArms::IsOn(bg, team, BGTactic::AllocGuard2) ? 2 : 1) : 2),
+                                 6.0f});
                 uint32 const dk = AllocKey(AK_DEFEND, i);
                 if (near)
                     plan.defendUntil[dk] = now + 20 * IN_MILLISECONDS;
@@ -3845,16 +3846,22 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
                 jobs.push_back({{AllocKey(AK_ATTACK, i), 3, p, 0, 8.0f}, gain, near, 0, 6});
             }
         }
+        // Flag tuning (v2 made about half the stock team's flag captures): AllocFlagFloor raises the minimum
+        // headcounts of the flag jobs, AllocFlagValue weighs them 2.5x in the value race.
+        bool const flagFloor = BGTacticArms::IsOn(bg, team, BGTactic::AllocFlagFloor);
+        float const flagMul = BGTacticArms::IsOn(bg, team, BGTactic::AllocFlagValue) ? 2.5f : 1.0f;
         if (enemyFC)
             jobs.push_back({{AllocKey(AK_STOPFC, 0), 2, enemyFC->GetPosition(), 0, 3.0f},
-                            (them ? flagPts[std::min(them, 4)] : 20.0f) * pCap, enemiesNear(enemyFC->GetPosition(), 20.0f), 2, 4});
+                            (them ? flagPts[std::min(them, 4)] : 20.0f) * pCap * flagMul,
+                            enemiesNear(enemyFC->GetPosition(), 20.0f), uint8(flagFloor ? 3 : 2), uint8(flagFloor ? 5 : 4)});
         if (ourFC)
             jobs.push_back({{AllocKey(AK_ESCORT, 0), 3, ourFC->GetPosition(), 0, 5.0f},
-                            flagPts[std::clamp(us, 1, 4)] * 0.25f, enemiesNear(ourFC->GetPosition(), 20.0f), 0, 3});
+                            flagPts[std::clamp(us, 1, 4)] * 0.25f * flagMul, enemiesNear(ourFC->GetPosition(), 20.0f),
+                            uint8(flagFloor ? 3 : 0), uint8(flagFloor ? 4 : 3)});
         GameObject* flag = bg->GetBGObject(BG_EY_OBJECT_FLAG_NETHERSTORM);
         if (flag && flag->isSpawned() && us)
-            jobs.push_back({{AllocKey(AK_FLAG, 0), 3, flag->GetPosition(), 0, 2.0f}, flagPts[std::min(us, 4)] * pCap,
-                            enemiesNear(flag->GetPosition(), 30.0f), 2, 4});
+            jobs.push_back({{AllocKey(AK_FLAG, 0), 3, flag->GetPosition(), 0, 2.0f}, flagPts[std::min(us, 4)] * pCap * flagMul,
+                            enemiesNear(flag->GetPosition(), 30.0f), uint8(flagFloor ? 5 : 2), uint8(flagFloor ? 6 : 4)});
 
         auto success = [](uint32 n, uint32 d)
         {
@@ -3961,14 +3968,16 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
         for (AllocSlot const& s : slots)
             if ((s.key >> 8) == AK_GUARD)
                 ++heldEY;
-        uint8 const second = type == BATTLEGROUND_AB ? 4 : heldEY <= 1 ? 3 : 0;
+        bool const oneGroup = type == BATTLEGROUND_AB && BGTacticArms::IsOn(bg, team, BGTactic::AllocOneGroup);
+        uint8 const first = oneGroup ? 7 : 5;
+        uint8 const second = oneGroup ? 0 : type == BATTLEGROUND_AB ? 4 : heldEY <= 1 ? 3 : 0;
         for (uint32 g = 0; g < 2; ++g)
         {
             plan.attack[g] = chosen[g];
             if (!chosen[g] || (g == 1 && !second))
                 continue;
             auto it = std::find_if(targets.begin(), targets.end(), [&](auto const& t) { return t.first + 1 == chosen[g]; });
-            slots.push_back({AllocKey(AK_ATTACK, it->first), 3, it->second, uint8(g == 0 ? 5 : second),
+            slots.push_back({AllocKey(AK_ATTACK, it->first), 3, it->second, uint8(g == 0 ? first : second),
                              type == BATTLEGROUND_AB ? 5.0f : 8.0f});
         }
     }
@@ -5191,6 +5200,10 @@ bool BGTactics::catchEnemyFC()
                     return botAI->CastSpell(spell, bot);
     }
 
+    Battleground* bg = bot->GetBattleground();
+    if (bg && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::ChaseStagger))
+        return staggeredSlow(fc);
+
     // slow or stun it, unless something already does
     if (fc->HasAuraType(SPELL_AURA_MOD_DECREASE_SPEED) || fc->HasAuraType(SPELL_AURA_MOD_STUN) ||
         fc->HasAuraType(SPELL_AURA_MOD_ROOT))
@@ -5200,6 +5213,49 @@ bool BGTactics::catchEnemyFC()
         if (botAI->CanCastSpell(spell, fc))
             return botAI->CastSpell(spell, fc);
 
+    return false;
+}
+
+// Staggered chase (arm ChaseStagger): one slow or stun on the enemy carrier at a time. The stock check only sees
+// effects already on the carrier, so several chasers casting in the same second all saw "not slowed" and all but
+// one cast was wasted (and stacked stuns lose most of their length to diminishing returns). A bot claims the
+// carrier for its cast and travel (2.5 s); the next bot casts once the current effect has under 1.5 s left.
+namespace
+{
+std::mutex slowClaimLock;
+std::unordered_map<ObjectGuid, std::pair<ObjectGuid, uint32>> slowClaims;  // carrier -> (bot, claimed until)
+}  // namespace
+
+bool BGTactics::staggeredSlow(Unit* fc)
+{
+    int32 left = 0;  // longest remaining slow / stun / root on the carrier, ms (-1: permanent)
+    for (AuraType type : {SPELL_AURA_MOD_DECREASE_SPEED, SPELL_AURA_MOD_STUN, SPELL_AURA_MOD_ROOT})
+        for (AuraEffect const* eff : fc->GetAuraEffectsByType(type))
+        {
+            int32 const d = eff->GetBase()->GetDuration();
+            left = d < 0 ? INT32_MAX : std::max(left, d);
+        }
+    if (left > 1500)
+        return false;
+
+    uint32 const now = getMSTime();
+    {
+        std::lock_guard<std::mutex> guard(slowClaimLock);
+        auto it = slowClaims.find(fc->GetGUID());
+        if (it != slowClaims.end() && it->second.first != bot->GetGUID() && it->second.second > now)
+            return false;  // someone else's slow is on its way
+    }
+    for (char const* spell : FC_SLOWS)
+        if (botAI->CanCastSpell(spell, fc))
+        {
+            {
+                std::lock_guard<std::mutex> guard(slowClaimLock);
+                if (slowClaims.size() > 200)
+                    slowClaims.clear();  // carriers of ended games
+                slowClaims[fc->GetGUID()] = {bot->GetGUID(), now + 2500};
+            }
+            return botAI->CastSpell(spell, fc);
+        }
     return false;
 }
 

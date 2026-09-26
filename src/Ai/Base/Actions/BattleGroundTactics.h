@@ -141,6 +141,7 @@ private:
     bool teamFlagTaken();
     bool protectFC();
     bool catchEnemyFC();
+    bool staggeredSlow(Unit* fc);
     bool healFC();
     bool useBuff();
     uint32 getPlayersInArea(TeamId teamId, Position point, float range, bool combat = true);
