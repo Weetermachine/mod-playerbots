@@ -59,7 +59,7 @@ bool JobFocusAllows(PlayerbotAI* botAI, Player* bot, Unit* target)
     bool allowed = bot->IsWithinDist(target, 12.0f);
     if (!allowed)
     {
-        PositionInfo const obj = botAI->GetAiObjectContext()->GetValue<PositionMap&>("position")->Get()["bg objective"];
+        PositionInfo obj = botAI->GetAiObjectContext()->GetValue<PositionMap&>("position")->Get()["bg objective"];
         allowed = obj.isSet() && target->GetExactDist2d(obj.x, obj.y) < 25.0f;
     }
     ++(allowed ? jobPicked : jobSkipped);
