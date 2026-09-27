@@ -3986,9 +3986,12 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
         {
             // home towers: EY_AttackObjectives 0-1 face the Horde start, 2-3 the Alliance start
             uint32 const home0 = team == TEAM_HORDE ? 0 : 2;
-            int32 held = 0;
+            int32 held = 0, theirs = 0;
             for (auto const& [nodeId, _, __] : EY_AttackObjectives)
+            {
                 held += eye->GetCapturePointInfo(nodeId)._ownerTeamId == team;
+                theirs += eye->GetCapturePointInfo(nodeId)._ownerTeamId == enemyTeam;
+            }
             uint32 otherHeld = 0;
             int32 rotateTarget = -1;
             uint32 rotateEnemies = UINT32_MAX;
@@ -4035,7 +4038,7 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
             uint8 centerHold = 0;
             if (enemyFC)
             {
-                slots.push_back({AllocKey(AK_STOPFC, 0), uint8(them ? 2 : 3), enemyFC->GetPosition(), 5, 3.0f});
+                slots.push_back({AllocKey(AK_STOPFC, 0), uint8(theirs ? 2 : 3), enemyFC->GetPosition(), 5, 3.0f});
                 centerHold = 2;
             }
             else if (ourFC)
