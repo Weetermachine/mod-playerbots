@@ -4570,7 +4570,7 @@ void TripLog(uint32 now)  // needs tripLock
 }
 }  // namespace
 
-// Buff log: bots in combat in WSG/AB/EotS, sampled about every 2 s each. Per buff, the share of samples carrying it,
+// Buff log: living bots in running WSG/AB/EotS games, sampled about every 2 s each. Per buff, the share of samples carrying it,
 // counted only when the bot's team has a living member of the class that provides it (Intellect only for mana users).
 // Per 5 minutes, per BG and per team kind (Rebuff on / off).
 namespace
@@ -4599,7 +4599,9 @@ bool HasBuffNamed(Unit* u, std::initializer_list<char const*> names)
 void BGTactics::buffSample()
 {
     Battleground* bg = bot->GetBattleground();
-    if (!bg || bg->GetStatus() != STATUS_IN_PROGRESS || !bot->IsAlive() || !bot->IsInCombat())
+    // every living bot in a running game (the battleground strategies run in the non-combat engine only, so this is
+    // called between fights, not during them)
+    if (!bg || bg->GetStatus() != STATUS_IN_PROGRESS || !bot->IsAlive())
         return;
     BattlegroundTypeId type = bg->GetBgTypeID();
     if (type == BATTLEGROUND_RB)
@@ -4655,7 +4657,7 @@ void BGTactics::buffSample()
                 auto const& v = buffStat[bb][mm];
                 if (!v[0][1] && !v[1][1] && !v[3][1])
                     continue;
-                LOG_INFO("module", "Buffs {} {} (5 min, bots in combat, where the team has the class): Fortitude {:.0f}% "
+                LOG_INFO("module", "Buffs {} {} (5 min, living bots in running games, where the team has the class): Fortitude {:.0f}% "
                          "of {}, Wild {:.0f}% of {}, Intellect {:.0f}% of {}, any Blessing {:.0f}% of {}, Kings {:.0f}%",
                          names[bb], mm ? "rebuff" : "stock", pct(v[0]), v[0][1], pct(v[1]), v[1][1], pct(v[2]), v[2][1],
                          pct(v[3]), v[3][1], pct(v[4]));
