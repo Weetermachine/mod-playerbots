@@ -4014,18 +4014,22 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
             else
             {
                 float const gain = (rate(us + 1) - rate(us) + (owner == enemyTeam ? rate(them) - rate(them - 1) : 0.0f)) * holdMin;
-                jobs.push_back({{AllocKey(AK_ATTACK, i), 3, p, 0, 8.0f}, gain, near, 0, 6});
+                jobs.push_back({{AllocKey(AK_ATTACK, i), 3, p, 0, 8.0f}, gain, near, 0, uint8(rush ? 8 : 6)});
             }
         }
         // Flag tuning (v2 made about half the stock team's flag captures): AllocFlagFloor raises the minimum
         // headcounts of the flag jobs, AllocFlagValue weighs them 2.5x in the value race.
+        // Tower rush: no flag jobs at all; every bot goes to towers (holding all 4 also makes enemy captures
+        // impossible: a carrier can only capture at a tower its team holds). A bot that picks the flag up still
+        // captures (the stock carrier code).
+        bool const rush = BGTacticArms::IsOn(bg, team, BGTactic::TowerRush);
         bool const flagFloor = BGTacticArms::IsOn(bg, team, BGTactic::AllocFlagFloor);
         float const flagMul = BGTacticArms::IsOn(bg, team, BGTactic::AllocFlagValue) ? 2.5f : 1.0f;
-        if (enemyFC)
+        if (enemyFC && !rush)
             jobs.push_back({{AllocKey(AK_STOPFC, 0), 2, enemyFC->GetPosition(), 0, 3.0f},
                             (them ? flagPts[std::min(them, 4)] : 20.0f) * pCap * flagMul,
                             enemiesNear(enemyFC->GetPosition(), 20.0f), uint8(flagFloor ? 3 : 2), uint8(flagFloor ? 5 : 4)});
-        if (ourFC)
+        if (ourFC && !rush)
         {
             Position ep = ourFC->GetPosition();
             if (BGTacticArms::IsOn(bg, team, BGTactic::FCEvade))
@@ -4035,7 +4039,7 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
                             uint8(flagFloor ? 3 : 0), uint8(flagFloor ? 4 : 3)});
         }
         GameObject* flag = bg->GetBGObject(BG_EY_OBJECT_FLAG_NETHERSTORM);
-        if (flag && flag->isSpawned() && us)
+        if (flag && flag->isSpawned() && us && !rush)
             jobs.push_back({{AllocKey(AK_FLAG, 0), 3, flag->GetPosition(), 0, 2.0f}, flagPts[std::min(us, 4)] * pCap * flagMul,
                             enemiesNear(flag->GetPosition(), 30.0f), uint8(flagFloor ? 5 : 2), uint8(flagFloor ? 6 : 4)});
 
@@ -4054,7 +4058,7 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
         while (left > 0)
         {
             Job* best = nullptr;
-            float bestGain = 2.0f;  // under ~2 points a bot is better off with the stock picks
+            float bestGain = rush ? 0.0f : 2.0f;  // under ~2 points a bot is better off with the stock picks (rush: all in)
             for (Job& j : jobs)
             {
                 if (j.n >= j.cap)

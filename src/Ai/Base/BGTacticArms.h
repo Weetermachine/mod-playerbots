@@ -41,6 +41,7 @@ enum class BGTactic : uint8
     ChaseV3 = 21,        // with FCChase: everyone tries; per-kind checks (stuns over slows); cast-time CC cancelled
     FocusFire = 22,      // WSG/AB/EotS: bots in a fight converge on one enemy (carrier, healers, low health first)
     FocusPartial = 23,   // focus fire with at most 3 of our bots per target (no overkill)
+    TowerRush = 24,      // with Allocator (EotS): no flag jobs, every bot on towers (4 towers: enemy cannot capture)
 };
 
 // Per-game A/B arms. With AiPlayerbot.BGTactics.<BG>.Arms set (e.g.
