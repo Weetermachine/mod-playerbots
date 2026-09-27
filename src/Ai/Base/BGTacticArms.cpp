@@ -114,7 +114,14 @@ int TacticBit(std::string const& tactic)
          : tactic == "GYWave" ? int(BGTactic::GYWave)
          : tactic == "BackOff" ? int(BGTactic::BackOff)
          : tactic == "WPGraph" ? int(BGTactic::WPGraph)
-         : tactic == "Comeback" ? int(BGTactic::Comeback) : -1;
+         : tactic == "Comeback" ? int(BGTactic::Comeback)
+         : tactic == "Intercept" ? int(BGTactic::Intercept)
+         : tactic == "EscortHealer" ? int(BGTactic::EscortHealer)
+         : tactic == "StandoffBreak" ? int(BGTactic::StandoffBreak)
+         : tactic == "Reinforce" ? int(BGTactic::Reinforce)
+         : tactic == "Retake" ? int(BGTactic::Retake)
+         : tactic == "NoSolo" ? int(BGTactic::NoSolo)
+         : tactic == "FinishKill" ? int(BGTactic::FinishKill) : -1;
 }
 
 char const* BGName(BattlegroundTypeId type)
@@ -234,6 +241,13 @@ bool GlobalSwitch(BGTactic tactic, TeamId team, BattlegroundTypeId type)
         case BGTactic::BackOff:
         case BGTactic::WPGraph:
         case BGTactic::Comeback:
+        case BGTactic::Intercept:
+        case BGTactic::EscortHealer:
+        case BGTactic::StandoffBreak:
+        case BGTactic::Reinforce:
+        case BGTactic::Retake:
+        case BGTactic::NoSolo:
+        case BGTactic::FinishKill:
             return false;  // arms only
     }
     return false;

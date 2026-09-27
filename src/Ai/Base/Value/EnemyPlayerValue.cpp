@@ -74,6 +74,43 @@ bool JobFocusAllows(PlayerbotAI* botAI, Player* bot, Unit* target)
 }
 }  // namespace
 
+// No solo fights (arm NoSolo): in a battleground, a bot with no teammate within 20 yd does not pick a new fight
+// (step 2) with an enemy that has another enemy within 15 yd; it goes on with its job. Fighting back (step 1) is
+// unchanged. Log every 5 minutes: new fights skipped.
+namespace
+{
+std::atomic<uint32> soloSkipped{0}, soloPicked{0}, soloLogMs{0};
+
+bool NoSoloAllows(Player* bot, Unit* target)
+{
+    Battleground* bg = bot->GetBattleground();
+    if (!bg || !BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::NoSolo))
+        return true;
+    bool friendNear = false;
+    uint32 enemies = 0;
+    for (auto const& ref : bg->GetBgMap()->GetPlayers())
+    {
+        Player* p = ref.GetSource();
+        if (!p || p == bot || !p->IsAlive())
+            continue;
+        if (p->GetTeamId() == bot->GetTeamId())
+            friendNear |= bot->GetExactDist2d(p) < 20.0f;
+        else
+            enemies += target->GetExactDist2d(p) < 15.0f;
+    }
+    bool const allowed = friendNear || enemies < 2;  // enemies counts the target itself
+    ++(allowed ? soloPicked : soloSkipped);
+    uint32 const now = getMSTime();
+    uint32 last = soloLogMs.load();
+    if (!last)
+        soloLogMs.compare_exchange_strong(last, now);
+    else if (getMSTimeDiff(last, now) > 5 * MINUTE * IN_MILLISECONDS && soloLogMs.compare_exchange_strong(last, now))
+        LOG_INFO("module", "NoSolo (5 min): new fights picked {}, skipped (alone against 2+) {}", soloPicked.exchange(0),
+                 soloSkipped.exchange(0));
+    return allowed;
+}
+}  // namespace
+
 Unit* EnemyPlayerValue::Calculate()
 {
     bool controllingCannon = false;
@@ -154,7 +191,7 @@ Unit* EnemyPlayerValue::Calculate()
 
         if (bot->IsWithinLOSInMap(pTarget) &&
             (controllingCannon || (fabs(bot->GetPositionZ() - pTarget->GetPositionZ()) < 30.0f)) &&
-            JobFocusAllows(botAI, bot, pTarget))
+            JobFocusAllows(botAI, bot, pTarget) && NoSoloAllows(bot, pTarget))
             return pTarget;
     }
 

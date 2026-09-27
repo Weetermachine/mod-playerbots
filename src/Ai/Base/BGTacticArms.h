@@ -52,6 +52,13 @@ enum class BGTactic : uint8
     BackOff = 32,        // WSG/AB/EotS: 2+ extra enemies within 20 yd and under 50% health: retreat toward help
     WPGraph = 33,        // WSG/AB/EotS: waypoint routes as one road network, shortest path (no backtracking)
     Comeback = 34,       // WSG/AB (allocator), EotS (stock): a team that is behind takes more risk
+    Intercept = 35,      // WSG (allocator): 2 chase the enemy carrier, the rest cut it off on its way home
+    EscortHealer = 36,   // WSG (allocator): one healer always in the escort of our carrier
+    StandoffBreak = 37,  // WSG (allocator): both flags held 90 s+: all but the escort go for their carrier
+    Reinforce = 38,      // AB (allocator): 3+ enemies heading for a node we hold raise its defense early
+    Retake = 39,         // AB (allocator): an enemy banner on a node is retaken in force (their bots + 2)
+    NoSolo = 40,         // WSG/AB/EotS: no new fight alone (no friend within 20 yd) against 2+ enemies
+    FinishKill = 41,     // WSG/AB/EotS: switch to an enemy under 30% health in reach
 };
 
 // Per-game A/B arms. With AiPlayerbot.BGTactics.<BG>.Arms set (e.g.

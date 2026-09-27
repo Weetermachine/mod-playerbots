@@ -51,6 +51,12 @@
 
 // Comeback mode: plans made while behind, per BG [WS, AB, EY] (EotS counts stock strategy picks)
 std::atomic<uint32> comebackBehind[3], comebackPlans[3];
+// Batch 1 tactics, plans that used them (5 min): intercept, escort healer, standoff break, reinforce, retake
+std::atomic<uint32> batchUsed[5];
+namespace
+{
+void AllocLogStats();
+}
 
 // common bg positions
 Position const WS_WAITING_POS_HORDE_1 = {944.981f, 1423.478f, 345.434f, 6.18f};
@@ -2706,6 +2712,7 @@ bool BGTactics::selectObjective(bool reset)
                     int32(bg->GetTeamScore(enemyTeam)) - int32(bg->GetTeamScore(team)) >= 150 || theirs > ours;
                 ++comebackPlans[2];
                 comebackBehind[2] += behindEY;
+                AllocLogStats();
                 if (behindEY)
                     strategy = theirs > ours ? EY_STRATEGY_FRONT_FOCUS : EY_STRATEGY_FLAG_FOCUS;
             }
@@ -3830,6 +3837,7 @@ struct AllocTeam
     uint32 attack[2] = {0, 0};  // attack targets (node index + 1), kept while still worth attacking
     std::unordered_map<uint32, uint32> groupHold;  // GroupMove: slot key -> when its leader started waiting
     std::unordered_map<uint32, uint32> defendUntil;  // defend slot key -> kept raised until (enemies left)
+    uint32 standoffSince = 0;  // StandoffBreak: when both flags were last seen taken together (0: not now)
 };
 
 struct AllocBg
@@ -3880,6 +3888,18 @@ void AllocLogStats()
         return;
     static char const* const names[3] = {"WS", "AB", "EY"};
     for (uint32 b = 0; b < 3; ++b)
+        if (uint32 const cp = comebackPlans[b].exchange(0))
+            LOG_INFO("module", "Comeback {} (5 min): plans {}, behind {} ({:.0f}%)", names[b], cp,
+                     comebackBehind[b].load(), 100.0 * comebackBehind[b].exchange(0) / cp);
+    {
+        uint32 u[5];
+        for (uint32 k = 0; k < 5; ++k)
+            u[k] = batchUsed[k].exchange(0);
+        if (u[0] || u[1] || u[2] || u[3] || u[4])
+            LOG_INFO("module", "Batch tactics (5 min, plans using them): intercept {}, escort healer {}, standoff break {}, "
+                     "reinforce {}, retake {}", u[0], u[1], u[2], u[3], u[4]);
+    }
+    for (uint32 b = 0; b < 3; ++b)
     {
         uint32 v[4];
         for (uint32 k = 0; k < 4; ++k)
@@ -3890,9 +3910,6 @@ void AllocLogStats()
         uint32 w[AW_N];
         for (uint32 k = 0; k < AW_N; ++k)
             w[k] = allocWhy[b][k].exchange(0);
-        if (uint32 const cp = comebackPlans[b].exchange(0))
-            LOG_INFO("module", "Comeback {} (5 min): plans {}, behind {} ({:.0f}%)", names[b], cp,
-                     comebackBehind[b].load(), 100.0 * comebackBehind[b].exchange(0) / cp);
         LOG_INFO("module",
                  "Allocator {} (5 min): plans {} bot assignments {} changed {} ({:.1f}%) emergency slots {}; changes: "
                  "died {} slot gone {} pulled to emergency {} to stock {} reshuffled {}",
@@ -3978,6 +3995,34 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
                 heldAB += st == occupied || st == ourBanner;
             }
         uint32 const homeIdx = team == TEAM_ALLIANCE ? 0 : 2;  // AB_AttackObjectives: stables, blacksmith, farm, ...
+        // Reinforce on sight (arm Reinforce): enemies 30-70 yd from a node we hold, for whom it is the nearest node,
+        // count as heading there; 3+ of them raise its defense before they arrive.
+        // Retake (arm Retake): an enemy banner on a node gets their bots there + 2 (3 to 6), not a fixed 3.
+        bool const reinforce = BGTacticArms::IsOn(bg, team, BGTactic::Reinforce);
+        bool const retake = BGTacticArms::IsOn(bg, team, BGTactic::Retake);
+        std::vector<Position> abNodes;
+        for (uint32 nodeId : AB_AttackObjectives)
+            if (GameObject* go = bg->GetBGObject(nodeId * BG_AB_OBJECTS_PER_NODE))
+                abNodes.push_back(go->GetPosition());
+        auto incoming = [&](Position const& p)
+        {
+            uint32 n = 0;
+            for (Position const& e : enemies)
+            {
+                float const d = e.GetExactDist2d(&p);
+                if (d < 30.0f || d >= 70.0f)
+                    continue;
+                bool nearest = true;
+                for (Position const& q : abNodes)
+                    if (e.GetExactDist2d(&q) < d - 1.0f)
+                    {
+                        nearest = false;
+                        break;
+                    }
+                n += nearest;
+            }
+            return n;
+        };
         // Comeback mode (arm Comeback): behind = 300+ points down, or fewer nodes than them. Then only the home node
         // keeps a guard, the attack groups are 6 + 6 on the enemy's thinnest nodes, and 2 bots back-cap their least
         // defended base.
@@ -4004,9 +4049,15 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
                 continue;
             Position const p = go->GetPosition();
             uint8 const state = ab->GetCapturePointInfo(nodeId)._state;
-            uint32 const near = enemiesNear(p, 30.0f);
+            uint32 near = enemiesNear(p, 30.0f);
             if (state == occupied || state == ourBanner)
             {
+                if (reinforce && near < 3)
+                    if (uint32 const inc = incoming(p); inc >= 3)
+                    {
+                        near = inc;
+                        ++batchUsed[3];
+                    }
                 heldPos.push_back(p);
                 uint8 guards = state == occupied ? (BGTacticArms::IsOn(bg, team, BGTactic::AllocGuard2) ? 2 : 1) : 2;
                 // holding 3: the exposed nodes get 3 guards (home 1); holding 4+: 2 each
@@ -4021,11 +4072,16 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
                     plan.defendUntil[dk] = now + 20 * IN_MILLISECONDS;
                 // kept raised 20 s after the enemies leave, so the slot does not appear and vanish every few seconds
                 if (near || (plan.defendUntil.count(dk) && plan.defendUntil[dk] > now))
-                    slots.push_back({dk, 2, p, uint8(std::min<uint32>(std::max<uint32>(near, 1) + 1, cap3 && heldAB >= 3 ? 6 : 4)),
+                    slots.push_back({dk, 2, p, uint8(std::min<uint32>(std::max<uint32>(near, 1) + 1, (cap3 && heldAB >= 3) || reinforce ? 6 : 4)),
                                      8.0f});  // 3-cap holding: counter an assault in force
             }
             else if (state == theirBanner)
-                slots.push_back({AllocKey(AK_RECOVER, i), 2, p, 3, 5.0f});
+            {
+                if (retake)
+                    ++batchUsed[4];
+                slots.push_back({AllocKey(AK_RECOVER, i), 2, p,
+                                 uint8(retake ? std::clamp<uint32>(near + 2, 3, 6) : 3), 5.0f});
+            }
             else
                 targets.push_back({i, p});  // neutral or enemy-held
         }
@@ -4263,8 +4319,40 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
             ++comebackPlans[0];
             comebackBehind[0] += behind;
         }
-        if (enemyFC)
-            slots.push_back({AllocKey(AK_STOPFC, 0), 2, enemyFC->GetPosition(), uint8(behind && ourFC ? 7 : 4), 3.0f});
+        // Standoff break (arm StandoffBreak): both flags taken for 90 s+: everyone but the escort goes for their carrier
+        bool standoff = false;
+        if (ourFC && enemyFC)
+        {
+            if (!plan.standoffSince)
+                plan.standoffSince = now;
+            standoff = BGTacticArms::IsOn(bg, team, BGTactic::StandoffBreak) &&
+                       getMSTimeDiff(plan.standoffSince, now) > 90 * IN_MILLISECONDS;
+            if (standoff)
+                ++batchUsed[2];
+        }
+        else
+            plan.standoffSince = 0;
+        uint8 const stopNeed = standoff ? uint8(members.size() > 3 ? members.size() - 3 : 1) : uint8(behind && ourFC ? 7 : 4);
+        // Intercept (arm Intercept): 2 chase the carrier; the rest go to a point 35 yd ahead of it on its way home
+        // (its own flag room, where it captures), to meet it instead of trailing behind it
+        Position cut;
+        if (enemyFC && stopNeed > 2 && BGTacticArms::IsOn(bg, team, BGTactic::Intercept))
+        {
+            Position const fc = enemyFC->GetPosition();
+            if (!CarrierAhead(bg, enemyTeam, fc, 35.0f, cut))
+            {
+                float const dx = theirFlag.GetPositionX() - fc.GetPositionX(), dy = theirFlag.GetPositionY() - fc.GetPositionY();
+                float const d = std::hypot(dx, dy);
+                float const k = d > 35.0f ? 35.0f / d : 1.0f;
+                cut.Relocate(fc.GetPositionX() + dx * k, fc.GetPositionY() + dy * k,
+                             fc.GetPositionZ() + (theirFlag.GetPositionZ() - fc.GetPositionZ()) * k);
+            }
+            ++batchUsed[0];
+            slots.push_back({AllocKey(AK_STOPFC, 0), 2, fc, 2, 3.0f});
+            slots.push_back({AllocKey(AK_STOPFC, 1), 2, cut, uint8(stopNeed - 2), 6.0f});
+        }
+        else if (enemyFC)
+            slots.push_back({AllocKey(AK_STOPFC, 0), 2, enemyFC->GetPosition(), stopNeed, 3.0f});
         if (ourFC)
         {
             Position ep = ourFC->GetPosition();
@@ -4387,6 +4475,8 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
     // Class-aware roles (WSG, arm ClassRoles): the offense wants speed (druid, shaman, rogue, hunter: the one who picks
     // the flag up runs it home), the defense and the carrier chase want stuns (paladin, warrior, rogue, death knight).
     bool const classRoles = type == BATTLEGROUND_WS && BGTacticArms::IsOn(bg, team, BGTactic::ClassRoles);
+    // Escort healer (WSG, arm EscortHealer): one healer is always placed in our carrier's escort
+    bool const escortHealer = type == BATTLEGROUND_WS && BGTacticArms::IsOn(bg, team, BGTactic::EscortHealer);
     auto classCost = [](uint8 cls, uint32 kind)
     {
         bool const speed = cls == CLASS_DRUID || cls == CLASS_SHAMAN || cls == CLASS_ROGUE || cls == CLASS_HUNTER;
@@ -4434,6 +4524,8 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
                     cost += slots[s].need <= 1 ? 80.0f : slots[s].need >= 3 ? -15.0f : 0.0f;
                 if (classRoles && !mb.healer)
                     cost += classCost(mb.cls, slots[s].key >> 8);
+                if (escortHealer && mb.healer && (slots[s].key >> 8) == AK_ESCORT)
+                    cost -= 120.0f;  // a healer in the escort before anyone else is placed near it
                 pairs.emplace_back(cost, m, s);
             }
         }
@@ -4442,8 +4534,10 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
         {
             if (taken[m] || !left[s])
                 continue;
-            if (roleAware && members[m].healer && healersIn[s])
+            if ((roleAware || (escortHealer && (slots[s].key >> 8) == AK_ESCORT)) && members[m].healer && healersIn[s])
                 continue;
+            if (escortHealer && members[m].healer && (slots[s].key >> 8) == AK_ESCORT)
+                ++batchUsed[1];
             if (members[m].healer)
                 ++healersIn[s];
             taken[m] = true;

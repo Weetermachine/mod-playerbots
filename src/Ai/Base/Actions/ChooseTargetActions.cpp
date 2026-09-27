@@ -6,6 +6,7 @@
 
 #include "ChooseTargetActions.h"
 
+#include <atomic>
 #include <mutex>
 #include <unordered_map>
 
@@ -365,10 +366,53 @@ void FocusLog(uint32 now)  // needs focusLock
 }
 }  // namespace
 
+// Finish kills (arm FinishKill, without focus fire): in combat, switch to the enemy with the lowest health under 30%
+// within reach (8 yd melee, 30 yd ranged), unless the current target is itself under 30%. Healers don't switch.
+namespace
+{
+std::atomic<uint32> finishSwitches{0}, finishLogMs{0};
+}
+
+Unit* FindFinishTarget(PlayerbotAI* botAI, Battleground* bg)
+{
+    Player* bot = botAI->GetBot();
+    if (PlayerbotAI::IsHeal(bot) || !bot->IsInCombat())
+        return nullptr;
+    Unit* current = botAI->GetAiObjectContext()->GetValue<Unit*>("current target")->Get();
+    if (current && current->IsAlive() && current->GetHealthPct() < 30.0f)
+        return nullptr;
+    float const reach = botAI->IsMelee(bot) ? 8.0f : 30.0f;
+    Unit* best = nullptr;
+    for (auto const& ref : bg->GetBgMap()->GetPlayers())
+    {
+        Player* p = ref.GetSource();
+        if (!p || !p->IsAlive() || p->GetBgTeamId() == bot->GetBgTeamId() || p->GetHealthPct() >= 30.0f ||
+            !bot->IsWithinDistInMap(p, reach) || !bot->IsWithinLOSInMap(p) || !bot->CanSeeOrDetect(p))
+            continue;
+        if (!best || p->GetHealthPct() < best->GetHealthPct())
+            best = p;
+    }
+    if (best && best != current)
+    {
+        ++finishSwitches;
+        uint32 const now = getMSTime();
+        uint32 last = finishLogMs.load();
+        if (!last)
+            finishLogMs.compare_exchange_strong(last, now);
+        else if (getMSTimeDiff(last, now) > 5 * MINUTE * IN_MILLISECONDS && finishLogMs.compare_exchange_strong(last, now))
+            LOG_INFO("module", "FinishKill (5 min): switches to a low-health enemy {}", finishSwitches.exchange(0));
+    }
+    return best;
+}
+
 Unit* FindFocusTarget(PlayerbotAI* botAI)
 {
     Player* bot = botAI->GetBot();
     Battleground* bg = bot->GetBattleground();
+    if (bg && BGTacticArms::IsOn(bg, bot->GetBgTeamId(), BGTactic::FinishKill) &&
+        !BGTacticArms::IsOn(bg, bot->GetBgTeamId(), BGTactic::FocusFire) &&
+        !BGTacticArms::IsOn(bg, bot->GetBgTeamId(), BGTactic::FocusPartial))
+        return FindFinishTarget(botAI, bg);
     bool const partial = bg && BGTacticArms::IsOn(bg, bot->GetBgTeamId(), BGTactic::FocusPartial);
     if (!bg || !(partial || BGTacticArms::IsOn(bg, bot->GetBgTeamId(), BGTactic::FocusFire)) || PlayerbotAI::IsHeal(bot) ||
         !bot->IsInCombat())
