@@ -47,6 +47,7 @@ enum class BGTactic : uint8
     HealerHunt = 27,     // WSG: up to 2 bots go after the enemy carrier's healer (interrupt/stun first)
     AB3Cap = 28,         // with Allocator (AB): take a compact 3, then hold them instead of attacking on
     Rebuff = 29,         // retired: bots stay 98-100% buffed without it; re-adding +buff every tick froze the team
+    JobFocus = 30,       // all BGs: bots pick new fights only in their way (12 yd) or at their objective (25 yd)
 };
 
 // Per-game A/B arms. With AiPlayerbot.BGTactics.<BG>.Arms set (e.g.

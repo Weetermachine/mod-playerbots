@@ -6,6 +6,12 @@
 
 #include "EnemyPlayerValue.h"
 
+#include <atomic>
+
+#include "BGTacticArms.h"
+#include "Battleground.h"
+#include "PositionValue.h"
+
 #include "CombatManager.h"
 #include "Playerbots.h"
 #include "ServerFacade.h"
@@ -36,6 +42,37 @@ bool NearestEnemyPlayersValue::AcceptUnit(Unit* unit)
 
     return false;
 }
+
+// Objective-only fighting (arm JobFocus): in a battleground, a bot picks a new fight (step 2 below) only with an enemy
+// in its way (12 yd) or at its objective (25 yd of its "bg objective": its node, flag room, tower, or the carrier it
+// escorts), not with any enemy within 40 yd it might beat (the stock kill-chasing). Fighting back (step 1) and helping
+// a teammate under attack (step 3) are unchanged. Log every 5 minutes: new fights picked and skipped.
+namespace
+{
+std::atomic<uint32> jobPicked{0}, jobSkipped{0}, jobLogMs{0};
+
+bool JobFocusAllows(PlayerbotAI* botAI, Player* bot, Unit* target)
+{
+    Battleground* bg = bot->GetBattleground();
+    if (!bg || !BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::JobFocus))
+        return true;
+    bool allowed = bot->IsWithinDist(target, 12.0f);
+    if (!allowed)
+    {
+        PositionInfo const obj = botAI->GetAiObjectContext()->GetValue<PositionMap&>("position")->Get()["bg objective"];
+        allowed = obj.isSet() && target->GetExactDist2d(obj.x, obj.y) < 25.0f;
+    }
+    ++(allowed ? jobPicked : jobSkipped);
+    uint32 const now = getMSTime();
+    uint32 last = jobLogMs.load();
+    if (!last)
+        jobLogMs.compare_exchange_strong(last, now);
+    else if (getMSTimeDiff(last, now) > 5 * MINUTE * IN_MILLISECONDS && jobLogMs.compare_exchange_strong(last, now))
+        LOG_INFO("module", "JobFocus (5 min): new fights picked {}, skipped (not in the way or at the objective) {}",
+                 jobPicked.exchange(0), jobSkipped.exchange(0));
+    return allowed;
+}
+}  // namespace
 
 Unit* EnemyPlayerValue::Calculate()
 {
@@ -116,7 +153,8 @@ Unit* EnemyPlayerValue::Calculate()
             continue;
 
         if (bot->IsWithinLOSInMap(pTarget) &&
-            (controllingCannon || (fabs(bot->GetPositionZ() - pTarget->GetPositionZ()) < 30.0f)))
+            (controllingCannon || (fabs(bot->GetPositionZ() - pTarget->GetPositionZ()) < 30.0f)) &&
+            JobFocusAllows(botAI, bot, pTarget))
             return pTarget;
     }
 
