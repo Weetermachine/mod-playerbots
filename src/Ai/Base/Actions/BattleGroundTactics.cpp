@@ -4531,6 +4531,7 @@ struct Trip
     uint32 startMs = 0, lastMs = 0, busyMs = 0;
     uint32 samples = 0, mounted = 0, indoor = 0;
     float lx = 0, ly = 0, walked = 0;  // last sampled position and the distance walked since the trip began
+    uint32 pathChecks = 0, onPath = 0;  // samples checked against the waypoint routes, and within 5 yd of one
     bool direct = false;
     bool arrived = false;  // reached; the next objective starts a new trip without giving this one up
 };
@@ -4539,8 +4540,25 @@ struct TripStats
 {
     uint32 done = 0, given = 0;
     double dist = 0, sec = 0, busySec = 0, walked = 0;
-    uint32 samples = 0, mounted = 0, indoor = 0;
+    uint32 samples = 0, mounted = 0, indoor = 0, pathChecks = 0, onPath = 0;
 };
+
+// Distance from (x, y) to the nearest segment of the battleground's waypoint routes (2D), for the on-path share
+float DistToWaypointRoutes(std::vector<BattleBotPath*> const& paths, float x, float y)
+{
+    float best = FLT_MAX;
+    for (BattleBotPath const* path : paths)
+        for (size_t i = 0; i + 1 < path->size(); ++i)
+        {
+            BattleBotWaypoint const& a = (*path)[i];
+            BattleBotWaypoint const& b = (*path)[i + 1];
+            float const dx = b.x - a.x, dy = b.y - a.y, len2 = dx * dx + dy * dy;
+            float t = len2 > 0.0f ? ((x - a.x) * dx + (y - a.y) * dy) / len2 : 0.0f;
+            t = std::clamp(t, 0.0f, 1.0f);
+            best = std::min(best, std::hypot(a.x + t * dx - x, a.y + t * dy - y));
+        }
+    return best;
+}
 
 std::mutex tripLock;
 std::unordered_map<ObjectGuid, Trip> trips;
@@ -4564,10 +4582,11 @@ void TripLog(uint32 now)  // needs tripLock
             TripStats& s = tripStats[b][d];
             if (s.done + s.given)
                 LOG_INFO("module",
-                         "Trips {} {} (5 min): finished {} given up {} ({:.0f}%), {:.1f} yd/s, path efficiency {:.0f}%, mounted {:.0f}%, indoors {:.0f}%, busy {:.0f}%, "
+                         "Trips {} {} (5 min): finished {} given up {} ({:.0f}%), {:.1f} yd/s, path efficiency {:.0f}%, on waypoint routes {:.0f}%, mounted {:.0f}%, indoors {:.0f}%, busy {:.0f}%, "
                          "avg {:.0f} yd in {:.1f} s",
                          names[b], d ? "direct" : "stock", s.done, s.given, 100.0 * s.given / (s.done + s.given),
                          s.sec > 0 ? s.dist / s.sec : 0.0, s.walked > 0 ? 100.0 * s.dist / s.walked : 0.0,
+                         s.pathChecks ? 100.0 * s.onPath / s.pathChecks : 0.0,
                          s.samples ? 100.0 * s.mounted / s.samples : 0.0,
                          s.samples ? 100.0 * s.indoor / s.samples : 0.0,
                          s.sec > 0 ? 100.0 * s.busySec / s.sec : 0.0, s.done ? s.dist / s.done : 0.0,
@@ -5079,6 +5098,12 @@ void BGTactics::tripSample()
     ++t.samples;
     t.mounted += bot->IsMounted();
     t.indoor += !bot->IsOutdoors();
+    if (t.samples % 8 == 0)  // every 8th sample: is the bot on one of the map's waypoint routes (within 5 yd)?
+    {
+        std::vector<BattleBotPath*> const& paths = type == BATTLEGROUND_WS ? vPaths_WS : type == BATTLEGROUND_AB ? vPaths_AB : vPaths_EY;
+        ++t.pathChecks;
+        t.onPath += DistToWaypointRoutes(paths, bot->GetPositionX(), bot->GetPositionY()) < 5.0f;
+    }
     t.walked += std::hypot(bot->GetPositionX() - t.lx, bot->GetPositionY() - t.ly);
     t.lx = bot->GetPositionX();
     t.ly = bot->GetPositionY();
@@ -5096,6 +5121,8 @@ void BGTactics::tripSample()
             s.mounted += t.mounted;
             s.indoor += t.indoor;
             s.walked += t.walked;
+            s.pathChecks += t.pathChecks;
+            s.onPath += t.onPath;
         }
         start();  // parked at the objective until it changes
         t.arrived = true;
