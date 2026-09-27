@@ -4530,6 +4530,7 @@ struct Trip
     float ox = 0, oy = 0, sx = 0, sy = 0;
     uint32 startMs = 0, lastMs = 0, busyMs = 0;
     uint32 samples = 0, mounted = 0, indoor = 0;
+    float lx = 0, ly = 0, walked = 0;  // last sampled position and the distance walked since the trip began
     bool direct = false;
     bool arrived = false;  // reached; the next objective starts a new trip without giving this one up
 };
@@ -4537,7 +4538,7 @@ struct Trip
 struct TripStats
 {
     uint32 done = 0, given = 0;
-    double dist = 0, sec = 0, busySec = 0;
+    double dist = 0, sec = 0, busySec = 0, walked = 0;
     uint32 samples = 0, mounted = 0, indoor = 0;
 };
 
@@ -4563,10 +4564,11 @@ void TripLog(uint32 now)  // needs tripLock
             TripStats& s = tripStats[b][d];
             if (s.done + s.given)
                 LOG_INFO("module",
-                         "Trips {} {} (5 min): finished {} given up {} ({:.0f}%), {:.1f} yd/s, mounted {:.0f}%, indoors {:.0f}%, busy {:.0f}%, "
+                         "Trips {} {} (5 min): finished {} given up {} ({:.0f}%), {:.1f} yd/s, path efficiency {:.0f}%, mounted {:.0f}%, indoors {:.0f}%, busy {:.0f}%, "
                          "avg {:.0f} yd in {:.1f} s",
                          names[b], d ? "direct" : "stock", s.done, s.given, 100.0 * s.given / (s.done + s.given),
-                         s.sec > 0 ? s.dist / s.sec : 0.0, s.samples ? 100.0 * s.mounted / s.samples : 0.0,
+                         s.sec > 0 ? s.dist / s.sec : 0.0, s.walked > 0 ? 100.0 * s.dist / s.walked : 0.0,
+                         s.samples ? 100.0 * s.mounted / s.samples : 0.0,
                          s.samples ? 100.0 * s.indoor / s.samples : 0.0,
                          s.sec > 0 ? 100.0 * s.busySec / s.sec : 0.0, s.done ? s.dist / s.done : 0.0,
                          s.done ? s.sec / s.done : 0.0);
@@ -5047,8 +5049,8 @@ void BGTactics::tripSample()
         t = Trip();
         t.ox = pos.x;
         t.oy = pos.y;
-        t.sx = bot->GetPositionX();
-        t.sy = bot->GetPositionY();
+        t.sx = t.lx = bot->GetPositionX();
+        t.sy = t.ly = bot->GetPositionY();
         t.startMs = t.lastMs = now;
         t.direct = direct;
     };
@@ -5075,6 +5077,9 @@ void BGTactics::tripSample()
     ++t.samples;
     t.mounted += bot->IsMounted();
     t.indoor += !bot->IsOutdoors();
+    t.walked += std::hypot(bot->GetPositionX() - t.lx, bot->GetPositionY() - t.ly);
+    t.lx = bot->GetPositionX();
+    t.ly = bot->GetPositionY();
     if (!t.arrived && bot->GetExactDist2d(t.ox, t.oy) < 10.0f)
     {
         float const dist = std::hypot(t.ox - t.sx, t.oy - t.sy);
@@ -5088,6 +5093,7 @@ void BGTactics::tripSample()
             s.samples += t.samples;
             s.mounted += t.mounted;
             s.indoor += t.indoor;
+            s.walked += t.walked;
         }
         start();  // parked at the objective until it changes
         t.arrived = true;
