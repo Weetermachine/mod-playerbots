@@ -110,7 +110,10 @@ int TacticBit(std::string const& tactic)
          : tactic == "HealerHunt" ? int(BGTactic::HealerHunt)
          : tactic == "AB3Cap" ? int(BGTactic::AB3Cap)
          : tactic == "Rebuff" ? int(BGTactic::Rebuff)
-         : tactic == "JobFocus" ? int(BGTactic::JobFocus) : -1;
+         : tactic == "JobFocus" ? int(BGTactic::JobFocus)
+         : tactic == "GYWave" ? int(BGTactic::GYWave)
+         : tactic == "BackOff" ? int(BGTactic::BackOff)
+         : tactic == "WPGraph" ? int(BGTactic::WPGraph) : -1;
 }
 
 char const* BGName(BattlegroundTypeId type)
@@ -226,6 +229,9 @@ bool GlobalSwitch(BGTactic tactic, TeamId team, BattlegroundTypeId type)
         case BGTactic::AB3Cap:
         case BGTactic::Rebuff:
         case BGTactic::JobFocus:
+        case BGTactic::GYWave:
+        case BGTactic::BackOff:
+        case BGTactic::WPGraph:
             return false;  // arms only
     }
     return false;

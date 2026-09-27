@@ -136,6 +136,9 @@ private:
     bool smoothContinue();
     void tripSample();
     void buffSample();
+    bool gyWaveHold();
+    bool backOff();
+    int moveGraphRoute(std::vector<BattleBotPath*> const& paths);
     bool allocatorObjective(PositionInfo& out);
     bool selectObjectiveWp(std::vector<BattleBotPath*> const& vPaths);
     bool moveToObjectiveWp(BattleBotPath* const& currentPath, uint32 currentPoint, bool reverse = false);

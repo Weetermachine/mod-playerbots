@@ -224,6 +224,7 @@ public:
         creators["bg check objective"] = &ActionContext::bg_check_objective;
         creators["bg attack fc"] = &ActionContext::bg_attack_fc;
         creators["bg protect fc"] = &ActionContext::bg_protect_fc;
+        creators["bg back off"] = &ActionContext::bg_back_off;
         creators["bg catch fc"] = &ActionContext::bg_catch_fc;
         creators["bg heal fc"] = &ActionContext::bg_heal_fc;
         creators["attack fc attacker"] = &ActionContext::attack_fc_attacker;
@@ -437,6 +438,7 @@ private:
     static Action* bg_check_objective(PlayerbotAI* botAI) { return new BGTactics(botAI, "check objective"); }
     static Action* bg_attack_fc(PlayerbotAI* botAI) { return new BGTactics(botAI, "attack fc"); }
     static Action* bg_protect_fc(PlayerbotAI* botAI) { return new BGTactics(botAI, "protect fc"); }
+    static Action* bg_back_off(PlayerbotAI* botAI) { return new BGTactics(botAI, "back off"); }
     static Action* bg_catch_fc(PlayerbotAI* botAI) { return new BGTactics(botAI, "catch fc"); }
     static Action* bg_heal_fc(PlayerbotAI* botAI) { return new BGTactics(botAI, "heal fc"); }
     static Action* attack_fc_attacker(PlayerbotAI* botAI) { return new AttackFCAttackerAction(botAI); }

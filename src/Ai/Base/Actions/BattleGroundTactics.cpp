@@ -13,6 +13,7 @@
 #include <cmath>
 #include <cstring>
 #include <mutex>
+#include <queue>
 #include <shared_mutex>
 #include <unordered_map>
 
@@ -1675,9 +1676,14 @@ bool BGTactics::Execute(Event /*event*/)
             return true;
     }
 
+    if (getName() == "back off")
+        return backOff();
+
     if (getName() == "move to objective")
     {
         tripSample();
+        if (gyWaveHold())
+            return true;
         if (bg->GetStatus() == STATUS_WAIT_JOIN)
             return false;
 
@@ -1722,6 +1728,10 @@ bool BGTactics::Execute(Event /*event*/)
         if (carrier && (bgType == BATTLEGROUND_WS || bgType == BATTLEGROUND_EY) &&
             BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::FCEvade))
             if (int const res = moveDirectRoute(true))
+                return res > 0;
+        // Waypoint graph (EotS): shortest path over the waypoint network instead of the stock route choice
+        if (bgType == BATTLEGROUND_EY && vPaths && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::WPGraph))
+            if (int const res = moveGraphRoute(*vPaths))
                 return res > 0;
         // Direct pathing v3: not for flag carriers (on the shortest line through midfield WSG carriers captured
         // 18% of pickups instead of 28%); they keep the waypoint paths.
@@ -4658,6 +4668,315 @@ void BGTactics::buffSample()
                     buffStat[bb][mm][k][0] = buffStat[bb][mm][k][1] = 0;
             }
     }
+}
+
+// Graveyard wave (arm GYWave): battleground respawns come in waves, but bots walked out one by one and arrived alone.
+// After a respawn a bot waits (up to 10 s) until 3 living teammates are within 25 yd, then leaves with them.
+namespace
+{
+struct ReviveState
+{
+    bool dead = false;
+    uint32 reviveMs = 0;
+};
+std::mutex waveLock;
+std::unordered_map<ObjectGuid, ReviveState> waveStates;
+std::atomic<uint32> waveHolds{0}, waveByGroup{0}, waveByTimeout{0}, waveLogMs{0};
+}  // namespace
+
+bool BGTactics::gyWaveHold()
+{
+    Battleground* bg = bot->GetBattleground();
+    if (!bg || !BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::GYWave))
+        return false;
+    uint32 const now = getMSTime();
+    uint32 reviveMs;
+    {
+        std::lock_guard<std::mutex> guard(waveLock);
+        ReviveState& st = waveStates[bot->GetGUID()];
+        if (!bot->IsAlive())
+        {
+            st.dead = true;
+            return false;
+        }
+        if (st.dead)
+        {
+            st.dead = false;
+            st.reviveMs = now;
+            ++waveHolds;
+        }
+        reviveMs = st.reviveMs;
+    }
+    if (!reviveMs || bot->HasAura(BG_WS_SPELL_WARSONG_FLAG) || bot->HasAura(BG_WS_SPELL_SILVERWING_FLAG) ||
+        bot->HasAura(BG_EY_NETHERSTORM_FLAG_SPELL))
+        return false;
+    uint32 near = 0;
+    for (auto const& ref : bg->GetBgMap()->GetPlayers())
+    {
+        Player* p = ref.GetSource();
+        if (p && p != bot && p->IsAlive() && p->GetTeamId() == bot->GetTeamId() && bot->GetExactDist2d(p) < 25.0f)
+            ++near;
+    }
+    bool const timedOut = getMSTimeDiff(reviveMs, now) >= 10 * IN_MILLISECONDS;
+    if (near >= 3 || timedOut)
+    {
+        ++(near >= 3 ? waveByGroup : waveByTimeout);
+        std::lock_guard<std::mutex> guard(waveLock);
+        waveStates[bot->GetGUID()].reviveMs = 0;
+        uint32 last = waveLogMs.load();
+        if (!last)
+            waveLogMs = now;
+        else if (getMSTimeDiff(last, now) > 5 * MINUTE * IN_MILLISECONDS)
+        {
+            waveLogMs = now;
+            LOG_INFO("module", "GYWave (5 min): respawn waits {}, left with 3+ teammates {}, left alone after 10 s {}",
+                     waveHolds.exchange(0), waveByGroup.exchange(0), waveByTimeout.exchange(0));
+        }
+        return false;
+    }
+    return true;  // wait at the graveyard
+}
+
+// Back off when outnumbered (arm BackOff): the trigger fires with 2+ more enemies than friends (counting the bot)
+// within 20 yd and the bot under 50% health; the bot retreats 20 yd toward the middle of its teammates within 60 yd
+// (2+), else toward its objective. At most once every 3 s per bot.
+namespace
+{
+std::mutex backLock;
+std::unordered_map<ObjectGuid, uint32> backLastMs;
+std::atomic<uint32> backCount{0}, backLogMs{0};
+}  // namespace
+
+bool BGTactics::backOff()
+{
+    Battleground* bg = bot->GetBattleground();
+    if (!bg)
+        return false;
+    uint32 const now = getMSTime();
+    {
+        std::lock_guard<std::mutex> guard(backLock);
+        uint32& last = backLastMs[bot->GetGUID()];
+        if (last && getMSTimeDiff(last, now) < 3000)
+            return false;
+        last = now;
+        if (backLastMs.size() > 20000)
+            backLastMs.clear();
+    }
+    float sx = 0, sy = 0;
+    uint32 n = 0;
+    for (auto const& ref : bg->GetBgMap()->GetPlayers())
+    {
+        Player* p = ref.GetSource();
+        if (p && p != bot && p->IsAlive() && p->GetTeamId() == bot->GetTeamId() && bot->GetExactDist2d(p) < 60.0f &&
+            bot->GetExactDist2d(p) > 15.0f)
+        {
+            sx += p->GetPositionX();
+            sy += p->GetPositionY();
+            ++n;
+        }
+    }
+    float tx, ty;
+    if (n >= 2)
+    {
+        tx = sx / n;
+        ty = sy / n;
+    }
+    else
+    {
+        PositionInfo pos = context->GetValue<PositionMap&>("position")->Get()["bg objective"];
+        if (!pos.isSet())
+            return false;
+        tx = pos.x;
+        ty = pos.y;
+    }
+    float const d = bot->GetExactDist2d(tx, ty);
+    if (d < 5.0f)
+        return false;
+    float const step = std::min(20.0f, d);
+    float const x = bot->GetPositionX() + (tx - bot->GetPositionX()) / d * step;
+    float const y = bot->GetPositionY() + (ty - bot->GetPositionY()) / d * step;
+    float z = bot->GetPositionZ();
+    float const h = bot->GetMap()->GetHeight(x, y, z + 3.0f);
+    if (h > INVALID_HEIGHT && std::abs(h - z) < 10.0f)
+        z = h;
+    ++backCount;
+    uint32 last = backLogMs.load();
+    if (!last)
+        backLogMs.compare_exchange_strong(last, now);
+    else if (getMSTimeDiff(last, now) > 5 * MINUTE * IN_MILLISECONDS && backLogMs.compare_exchange_strong(last, now))
+        LOG_INFO("module", "BackOff (5 min): retreats {}", backCount.exchange(0));
+    return MoveTo(bot->GetMapId(), x, y, z, false, false, false, false, MovementPriority::MOVEMENT_COMBAT);
+}
+
+// Waypoint graph (arm WPGraph, EotS): the stock waypoint code walks a random route when a bot stands at a route end,
+// and beyond 100 yd starts a route from its beginning, often back toward base. Here all the map's routes form one
+// road network: consecutive points are linked (one way for routes that only work downhill), and points of different
+// routes within 12 yd of each other (height within 4 yd) are linked both ways. A trip is the shortest path from the
+// point nearest the bot (within 40 yd) to the point nearest the objective; the last 40 yd go through the stock code.
+namespace
+{
+struct WPGraphData
+{
+    std::vector<G3D::Vector3> nodes;
+    std::vector<std::vector<std::pair<uint32, float>>> edges;
+};
+std::mutex graphLock;
+std::unordered_map<void const*, WPGraphData> wpGraphs;  // by path set
+struct GraphRoute
+{
+    uint32 instanceId = 0;
+    float ox = 0, oy = 0;
+    std::vector<uint32> nodes;
+    size_t next = 0;
+    uint32 builtMs = 0;
+};
+std::unordered_map<ObjectGuid, GraphRoute> graphRoutes;
+
+WPGraphData const& WPGraphFor(std::vector<BattleBotPath*> const& paths)  // needs graphLock
+{
+    auto it = wpGraphs.find(&paths);
+    if (it != wpGraphs.end())
+        return it->second;
+    WPGraphData g;
+    std::vector<uint32> pathOf;
+    for (uint32 pi = 0; pi < paths.size(); ++pi)
+    {
+        BattleBotPath const* path = paths[pi];
+        bool const oneWay = std::find(vPaths_NoReverseAllowed.begin(), vPaths_NoReverseAllowed.end(), path) !=
+                            vPaths_NoReverseAllowed.end();
+        uint32 const first = uint32(g.nodes.size());
+        for (BattleBotWaypoint const& w : *path)
+        {
+            g.nodes.emplace_back(w.x, w.y, w.z);
+            pathOf.push_back(pi);
+        }
+        g.edges.resize(g.nodes.size());
+        for (uint32 i = first; i + 1 < g.nodes.size(); ++i)
+        {
+            float const d = (g.nodes[i + 1] - g.nodes[i]).length();
+            g.edges[i].emplace_back(i + 1, d);
+            if (!oneWay)
+                g.edges[i + 1].emplace_back(i, d);
+        }
+    }
+    for (uint32 a = 0; a < g.nodes.size(); ++a)
+        for (uint32 b = a + 1; b < g.nodes.size(); ++b)
+        {
+            if (pathOf[a] == pathOf[b])
+                continue;
+            float const dx = g.nodes[a].x - g.nodes[b].x, dy = g.nodes[a].y - g.nodes[b].y;
+            float const d2 = dx * dx + dy * dy;
+            if (d2 < 144.0f && std::abs(g.nodes[a].z - g.nodes[b].z) < 4.0f)
+            {
+                float const d = std::sqrt(d2);
+                g.edges[a].emplace_back(b, d);
+                g.edges[b].emplace_back(a, d);
+            }
+        }
+    return wpGraphs.emplace(&paths, std::move(g)).first->second;
+}
+
+uint32 NearestNode(WPGraphData const& g, float x, float y, float maxDist)
+{
+    uint32 best = UINT32_MAX;
+    float bestD = maxDist * maxDist;
+    for (uint32 i = 0; i < g.nodes.size(); ++i)
+    {
+        float const dx = g.nodes[i].x - x, dy = g.nodes[i].y - y, d2 = dx * dx + dy * dy;
+        if (d2 < bestD)
+        {
+            bestD = d2;
+            best = i;
+        }
+    }
+    return best;
+}
+}  // namespace
+
+int BGTactics::moveGraphRoute(std::vector<BattleBotPath*> const& paths)
+{
+    Battleground* bg = bot->GetBattleground();
+    if (!bg)
+        return 0;
+    PositionInfo pos = context->GetValue<PositionMap&>("position")->Get()["bg objective"];
+    if (!pos.isSet() || bot->GetExactDist2d(pos.x, pos.y) < 40.0f)
+        return 0;  // the stock code finishes the trip
+    uint32 const now = getMSTime();
+    G3D::Vector3 dest;
+    bool last = false;
+    {
+        std::lock_guard<std::mutex> guard(graphLock);
+        WPGraphData const& g = WPGraphFor(paths);
+        if (g.nodes.empty())
+            return 0;
+        GraphRoute& r = graphRoutes[bot->GetGUID()];
+        bool const same = r.instanceId == bg->GetInstanceID() && std::abs(r.ox - pos.x) < 5.0f && std::abs(r.oy - pos.y) < 5.0f;
+        bool const lost = same && r.next < r.nodes.size() &&
+                          bot->GetExactDist2d(g.nodes[r.nodes[r.next]].x, g.nodes[r.nodes[r.next]].y) > 30.0f;
+        if (!same || lost || getMSTimeDiff(r.builtMs, now) > 20 * IN_MILLISECONDS)
+        {
+            r = GraphRoute();
+            r.instanceId = bg->GetInstanceID();
+            r.ox = pos.x;
+            r.oy = pos.y;
+            r.builtMs = now;
+            uint32 const from = NearestNode(g, bot->GetPositionX(), bot->GetPositionY(), 40.0f);
+            uint32 const to = NearestNode(g, pos.x, pos.y, 60.0f);
+            if (from == UINT32_MAX || to == UINT32_MAX || from == to)
+                return 0;
+            // Dijkstra
+            std::vector<float> dist(g.nodes.size(), FLT_MAX);
+            std::vector<uint32> prev(g.nodes.size(), UINT32_MAX);
+            using QE = std::pair<float, uint32>;
+            std::priority_queue<QE, std::vector<QE>, std::greater<QE>> q;
+            dist[from] = 0.0f;
+            q.emplace(0.0f, from);
+            while (!q.empty())
+            {
+                auto [d, u] = q.top();
+                q.pop();
+                if (d > dist[u])
+                    continue;
+                if (u == to)
+                    break;
+                for (auto const& [v, w] : g.edges[u])
+                    if (d + w < dist[v])
+                    {
+                        dist[v] = d + w;
+                        prev[v] = u;
+                        q.emplace(dist[v], v);
+                    }
+            }
+            if (dist[to] == FLT_MAX)
+                return 0;  // not connected: the stock waypoints
+            for (uint32 v = to; v != UINT32_MAX; v = prev[v])
+                r.nodes.push_back(v);
+            std::reverse(r.nodes.begin(), r.nodes.end());
+            r.next = 0;
+        }
+        if (r.nodes.empty())
+            return 0;
+        while (r.next + 1 < r.nodes.size() &&
+               bot->GetExactDist2d(g.nodes[r.nodes[r.next]].x, g.nodes[r.nodes[r.next]].y) < 4.0f)
+            ++r.next;
+        size_t target = r.next;
+        float along = bot->GetExactDist2d(g.nodes[r.nodes[target]].x, g.nodes[r.nodes[target]].y);
+        while (target + 1 < r.nodes.size())
+        {
+            float const leg = (g.nodes[r.nodes[target + 1]] - g.nodes[r.nodes[target]]).length();
+            if (along + leg > 25.0f)
+                break;
+            along += leg;
+            ++target;
+        }
+        r.next = target;
+        dest = g.nodes[r.nodes[target]];
+        last = target + 1 == r.nodes.size();
+    }
+    bool const moved = MoveTo(bot->GetMapId(), dest.x, dest.y, dest.z);
+    if (last && !moved)
+        return 0;
+    return moved ? 1 : -1;
 }
 
 void BGTactics::tripSample()

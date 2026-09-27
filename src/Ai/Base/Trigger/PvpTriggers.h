@@ -66,6 +66,15 @@ public:
     bool IsActive() override;
 };
 
+// Back off (BackOff): 2+ more enemies than friends (counting the bot) within 20 yd and the bot under 50% health
+class OutnumberedTrigger : public Trigger
+{
+public:
+    OutnumberedTrigger(PlayerbotAI* botAI) : Trigger(botAI, "outnumbered") {}
+
+    bool IsActive() override;
+};
+
 class EscortFallingBehind : public Trigger
 {
 public:

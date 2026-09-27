@@ -283,6 +283,25 @@ bool FocusTargetDiffers::IsActive()
     return target && target != AI_VALUE(Unit*, "current target");
 }
 
+bool OutnumberedTrigger::IsActive()
+{
+    Battleground* bg = bot->GetBattleground();
+    if (!bg || !bot->IsAlive() || bot->GetHealthPct() >= 50.0f ||
+        !BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::BackOff) ||
+        bot->HasAura(BG_WS_SPELL_WARSONG_FLAG) || bot->HasAura(BG_WS_SPELL_SILVERWING_FLAG) ||
+        bot->HasAura(BG_EY_NETHERSTORM_FLAG_SPELL))
+        return false;
+    uint32 enemies = 0, friends = 1;
+    for (auto const& ref : bg->GetBgMap()->GetPlayers())
+    {
+        Player* p = ref.GetSource();
+        if (!p || p == bot || !p->IsAlive() || bot->GetExactDist2d(p) > 20.0f)
+            continue;
+        ++(p->GetTeamId() == bot->GetTeamId() ? friends : enemies);
+    }
+    return enemies >= friends + 2;
+}
+
 bool EscortFallingBehind::IsActive()
 {
     Battleground* bg = bot->GetBattleground();
