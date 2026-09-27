@@ -53,6 +53,7 @@
 std::atomic<uint32> comebackBehind[3], comebackPlans[3];
 // Batch 1 tactics, plans that used them (5 min): intercept, escort healer, standoff break, reinforce, retake
 std::atomic<uint32> batchUsed[5];
+std::atomic<uint32> eyRetakeUsed{0};  // EYRetake: objective picks sending a bot to retake a near tower
 namespace
 {
 void AllocLogStats();
@@ -1738,9 +1739,9 @@ bool BGTactics::Execute(Event /*event*/)
             BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::FCEvade))
             if (int const res = moveDirectRoute(true))
                 return res > 0;
-        // Waypoint graph: shortest path over the waypoint network instead of the stock route choice (WSG carriers keep
-        // the stock routes, like direct pathing v3)
-        if ((bgType == BATTLEGROUND_EY || bgType == BATTLEGROUND_AB || (bgType == BATTLEGROUND_WS && !carrier)) && vPaths &&
+        // Waypoint graph: shortest path over the waypoint network instead of the stock route choice (carriers keep
+        // the stock routes, like direct pathing v3: on the graph EotS carriers captured 34% of pickups instead of 59%)
+        if ((bgType == BATTLEGROUND_AB || ((bgType == BATTLEGROUND_WS || bgType == BATTLEGROUND_EY) && !carrier)) && vPaths &&
             BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::WPGraph))
             if (int const res = moveGraphRoute(*vPaths))
                 return res > 0;
@@ -2912,6 +2913,45 @@ bool BGTactics::selectObjective(bool reset)
                     goTo(EY_NodePositions[threatened >= 0 ? uint32(threatened) : owned[bot->GetGUID().GetCounter() % owned.size()]], 8.0f);
             }
 
+            // Near-tower retake (arm EYRetake): in the first 5 minutes, when one of the two towers in front of our
+            // start is not ours, the 5 living bots of our team nearest to it go there before anything but the flag
+            // carrier's run. From 449 stock games: a team that kept both near towers through minute 3 won 71%, one
+            // that lost one 42%; the opening tower swap is where EotS games split.
+            if (!foundObjective && BGTacticArms::IsOn(bg, team, BGTactic::EYRetake) &&
+                bg->GetStatus() == STATUS_IN_PROGRESS && bg->GetStartTime() < 7 * MINUTE * IN_MILLISECONDS)  // 2 min prep + 5
+            {
+                for (auto const& [nodeId, _, __] : front)
+                {
+                    if (IsOwned(nodeId) || !EY_NodePositions.contains(nodeId))
+                        continue;
+                    Position const& tp = EY_NodePositions[nodeId];
+                    float const myDist = bot->GetExactDist2d(tp);
+                    uint32 closer = 0;
+                    for (auto const& ref : bg->GetBgMap()->GetPlayers())
+                    {
+                        Player* p = ref.GetSource();
+                        if (p && p != bot && p->IsAlive() && p->GetTeamId() == team && GET_PLAYERBOT_AI(p) &&
+                            !p->HasAura(BG_EY_NETHERSTORM_FLAG_SPELL) && p->GetExactDist2d(tp) < myDist)
+                            ++closer;
+                    }
+                    if (closer >= 5)
+                        continue;
+                    float rx, ry, rz;
+                    bot->GetRandomPoint(tp, 5.0f, rx, ry, rz);
+                    if (Map* map = bot->GetMap())
+                    {
+                        float const groundZ = map->GetHeight(rx, ry, rz);
+                        if (eyPath ? groundZ > INVALID_HEIGHT : groundZ == VMAP_INVALID_HEIGHT_VALUE)
+                            rz = groundZ;
+                    }
+                    pos.Set(rx, ry, rz, bot->GetMapId());
+                    foundObjective = true;
+                    ++eyRetakeUsed;
+                    AllocLogStats();
+                    break;
+                }
+            }
+
             // Tower guards (NodeGuard in EotS arms, v3): defenders keep the stock flag duties first (chase the
             // enemy carrier, escort ours, take the flag) - that is how bots win EotS, and v1, which put
             // towers first, lost 39-61 with half the flag caps. Guards only skip the random impulses, and
@@ -3898,6 +3938,8 @@ void AllocLogStats()
         if (u[0] || u[1] || u[2] || u[3] || u[4])
             LOG_INFO("module", "Batch tactics (5 min, plans using them): intercept {}, escort healer {}, standoff break {}, "
                      "reinforce {}, retake {}", u[0], u[1], u[2], u[3], u[4]);
+        if (uint32 const r = eyRetakeUsed.exchange(0))
+            LOG_INFO("module", "EYRetake (5 min): near-tower retake picks {}", r);
     }
     for (uint32 b = 0; b < 3; ++b)
     {
@@ -5053,7 +5095,7 @@ WPGraphData const& WPGraphFor(std::vector<BattleBotPath*> const& paths)  // need
                 continue;
             float const dx = g.nodes[a].x - g.nodes[b].x, dy = g.nodes[a].y - g.nodes[b].y;
             float const d2 = dx * dx + dy * dy;
-            if (d2 < 144.0f && std::abs(g.nodes[a].z - g.nodes[b].z) < 4.0f)
+            if (d2 < 400.0f && std::abs(g.nodes[a].z - g.nodes[b].z) < 4.0f)  // 20 yd (EotS junctions are 13-17 yd apart)
             {
                 float const d = std::sqrt(d2);
                 g.edges[a].emplace_back(b, d);

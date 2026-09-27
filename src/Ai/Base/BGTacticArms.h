@@ -59,6 +59,7 @@ enum class BGTactic : uint8
     Retake = 39,         // AB (allocator): an enemy banner on a node is retaken in force (their bots + 2)
     NoSolo = 40,         // WSG/AB/EotS: no new fight alone (no friend within 20 yd) against 2+ enemies
     FinishKill = 41,     // WSG/AB/EotS: switch to an enemy under 30% health in reach
+    EYRetake = 42,       // EotS (stock): first 5 min, a lost near tower is retaken by the 5 nearest bots first
 };
 
 // Per-game A/B arms. With AiPlayerbot.BGTactics.<BG>.Arms set (e.g.
