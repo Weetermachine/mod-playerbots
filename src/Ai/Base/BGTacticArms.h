@@ -40,6 +40,7 @@ enum class BGTactic : uint8
     GroupMove = 20,      // with Allocator: attack/defend groups gather and travel together
     ChaseV3 = 21,        // with FCChase: everyone tries; per-kind checks (stuns over slows); cast-time CC cancelled
     FocusFire = 22,      // WSG/AB/EotS: bots in a fight converge on one enemy (carrier, healers, low health first)
+    FocusPartial = 23,   // focus fire with at most 3 of our bots per target (no overkill)
 };
 
 // Per-game A/B arms. With AiPlayerbot.BGTactics.<BG>.Arms set (e.g.

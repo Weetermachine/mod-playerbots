@@ -16,6 +16,7 @@
 #include "Event.h"
 #include "LootObjectStack.h"
 #include "NewRpgStrategy.h"
+#include "ObjectAccessor.h"
 #include "Playerbots.h"
 #include "RtiTargetValue.h"
 #include "PossibleRpgTargetsValue.h"
@@ -326,15 +327,64 @@ std::mutex focusLock;
 std::unordered_map<uint64, std::vector<std::pair<ObjectGuid, uint32>>> focusPicks;  // instance << 1 | team
 
 uint64 FocusKey(Battleground* bg, TeamId team) { return (uint64(bg->GetInstanceID()) << 1) | uint64(team == TEAM_HORDE); }
+
+// Focus log (per 5 minutes, full / partial): switches made; switches whose target was replaced by something else
+// within 3 s (the bot's normal targeting pulling it away again); samples of bots in a fight, how many teammates
+// within 40 yd share their target, and how often their target is the focus target.
+struct FocusSwitch
+{
+    ObjectGuid target;
+    uint32 ms = 0;
+    bool checked = false;
+};
+std::unordered_map<ObjectGuid, FocusSwitch> focusSwitches;  // by bot
+uint32 focusStat[2][5];  // [full, partial][switches, reverted, samples, sharing (sum), on focus]
+uint32 focusLogMs = 0;
+
+void FocusLog(uint32 now)  // needs focusLock
+{
+    if (!focusLogMs)
+    {
+        focusLogMs = now;
+        return;
+    }
+    if (getMSTimeDiff(focusLogMs, now) <= 5 * MINUTE * IN_MILLISECONDS)
+        return;
+    focusLogMs = now;
+    for (uint32 m = 0; m < 2; ++m)
+    {
+        uint32 const* v = focusStat[m];
+        if (v[0] || v[2])
+            LOG_INFO("module", "Focus {} (5 min): switches {}, reverted within 3 s {:.0f}%, fight samples {}, teammates on "
+                     "the same target {:.2f} avg, on the focus target {:.0f}%", m ? "partial" : "full", v[0],
+                     v[0] ? 100.0 * v[1] / v[0] : 0.0, v[2], v[2] ? double(v[3]) / v[2] : 0.0,
+                     v[2] ? 100.0 * v[4] / v[2] : 0.0);
+        for (uint32 k = 0; k < 5; ++k)
+            focusStat[m][k] = 0;
+    }
+}
 }  // namespace
 
 Unit* FindFocusTarget(PlayerbotAI* botAI)
 {
     Player* bot = botAI->GetBot();
     Battleground* bg = bot->GetBattleground();
-    if (!bg || !BGTacticArms::IsOn(bg, bot->GetBgTeamId(), BGTactic::FocusFire) || PlayerbotAI::IsHeal(bot) ||
+    bool const partial = bg && BGTacticArms::IsOn(bg, bot->GetBgTeamId(), BGTactic::FocusPartial);
+    if (!bg || !(partial || BGTacticArms::IsOn(bg, bot->GetBgTeamId(), BGTactic::FocusFire)) || PlayerbotAI::IsHeal(bot) ||
         !bot->IsInCombat())
         return nullptr;
+    // Partial focus: how many of our other bots are on each enemy right now (their current target)
+    std::unordered_map<ObjectGuid, uint32> attackers;
+    if (partial)
+        for (auto const& ref : bg->GetBgMap()->GetPlayers())
+        {
+            Player* p = ref.GetSource();
+            if (!p || p == bot || !p->IsAlive() || p->GetBgTeamId() != bot->GetBgTeamId())
+                continue;
+            if (PlayerbotAI* ai = GET_PLAYERBOT_AI(p))
+                if (Unit* t = ai->GetAiObjectContext()->GetValue<Unit*>("current target")->Get())
+                    ++attackers[t->GetGUID()];
+        }
     uint32 const now = getMSTime();
     std::unordered_map<ObjectGuid, uint32> picks;
     {
@@ -360,7 +410,10 @@ Unit* FindFocusTarget(PlayerbotAI* botAI)
                       (2.0f - p->GetHealthPct() / 100.0f) / (1.0f + dist / 25.0f);
         if (melee && dist > 8.0f)
             score *= 0.6f;
-        if (auto it = picks.find(p->GetGUID()); it != picks.end())
+        uint32 const on = partial ? (attackers.count(p->GetGUID()) ? attackers[p->GetGUID()] : 0) : 0;
+        if (partial && on >= 3 && p != current)
+            score *= 0.25f;  // already has its 3: take the next-best target
+        else if (auto it = picks.find(p->GetGUID()); it != picks.end())
             score *= std::min(3.0f, 1.0f + 0.5f * it->second);
         if (p == current)
             score *= 1.3f;
@@ -384,9 +437,55 @@ bool FocusFireAction::Execute(Event /*event*/)
     Unit* target = FindFocusTarget(botAI);
     if (!target || !Attack(target))
         return false;
+    uint32 const now = getMSTime();
+    uint32 const m = BGTacticArms::IsOn(bot->GetBattleground(), bot->GetBgTeamId(), BGTactic::FocusPartial) ? 1 : 0;
     std::lock_guard<std::mutex> guard(focusLock);
-    focusPicks[FocusKey(bot->GetBattleground(), bot->GetBgTeamId())].emplace_back(target->GetGUID(), getMSTime());
+    focusPicks[FocusKey(bot->GetBattleground(), bot->GetBgTeamId())].emplace_back(target->GetGUID(), now);
+    focusSwitches[bot->GetGUID()] = {target->GetGUID(), now, false};
+    ++focusStat[m][0];
     return true;
+}
+
+// Focus log sample (called from the trigger, for bots in a fight with focus fire on)
+void FocusSample(PlayerbotAI* botAI, Unit* focus)
+{
+    Player* bot = botAI->GetBot();
+    Battleground* bg = bot->GetBattleground();
+    Unit* current = botAI->GetAiObjectContext()->GetValue<Unit*>("current target")->Get();
+    uint32 sharing = 0;
+    if (current)
+        for (auto const& ref : bg->GetBgMap()->GetPlayers())
+        {
+            Player* p = ref.GetSource();
+            if (!p || p == bot || !p->IsAlive() || p->GetBgTeamId() != bot->GetBgTeamId() || bot->GetExactDist2d(p) > 40.0f)
+                continue;
+            if (PlayerbotAI* ai = GET_PLAYERBOT_AI(p))
+                sharing += ai->GetAiObjectContext()->GetValue<Unit*>("current target")->Get() == current;
+        }
+    uint32 const now = getMSTime();
+    uint32 const m = BGTacticArms::IsOn(bg, bot->GetBgTeamId(), BGTactic::FocusPartial) ? 1 : 0;
+    std::lock_guard<std::mutex> guard(focusLock);
+    ++focusStat[m][2];
+    focusStat[m][3] += sharing;
+    focusStat[m][4] += current && current == focus;
+    auto it = focusSwitches.find(bot->GetGUID());
+    if (it != focusSwitches.end() && !it->second.checked && getMSTimeDiff(it->second.ms, now) >= 1000)
+    {
+        uint32 const age = getMSTimeDiff(it->second.ms, now);
+        bool const still = current && current->GetGUID() == it->second.target;
+        bool const targetDead = !ObjectAccessor::GetUnit(*bot, it->second.target) ||
+                                !ObjectAccessor::GetUnit(*bot, it->second.target)->IsAlive();
+        if (!still && !targetDead && age <= 3000)
+        {
+            ++focusStat[m][1];  // pulled away while the focus target lived
+            it->second.checked = true;
+        }
+        else if (age > 3000)
+            it->second.checked = true;
+    }
+    if (focusSwitches.size() > 5000)
+        focusSwitches.clear();
+    FocusLog(now);
 }
 
 bool AttackBannerCapperAction::isUseful()

@@ -272,6 +272,8 @@ bool EnemyFlagCarrierNear::IsActive()
 bool FocusTargetDiffers::IsActive()
 {
     Unit* target = FindFocusTarget(botAI);
+    if (target)
+        FocusSample(botAI, target);
     return target && target != AI_VALUE(Unit*, "current target");
 }
 

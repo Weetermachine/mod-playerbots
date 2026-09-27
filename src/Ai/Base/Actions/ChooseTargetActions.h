@@ -118,8 +118,11 @@ public:
 // Nearest enemy player within range channeling a battleground banner capture (spell 21651), or nullptr.
 Unit* FindBannerCapper(PlayerbotAI* botAI, float range);
 
-// Focus fire (FocusFire): the enemy this bot should attack so that bots in the same fight converge, or nullptr.
+// Focus fire (FocusFire, FocusPartial): the enemy this bot should attack so that bots in the same fight converge, or
+// nullptr.
 Unit* FindFocusTarget(PlayerbotAI* botAI);
+// Focus log sample for a bot in a fight (see ChooseTargetActions.cpp)
+void FocusSample(PlayerbotAI* botAI, Unit* focus);
 
 class FocusFireAction : public AttackAction
 {
