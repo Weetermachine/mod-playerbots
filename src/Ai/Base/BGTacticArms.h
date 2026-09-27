@@ -43,6 +43,8 @@ enum class BGTactic : uint8
     FocusPartial = 23,   // focus fire with at most 3 of our bots per target (no overkill)
     TowerRush = 24,      // with Allocator (EotS): no flag jobs, every bot on towers (4 towers: enemy cannot capture)
     EYPlan = 25,         // with Allocator (EotS): hold 2 home towers, 7 on the flag, 4 rotators trade towers
+    ClassRoles = 26,     // with Allocator (WSG): speed classes on attack, stun classes on defense and the chase
+    HealerHunt = 27,     // WSG: up to 2 bots go after the enemy carrier's healer (interrupt/stun first)
 };
 
 // Per-game A/B arms. With AiPlayerbot.BGTactics.<BG>.Arms set (e.g.

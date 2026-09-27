@@ -124,6 +124,18 @@ Unit* FindFocusTarget(PlayerbotAI* botAI);
 // Focus log sample for a bot in a fight (see ChooseTargetActions.cpp)
 void FocusSample(PlayerbotAI* botAI, Unit* focus);
 
+// Healer hunt (HealerHunt): the enemy flag carrier's healer, or nullptr
+Unit* FindCarrierHealer(PlayerbotAI* botAI);
+
+class AttackCarrierHealerAction : public AttackAction
+{
+public:
+    AttackCarrierHealerAction(PlayerbotAI* botAI) : AttackAction(botAI, "attack fc healer") {}
+
+    bool Execute(Event event) override;
+    bool isUseful() override;
+};
+
 class FocusFireAction : public AttackAction
 {
 public:

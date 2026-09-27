@@ -3866,6 +3866,7 @@ struct AllocMember
     float x, y;
     bool alive;
     bool healer;
+    uint8 cls;
 };
 
 bool AllocHasFlag(Player* p)
@@ -3901,7 +3902,7 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
         }
         if (!GET_PLAYERBOT_AI(p))
             continue;  // real players plan for themselves
-        members.push_back({p, p->GetPositionX(), p->GetPositionY(), p->IsAlive(), PlayerbotAI::IsHeal(p)});
+        members.push_back({p, p->GetPositionX(), p->GetPositionY(), p->IsAlive(), PlayerbotAI::IsHeal(p), p->getClass()});
     }
     auto enemiesNear = [&](Position const& p, float r)
     {
@@ -4259,6 +4260,19 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
     // Role-aware (EotS v2; elsewhere arm AllocRoles): a healer alone cannot stop a capture, so solo slots cost a healer 80 yd extra;
     // groups want one healer each (a bonus for the first, a second is skipped).
     bool const roleAware = type == BATTLEGROUND_EY || BGTacticArms::IsOn(bg, team, BGTactic::AllocRoles);
+    // Class-aware roles (WSG, arm ClassRoles): the offense wants speed (druid, shaman, rogue, hunter: the one who picks
+    // the flag up runs it home), the defense and the carrier chase want stuns (paladin, warrior, rogue, death knight).
+    bool const classRoles = type == BATTLEGROUND_WS && BGTacticArms::IsOn(bg, team, BGTactic::ClassRoles);
+    auto classCost = [](uint8 cls, uint32 kind)
+    {
+        bool const speed = cls == CLASS_DRUID || cls == CLASS_SHAMAN || cls == CLASS_ROGUE || cls == CLASS_HUNTER;
+        bool const stun = cls == CLASS_PALADIN || cls == CLASS_WARRIOR || cls == CLASS_ROGUE || cls == CLASS_DEATH_KNIGHT;
+        if (kind == AK_ATTACK)
+            return speed ? -20.0f : 15.0f;
+        if (kind == AK_ROOM || kind == AK_STOPFC)
+            return stun ? -20.0f : 15.0f;
+        return 0.0f;
+    };
     std::unordered_map<ObjectGuid, AllocAssign> next;
     std::vector<bool> taken(members.size(), false);
     std::vector<uint8> healersIn(slots.size(), 0);
@@ -4294,6 +4308,8 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
                 }
                 if (roleAware && mb.healer)
                     cost += slots[s].need <= 1 ? 80.0f : slots[s].need >= 3 ? -15.0f : 0.0f;
+                if (classRoles && !mb.healer)
+                    cost += classCost(mb.cls, slots[s].key >> 8);
                 pairs.emplace_back(cost, m, s);
             }
         }

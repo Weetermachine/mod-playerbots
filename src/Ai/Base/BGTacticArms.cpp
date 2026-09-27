@@ -105,7 +105,9 @@ int TacticBit(std::string const& tactic)
          : tactic == "FocusFire" ? int(BGTactic::FocusFire)
          : tactic == "FocusPartial" ? int(BGTactic::FocusPartial)
          : tactic == "TowerRush" ? int(BGTactic::TowerRush)
-         : tactic == "EYPlan" ? int(BGTactic::EYPlan) : -1;
+         : tactic == "EYPlan" ? int(BGTactic::EYPlan)
+         : tactic == "ClassRoles" ? int(BGTactic::ClassRoles)
+         : tactic == "HealerHunt" ? int(BGTactic::HealerHunt) : -1;
 }
 
 char const* BGName(BattlegroundTypeId type)
@@ -216,6 +218,8 @@ bool GlobalSwitch(BGTactic tactic, TeamId team, BattlegroundTypeId type)
         case BGTactic::FocusPartial:
         case BGTactic::TowerRush:
         case BGTactic::EYPlan:
+        case BGTactic::ClassRoles:
+        case BGTactic::HealerHunt:
             return false;  // arms only
     }
     return false;

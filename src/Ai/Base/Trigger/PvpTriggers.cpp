@@ -269,6 +269,12 @@ bool EnemyFlagCarrierNear::IsActive()
     return true;
 }
 
+bool EnemyCarrierHealer::IsActive()
+{
+    Unit* healer = FindCarrierHealer(botAI);
+    return healer && healer != AI_VALUE(Unit*, "current target");
+}
+
 bool FocusTargetDiffers::IsActive()
 {
     Unit* target = FindFocusTarget(botAI);

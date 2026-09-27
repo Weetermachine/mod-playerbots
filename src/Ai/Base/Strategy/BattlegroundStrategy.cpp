@@ -38,6 +38,8 @@ void WarsongStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode("escort falling behind", { NextAction("bg protect fc", ACTION_RAID + 0.45f)}));
     // Focus fire: above ordinary target choice, below the carrier-related switches
     triggers.push_back(new TriggerNode("focus target differs", { NextAction("focus fire", ACTION_RAID + 0.2f)}));
+    // Healer hunt: below attacking the enemy carrier (those who can reach it), above the chase slows and the peel
+    triggers.push_back(new TriggerNode("enemy fc healer", { NextAction("attack fc healer", ACTION_RAID + 0.6f)}));
     // Escort v2: healers heal our carrier first (below heals for someone about to die)
     triggers.push_back(new TriggerNode("team flagcarrier needs heal", { NextAction("bg heal fc", ACTION_MEDIUM_HEAL + 5.0f)}));
     triggers.push_back(new TriggerNode("often", { NextAction("bg use buff", ACTION_BG)}));

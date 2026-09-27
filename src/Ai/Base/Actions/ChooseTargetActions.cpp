@@ -488,6 +488,67 @@ void FocusSample(PlayerbotAI* botAI, Unit* focus)
     FocusLog(now);
 }
 
+// Healer hunt (arm HealerHunt, WSG): the enemy carrier's healer (an enemy healer within 40 yd of it, nearest to this
+// bot within 35 yd) gets up to 2 of our bots: an interrupt or stun first, then attacks. Bots that can reach the
+// carrier keep attacking it ("attack enemy flag carrier" is above this).
+Unit* FindCarrierHealer(PlayerbotAI* botAI)
+{
+    Player* bot = botAI->GetBot();
+    Battleground* bg = bot->GetBattleground();
+    if (!bg || !BGTacticArms::IsOn(bg, bot->GetBgTeamId(), BGTactic::HealerHunt) || PlayerbotAI::IsHeal(bot))
+        return nullptr;
+    Unit* fc = botAI->GetAiObjectContext()->GetValue<Unit*>("enemy flag carrier")->Get();
+    if (!fc || !fc->IsAlive() || fc == bot)
+        return nullptr;
+    Player* best = nullptr;
+    float bestDist = 35.0f;
+    std::unordered_map<ObjectGuid, uint32> on;
+    for (auto const& ref : bg->GetBgMap()->GetPlayers())
+    {
+        Player* p = ref.GetSource();
+        if (!p || !p->IsAlive() || p == bot)
+            continue;
+        if (p->GetBgTeamId() == bot->GetBgTeamId())
+        {
+            if (PlayerbotAI* ai = GET_PLAYERBOT_AI(p))
+                if (Unit* t = ai->GetAiObjectContext()->GetValue<Unit*>("current target")->Get())
+                    ++on[t->GetGUID()];
+            continue;
+        }
+        if (p == fc || !PlayerbotAI::IsHeal(p) || p->GetDistance(fc) > 40.0f)
+            continue;
+        float const d = bot->GetDistance(p);
+        if (d < bestDist && bot->IsWithinLOSInMap(p))
+        {
+            bestDist = d;
+            best = p;
+        }
+    }
+    if (!best)
+        return nullptr;
+    Unit* current = botAI->GetAiObjectContext()->GetValue<Unit*>("current target")->Get();
+    uint32 const already = on.count(best->GetGUID()) ? on[best->GetGUID()] : 0;
+    return current == best || already < 2 ? best : nullptr;
+}
+
+bool AttackCarrierHealerAction::isUseful()
+{
+    Unit* healer = FindCarrierHealer(botAI);
+    return healer && healer != AI_VALUE(Unit*, "current target");
+}
+
+bool AttackCarrierHealerAction::Execute(Event /*event*/)
+{
+    Unit* healer = FindCarrierHealer(botAI);
+    if (!healer)
+        return false;
+    if (healer->IsNonMeleeSpellCast(false))
+        for (char const* spell : CAPPER_INTERRUPTS)
+            if (botAI->CanCastSpell(spell, healer))
+                return botAI->CastSpell(spell, healer);
+    return Attack(healer);
+}
+
 bool AttackBannerCapperAction::isUseful()
 {
     return bot->GetBattlegroundTypeId() == BATTLEGROUND_AB &&

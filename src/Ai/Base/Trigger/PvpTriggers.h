@@ -57,6 +57,15 @@ public:
     bool IsActive() override;
 };
 
+// Healer hunt (HealerHunt): the enemy carrier has a healer this bot should go after
+class EnemyCarrierHealer : public Trigger
+{
+public:
+    EnemyCarrierHealer(PlayerbotAI* botAI) : Trigger(botAI, "enemy fc healer") {}
+
+    bool IsActive() override;
+};
+
 class EscortFallingBehind : public Trigger
 {
 public:
