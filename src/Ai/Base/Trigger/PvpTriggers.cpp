@@ -283,7 +283,7 @@ bool FocusTargetDiffers::IsActive()
     return target && target != AI_VALUE(Unit*, "current target");
 }
 
-bool OutnumberedTrigger::IsActive()
+bool BgOutnumberedTrigger::IsActive()
 {
     Battleground* bg = bot->GetBattleground();
     if (!bg || !bot->IsAlive() || bot->GetHealthPct() >= 50.0f ||

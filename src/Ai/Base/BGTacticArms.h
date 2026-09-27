@@ -50,7 +50,7 @@ enum class BGTactic : uint8
     JobFocus = 30,       // all BGs: bots pick new fights only in their way (12 yd) or at their objective (25 yd)
     GYWave = 31,         // all BGs: after a respawn, wait for 3 teammates nearby or 10 s before leaving
     BackOff = 32,        // WSG/AB/EotS: 2+ extra enemies within 20 yd and under 50% health: retreat toward help
-    WPGraph = 33,        // EotS: waypoint routes as one road network, shortest path (no backtracking)
+    WPGraph = 33,        // WSG/AB/EotS: waypoint routes as one road network, shortest path (no backtracking)
 };
 
 // Per-game A/B arms. With AiPlayerbot.BGTactics.<BG>.Arms set (e.g.

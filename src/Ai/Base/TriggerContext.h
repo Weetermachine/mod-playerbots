@@ -192,7 +192,7 @@ public:
         creators["escort falling behind"] = &TriggerContext::escort_falling_behind;
         creators["focus target differs"] = &TriggerContext::focus_target_differs;
         creators["enemy fc healer"] = &TriggerContext::enemy_fc_healer;
-        creators["outnumbered"] = &TriggerContext::outnumbered;
+        creators["bg outnumbered"] = &TriggerContext::bg_outnumbered;
         creators["team flagcarrier needs heal"] = &TriggerContext::team_flagcarrier_needs_heal;
         creators["enemy capping banner"] = &TriggerContext::enemy_capping_banner;
         creators["in Battleground"] = &TriggerContext::player_is_in_BATTLEGROUND;
@@ -420,7 +420,7 @@ private:
     static Trigger* escort_falling_behind(PlayerbotAI* botAI) { return new EscortFallingBehind(botAI); }
     static Trigger* focus_target_differs(PlayerbotAI* botAI) { return new FocusTargetDiffers(botAI); }
     static Trigger* enemy_fc_healer(PlayerbotAI* botAI) { return new EnemyCarrierHealer(botAI); }
-    static Trigger* outnumbered(PlayerbotAI* botAI) { return new OutnumberedTrigger(botAI); }
+    static Trigger* bg_outnumbered(PlayerbotAI* botAI) { return new BgOutnumberedTrigger(botAI); }
     static Trigger* team_flagcarrier_needs_heal(PlayerbotAI* botAI) { return new TeamFlagCarrierNeedsHeal(botAI); }
     static Trigger* enemy_capping_banner(PlayerbotAI* botAI) { return new EnemyCappingBannerNear(botAI); }
     static Trigger* player_is_in_BATTLEGROUND(PlayerbotAI* botAI) { return new PlayerIsInBattleground(botAI); }

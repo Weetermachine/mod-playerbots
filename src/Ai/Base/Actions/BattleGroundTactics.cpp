@@ -1729,8 +1729,10 @@ bool BGTactics::Execute(Event /*event*/)
             BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::FCEvade))
             if (int const res = moveDirectRoute(true))
                 return res > 0;
-        // Waypoint graph (EotS): shortest path over the waypoint network instead of the stock route choice
-        if (bgType == BATTLEGROUND_EY && vPaths && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::WPGraph))
+        // Waypoint graph: shortest path over the waypoint network instead of the stock route choice (WSG carriers keep
+        // the stock routes, like direct pathing v3)
+        if ((bgType == BATTLEGROUND_EY || bgType == BATTLEGROUND_AB || (bgType == BATTLEGROUND_WS && !carrier)) && vPaths &&
+            BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::WPGraph))
             if (int const res = moveGraphRoute(*vPaths))
                 return res > 0;
         // Direct pathing v3: not for flag carriers (on the shortest line through midfield WSG carriers captured
