@@ -1593,15 +1593,8 @@ bool BGTactics::Execute(Event /*event*/)
         return false;
     }
 
-    // Stock turns buffing off once the gates open, so a bot that dies (every couple of minutes) plays on unbuffed.
-    // Rebuff keeps it on: buffs are cast out of combat, e.g. at the graveyard after a respawn.
     if (bg->GetStatus() == STATUS_IN_PROGRESS)
-    {
-        if (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::Rebuff))
-            botAI->ChangeStrategy("+buff", BOT_STATE_NON_COMBAT);
-        else
-            botAI->ChangeStrategy("-buff", BOT_STATE_NON_COMBAT);
-    }
+        botAI->ChangeStrategy("-buff", BOT_STATE_NON_COMBAT);
     if (getName() == "check flag")
         buffSample();
 
