@@ -3811,6 +3811,7 @@ enum AllocKind : uint32
     AK_STOPFC,     // kill the enemy flag carrier (emergency)
     AK_ESCORT,     // stay with our flag carrier
     AK_ROOM,       // WSG: hold our flag room
+    AK_CENTER,     // EotS plan: hold the middle around the flag
 };
 
 uint32 AllocKey(AllocKind kind, uint32 index) { return (uint32(kind) << 8) | index; }
@@ -3974,6 +3975,88 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
         // impossible: a carrier can only capture at a tower its team holds). A bot that picks the flag up still
         // captures (the stock carrier code).
         bool const rush = BGTacticArms::IsOn(bg, team, BGTactic::TowerRush);
+        // EotS plan (arm EYPlan): the way good teams play EotS - hold the two towers in front of our start, fight for
+        // the flag in the middle, and trade towers instead of charging into a held one. Home towers: 2 guards each; an
+        // attack on one is an emergency (enemies + 1, up to 4); losing one is an emergency to retake (4, or 6 holding
+        // nothing: no tower, no captures). Center: 7 at the flag; with our carrier out 4 escort it and 3 hold the
+        // middle; with theirs 5 chase it (an emergency if they hold a tower) and 2 hold. Rotators: 4 go for the most
+        // weakly held enemy or neutral tower (at most 2 enemies there), else join the center; a third tower of ours
+        // keeps 2 of them as guards.
+        if (BGTacticArms::IsOn(bg, team, BGTactic::EYPlan))
+        {
+            // home towers: EY_AttackObjectives 0-1 face the Horde start, 2-3 the Alliance start
+            uint32 const home0 = team == TEAM_HORDE ? 0 : 2;
+            int32 held = 0;
+            for (auto const& [nodeId, _, __] : EY_AttackObjectives)
+                held += eye->GetCapturePointInfo(nodeId)._ownerTeamId == team;
+            uint32 otherHeld = 0;
+            int32 rotateTarget = -1;
+            uint32 rotateEnemies = UINT32_MAX;
+            Position rotatePos;
+            for (uint32 i = 0; i < std::size(EY_AttackObjectives); ++i)
+            {
+                uint32 const nodeId = std::get<0>(EY_AttackObjectives[i]);
+                auto it = EY_NodePositions.find(nodeId);
+                if (it == EY_NodePositions.end())
+                    continue;
+                Position const& p = it->second;
+                bool const ours = eye->GetCapturePointInfo(nodeId)._ownerTeamId == team;
+                bool const home = i == home0 || i == home0 + 1;
+                uint32 const near = enemiesNear(p, 40.0f);
+                if (home)
+                {
+                    if (ours)
+                    {
+                        slots.push_back({AllocKey(AK_GUARD, i), 3, p, 2, 8.0f});
+                        if (near)
+                            slots.push_back({AllocKey(AK_DEFEND, i), 2, p, uint8(std::min<uint32>(near + 1, 4)), 10.0f});
+                    }
+                    else
+                        slots.push_back({AllocKey(AK_RECOVER, i), 2, p, uint8(held ? 4 : 6), 8.0f});
+                }
+                else if (ours)
+                {
+                    ++otherHeld;
+                    slots.push_back({AllocKey(AK_GUARD, i), 3, p, uint8(held >= 4 ? 1 : 2), 8.0f});
+                    if (near)
+                        slots.push_back({AllocKey(AK_DEFEND, i), 2, p, uint8(std::min<uint32>(near + 1, 3)), 10.0f});
+                }
+                else if (near <= 2 && near < rotateEnemies)
+                {
+                    rotateEnemies = near;
+                    rotateTarget = int32(i);
+                    rotatePos = p;
+                }
+            }
+            // center: the flag's spawn point (the object stays there while carried)
+            GameObject* flag = bg->GetBGObject(BG_EY_OBJECT_FLAG_NETHERSTORM);
+            Position const center = flag ? flag->GetPosition() : Position(2174.78f, 1569.05f, 1160.0f);
+            uint8 rotators = uint8(otherHeld ? 2 : 4);  // a third tower keeps 2 of them as its guards
+            uint8 centerHold = 0;
+            if (enemyFC)
+            {
+                slots.push_back({AllocKey(AK_STOPFC, 0), uint8(them ? 2 : 3), enemyFC->GetPosition(), 5, 3.0f});
+                centerHold = 2;
+            }
+            else if (ourFC)
+            {
+                Position ep = ourFC->GetPosition();
+                if (BGTacticArms::IsOn(bg, team, BGTactic::FCEvade))
+                    CarrierAhead(bg, team, ourFC->GetPosition(), 18.0f, ep);
+                slots.push_back({AllocKey(AK_ESCORT, 0), 3, ep, 4, 5.0f});
+                centerHold = 3;
+            }
+            else
+                slots.push_back({AllocKey(AK_FLAG, 0), 3, center, 7, flag && flag->isSpawned() ? 2.0f : 12.0f});
+            if (rotateTarget >= 0 && held < 4)
+                slots.push_back({AllocKey(AK_ATTACK, uint32(rotateTarget)), 3, rotatePos, rotators, 8.0f});
+            else
+                centerHold += rotators;
+            if (centerHold)
+                slots.push_back({AllocKey(AK_CENTER, 0), 3, center, centerHold, 15.0f});
+        }
+        else
+        {
         int32 us = 0, them = 0;
         for (auto const& [nodeId, _, __] : EY_AttackObjectives)
         {
@@ -4081,6 +4164,7 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
                 j.slot.need = j.n;
                 slots.push_back(j.slot);
             }
+        }
     }
     else  // WSG
     {
