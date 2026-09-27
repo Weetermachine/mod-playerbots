@@ -3916,6 +3916,9 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
     uint32 const b = type == BATTLEGROUND_WS ? 0 : type == BATTLEGROUND_AB ? 1 : 2;
     std::vector<AllocSlot> slots;
     std::vector<std::pair<uint32, Position>> targets;  // attackable nodes: (index, position)
+    bool const cap3 = type == BATTLEGROUND_AB && BGTacticArms::IsOn(bg, team, BGTactic::AB3Cap);
+    uint32 heldAB = 0;
+    std::vector<Position> heldPos;  // AB nodes we hold (3-cap: attack next to them)
     float targetEnemyRange = 30.0f;
 
     if (type == BATTLEGROUND_AB)
@@ -3924,6 +3927,15 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
         uint8 const occupied = team == TEAM_ALLIANCE ? BG_AB_NODE_STATE_ALLY_OCCUPIED : BG_AB_NODE_STATE_HORDE_OCCUPIED;
         uint8 const ourBanner = team == TEAM_ALLIANCE ? BG_AB_NODE_STATE_ALLY_CONTESTED : BG_AB_NODE_STATE_HORDE_CONTESTED;
         uint8 const theirBanner = team == TEAM_ALLIANCE ? BG_AB_NODE_STATE_HORDE_CONTESTED : BG_AB_NODE_STATE_ALLY_CONTESTED;
+        // 3-cap plan (AB3Cap): count what we hold (our banner up counts: it is on its way); home is the node in front of
+        // our start (stables for the Alliance, farm for the Horde)
+        if (cap3)
+            for (uint32 nodeId : AB_AttackObjectives)
+            {
+                uint8 const st = ab->GetCapturePointInfo(nodeId)._state;
+                heldAB += st == occupied || st == ourBanner;
+            }
+        uint32 const homeIdx = team == TEAM_ALLIANCE ? 0 : 2;  // AB_AttackObjectives: stables, blacksmith, farm, ...
         for (uint32 i = 0; i < std::size(AB_AttackObjectives); ++i)
         {
             uint32 const nodeId = AB_AttackObjectives[i];
@@ -3935,15 +3947,19 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
             uint32 const near = enemiesNear(p, 30.0f);
             if (state == occupied || state == ourBanner)
             {
-                slots.push_back({AllocKey(state == occupied ? AK_GUARD : AK_HOLD, i), 3, p,
-                                 uint8(state == occupied ? (BGTacticArms::IsOn(bg, team, BGTactic::AllocGuard2) ? 2 : 1) : 2),
-                                 6.0f});
+                heldPos.push_back(p);
+                uint8 guards = state == occupied ? (BGTacticArms::IsOn(bg, team, BGTactic::AllocGuard2) ? 2 : 1) : 2;
+                // holding 3: the exposed nodes get 3 guards (home 1); holding 4+: 2 each
+                if (cap3 && state == occupied && heldAB >= 3 && i != homeIdx)
+                    guards = heldAB >= 4 ? 2 : 3;
+                slots.push_back({AllocKey(state == occupied ? AK_GUARD : AK_HOLD, i), 3, p, guards, 6.0f});
                 uint32 const dk = AllocKey(AK_DEFEND, i);
                 if (near)
                     plan.defendUntil[dk] = now + 20 * IN_MILLISECONDS;
                 // kept raised 20 s after the enemies leave, so the slot does not appear and vanish every few seconds
                 if (near || (plan.defendUntil.count(dk) && plan.defendUntil[dk] > now))
-                    slots.push_back({dk, 2, p, uint8(std::min<uint32>(std::max<uint32>(near, 1) + 1, 4)), 8.0f});
+                    slots.push_back({dk, 2, p, uint8(std::min<uint32>(std::max<uint32>(near, 1) + 1, cap3 && heldAB >= 3 ? 6 : 4)),
+                                     8.0f});  // 3-cap holding: counter an assault in force
             }
             else if (state == theirBanner)
                 slots.push_back({AllocKey(AK_RECOVER, i), 2, p, 3, 5.0f});
@@ -4227,8 +4243,16 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
                 {
                     if (i + 1 == chosen[0])
                         continue;
-                    float const cost = (n ? std::hypot(p.GetPositionX() - cx, p.GetPositionY() - cy) : 0.0f) +
-                                       25.0f * enemiesNear(p, targetEnemyRange);
+                    float cost = (n ? std::hypot(p.GetPositionX() - cx, p.GetPositionY() - cy) : 0.0f) +
+                                 25.0f * enemiesNear(p, targetEnemyRange);
+                    if (cap3 && !heldPos.empty())
+                    {
+                        // a compact territory: next to the nodes we hold, not across the map
+                        float nearest = FLT_MAX;
+                        for (Position const& h : heldPos)
+                            nearest = std::min(nearest, h.GetExactDist2d(&p));
+                        cost = nearest + 25.0f * enemiesNear(p, targetEnemyRange);
+                    }
                     if (cost < best)
                     {
                         best = cost;
@@ -4242,12 +4266,26 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
             if ((s.key >> 8) == AK_GUARD)
                 ++heldEY;
         bool const oneGroup = type == BATTLEGROUND_AB && BGTacticArms::IsOn(bg, team, BGTactic::AllocOneGroup);
-        uint8 const first = oneGroup ? 7 : 5;
-        uint8 const second = oneGroup ? 0 : type == BATTLEGROUND_AB ? 4 : heldEY <= 1 ? 3 : 0;
+        uint8 first = oneGroup ? 7 : 5;
+        uint8 second = oneGroup ? 0 : type == BATTLEGROUND_AB ? 4 : heldEY <= 1 ? 3 : 0;
+        if (cap3 && heldAB >= 4)
+            first = second = 0;  // holding 4+: no attacks, everyone holds
+        else if (cap3 && heldAB == 3)
+        {
+            // holding 3: one small group of 3 punishes a thinly held enemy node, and only then
+            second = 0;
+            first = 0;
+            if (chosen[0])
+            {
+                auto t = std::find_if(targets.begin(), targets.end(), [&](auto const& x) { return x.first + 1 == chosen[0]; });
+                if (t != targets.end() && enemiesNear(t->second, targetEnemyRange) <= 1)
+                    first = 3;
+            }
+        }
         for (uint32 g = 0; g < 2; ++g)
         {
             plan.attack[g] = chosen[g];
-            if (!chosen[g] || (g == 1 && !second))
+            if (!chosen[g] || (g == 0 && !first) || (g == 1 && !second))
                 continue;
             auto it = std::find_if(targets.begin(), targets.end(), [&](auto const& t) { return t.first + 1 == chosen[g]; });
             slots.push_back({AllocKey(AK_ATTACK, it->first), 3, it->second, uint8(g == 0 ? first : second),

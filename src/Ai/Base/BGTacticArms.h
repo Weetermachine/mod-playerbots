@@ -45,6 +45,7 @@ enum class BGTactic : uint8
     EYPlan = 25,         // with Allocator (EotS): hold 2 home towers, 7 on the flag, 4 rotators trade towers
     ClassRoles = 26,     // with Allocator (WSG): speed classes on attack, stun classes on defense and the chase
     HealerHunt = 27,     // WSG: up to 2 bots go after the enemy carrier's healer (interrupt/stun first)
+    AB3Cap = 28,         // with Allocator (AB): take a compact 3, then hold them instead of attacking on
 };
 
 // Per-game A/B arms. With AiPlayerbot.BGTactics.<BG>.Arms set (e.g.
