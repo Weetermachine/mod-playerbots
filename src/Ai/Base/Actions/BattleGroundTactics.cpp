@@ -2687,6 +2687,25 @@ bool BGTactics::selectObjective(bool reset)
             EYBotStrategy strategyHorde = static_cast<EYBotStrategy>(GetBotStrategyForTeam(bg, TEAM_HORDE));
             EYBotStrategy strategyAlliance = static_cast<EYBotStrategy>(GetBotStrategyForTeam(bg, TEAM_ALLIANCE));
             EYBotStrategy strategy = (team == TEAM_ALLIANCE) ? strategyAlliance : strategyHorde;
+            // Comeback mode (arm Comeback, on stock EotS): behind = 150+ points down or fewer towers. With towers to
+            // take (they hold more), front-towers focus; holding at least as many, flag focus (captures pay more).
+            if (BGTacticArms::IsOn(bg, team, BGTactic::Comeback))
+            {
+                TeamId const enemyTeam = team == TEAM_ALLIANCE ? TEAM_HORDE : TEAM_ALLIANCE;
+                int32 ours = 0, theirs = 0;
+                for (auto const& [nodeId, _, __] : EY_AttackObjectives)
+                {
+                    TeamId const owner = eyeOfTheStormBG->GetCapturePointInfo(nodeId)._ownerTeamId;
+                    ours += owner == team;
+                    theirs += owner == enemyTeam;
+                }
+                bool const behindEY =
+                    int32(bg->GetTeamScore(enemyTeam)) - int32(bg->GetTeamScore(team)) >= 150 || theirs > ours;
+                ++comebackPlans[2];
+                comebackBehind[2] += behindEY;
+                if (behindEY)
+                    strategy = theirs > ours ? EY_STRATEGY_FRONT_FOCUS : EY_STRATEGY_FLAG_FOCUS;
+            }
 
             auto IsOwned = [&](uint32 nodeId) -> bool
             { return eyeOfTheStormBG->GetCapturePointInfo(nodeId)._ownerTeamId == team; };
@@ -3844,6 +3863,8 @@ std::atomic<uint32> allocStats[3][4];            // [WS, AB, EY][plans, bot assi
 enum AllocWhy : uint32 { AW_DIED, AW_GONE, AW_PULLED, AW_STOCK, AW_RESHUFFLE, AW_N };
 std::atomic<uint32> allocWhy[3][AW_N];
 std::atomic<uint32> allocStatsLogMs{0};
+// Comeback mode: plans made while behind, per BG [WS, AB, EY] (EotS counts stock strategy picks)
+std::atomic<uint32> comebackBehind[3], comebackPlans[3];
 
 void AllocLogStats()
 {
@@ -3868,6 +3889,9 @@ void AllocLogStats()
         uint32 w[AW_N];
         for (uint32 k = 0; k < AW_N; ++k)
             w[k] = allocWhy[b][k].exchange(0);
+        if (uint32 const cp = comebackPlans[b].exchange(0))
+            LOG_INFO("module", "Comeback {} (5 min): plans {}, behind {} ({:.0f}%)", names[b], cp,
+                     comebackBehind[b].load(), 100.0 * comebackBehind[b].exchange(0) / cp);
         LOG_INFO("module",
                  "Allocator {} (5 min): plans {} bot assignments {} changed {} ({:.1f}%) emergency slots {}; changes: "
                  "died {} slot gone {} pulled to emergency {} to stock {} reshuffled {}",
@@ -3933,6 +3957,7 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
     std::vector<AllocSlot> slots;
     std::vector<std::pair<uint32, Position>> targets;  // attackable nodes: (index, position)
     bool const cap3 = type == BATTLEGROUND_AB && BGTacticArms::IsOn(bg, team, BGTactic::AB3Cap);
+    bool behind = false;  // comeback mode (AB, WSG): set below when the team is behind
     uint32 heldAB = 0;
     std::vector<Position> heldPos;  // AB nodes we hold (3-cap: attack next to them)
     float targetEnemyRange = 30.0f;
@@ -3952,6 +3977,24 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
                 heldAB += st == occupied || st == ourBanner;
             }
         uint32 const homeIdx = team == TEAM_ALLIANCE ? 0 : 2;  // AB_AttackObjectives: stables, blacksmith, farm, ...
+        // Comeback mode (arm Comeback): behind = 300+ points down, or fewer nodes than them. Then only the home node
+        // keeps a guard, the attack groups are 6 + 6 on the enemy's thinnest nodes, and 2 bots back-cap their least
+        // defended base.
+        if (BGTacticArms::IsOn(bg, team, BGTactic::Comeback))
+        {
+            TeamId const enemyTeam = team == TEAM_ALLIANCE ? TEAM_HORDE : TEAM_ALLIANCE;
+            uint8 const theirOcc = team == TEAM_ALLIANCE ? BG_AB_NODE_STATE_HORDE_OCCUPIED : BG_AB_NODE_STATE_ALLY_OCCUPIED;
+            int32 ours = 0, theirs = 0;
+            for (uint32 nodeId : AB_AttackObjectives)
+            {
+                uint8 const st = ab->GetCapturePointInfo(nodeId)._state;
+                ours += st == occupied;
+                theirs += st == theirOcc;
+            }
+            behind = int32(bg->GetTeamScore(enemyTeam)) - int32(bg->GetTeamScore(team)) >= 300 || theirs > ours;
+            ++comebackPlans[1];
+            comebackBehind[1] += behind;
+        }
         for (uint32 i = 0; i < std::size(AB_AttackObjectives); ++i)
         {
             uint32 const nodeId = AB_AttackObjectives[i];
@@ -3968,7 +4011,10 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
                 // holding 3: the exposed nodes get 3 guards (home 1); holding 4+: 2 each
                 if (cap3 && state == occupied && heldAB >= 3 && i != homeIdx)
                     guards = heldAB >= 4 ? 2 : 3;
-                slots.push_back({AllocKey(state == occupied ? AK_GUARD : AK_HOLD, i), 3, p, guards, 6.0f});
+                if (behind && state == occupied && i != homeIdx)
+                    guards = 0;  // comeback: only the home node keeps a guard
+                if (guards)
+                    slots.push_back({AllocKey(state == occupied ? AK_GUARD : AK_HOLD, i), 3, p, guards, 6.0f});
                 uint32 const dk = AllocKey(AK_DEFEND, i);
                 if (near)
                     plan.defendUntil[dk] = now + 20 * IN_MILLISECONDS;
@@ -4208,8 +4254,16 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
         TeamId const enemyTeam = team == TEAM_ALLIANCE ? TEAM_HORDE : TEAM_ALLIANCE;
         Position const& ourFlag = team == TEAM_ALLIANCE ? WS_FLAG_POS_ALLIANCE : WS_FLAG_POS_HORDE;
         Position const& theirFlag = team == TEAM_ALLIANCE ? WS_FLAG_POS_HORDE : WS_FLAG_POS_ALLIANCE;
+        // Comeback mode (arm Comeback): behind on captures -> flag room 1, attack 6; in a standoff (both flags taken)
+        // everyone goes for their carrier.
+        if (BGTacticArms::IsOn(bg, team, BGTactic::Comeback))
+        {
+            behind = bg->GetTeamScore(enemyTeam) > bg->GetTeamScore(team);
+            ++comebackPlans[0];
+            comebackBehind[0] += behind;
+        }
         if (enemyFC)
-            slots.push_back({AllocKey(AK_STOPFC, 0), 2, enemyFC->GetPosition(), 4, 3.0f});
+            slots.push_back({AllocKey(AK_STOPFC, 0), 2, enemyFC->GetPosition(), uint8(behind && ourFC ? 7 : 4), 3.0f});
         if (ourFC)
         {
             Position ep = ourFC->GetPosition();
@@ -4218,9 +4272,9 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
             slots.push_back({AllocKey(AK_ESCORT, 0), 3, ep, 3, 5.0f});
         }
         if (ws->GetFlagState(team) == BG_WS_FLAG_STATE_ON_BASE)
-            slots.push_back({AllocKey(AK_ROOM, 0), 3, ourFlag, 2, 10.0f});
+            slots.push_back({AllocKey(AK_ROOM, 0), 3, ourFlag, uint8(behind ? 1 : 2), 10.0f});
         if (ws->GetFlagState(enemyTeam) == BG_WS_FLAG_STATE_ON_BASE)
-            slots.push_back({AllocKey(AK_ATTACK, 0), 3, theirFlag, 4, 3.0f});
+            slots.push_back({AllocKey(AK_ATTACK, 0), 3, theirFlag, uint8(behind ? 6 : 4), 3.0f});
     }
 
     // Attack targets (AB/EotS): up to two, kept while still attackable; a new one is the node nearest the team
@@ -4261,6 +4315,8 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
                         continue;
                     float cost = (n ? std::hypot(p.GetPositionX() - cx, p.GetPositionY() - cy) : 0.0f) +
                                  25.0f * enemiesNear(p, targetEnemyRange);
+                    if (behind && type == BATTLEGROUND_AB)  // comeback: the thinnest node, distance matters little
+                        cost = 0.2f * cost + 25.0f * enemiesNear(p, targetEnemyRange);
                     if (cap3 && !heldPos.empty())
                     {
                         // a compact territory: next to the nodes we hold, not across the map
@@ -4284,6 +4340,11 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
         bool const oneGroup = type == BATTLEGROUND_AB && BGTacticArms::IsOn(bg, team, BGTactic::AllocOneGroup);
         uint8 first = oneGroup ? 7 : 5;
         uint8 second = oneGroup ? 0 : type == BATTLEGROUND_AB ? 4 : heldEY <= 1 ? 3 : 0;
+        if (behind && type == BATTLEGROUND_AB)
+        {
+            first = 6;
+            second = 6;
+        }
         if (cap3 && heldAB >= 4)
             first = second = 0;  // holding 4+: no attacks, everyone holds
         else if (cap3 && heldAB == 3)
@@ -4307,6 +4368,14 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
             slots.push_back({AllocKey(AK_ATTACK, it->first), 3, it->second, uint8(g == 0 ? first : second),
                              type == BATTLEGROUND_AB ? 5.0f : 8.0f});
         }
+        // comeback (AB): 2 bots back-cap an enemy node nobody defends (not one of the attack targets)
+        if (behind && type == BATTLEGROUND_AB)
+            for (auto const& [i, p] : targets)
+                if (i + 1 != chosen[0] && i + 1 != chosen[1] && enemiesNear(p, targetEnemyRange) == 0)
+                {
+                    slots.push_back({AllocKey(AK_ATTACK, i), 3, p, 2, 5.0f});
+                    break;
+                }
     }
 
     // Fill emergencies first, then roles. Within a tier the cheapest (bot, slot) pair goes first, which

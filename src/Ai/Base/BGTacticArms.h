@@ -51,6 +51,7 @@ enum class BGTactic : uint8
     GYWave = 31,         // all BGs: after a respawn, wait for 3 teammates nearby or 10 s before leaving
     BackOff = 32,        // WSG/AB/EotS: 2+ extra enemies within 20 yd and under 50% health: retreat toward help
     WPGraph = 33,        // WSG/AB/EotS: waypoint routes as one road network, shortest path (no backtracking)
+    Comeback = 34,       // WSG/AB (allocator), EotS (stock): a team that is behind takes more risk
 };
 
 // Per-game A/B arms. With AiPlayerbot.BGTactics.<BG>.Arms set (e.g.
