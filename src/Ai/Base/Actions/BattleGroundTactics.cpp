@@ -49,6 +49,9 @@
 #include "SpellInfo.h"
 #include "Vehicle.h"
 
+// Comeback mode: plans made while behind, per BG [WS, AB, EY] (EotS counts stock strategy picks)
+std::atomic<uint32> comebackBehind[3], comebackPlans[3];
+
 // common bg positions
 Position const WS_WAITING_POS_HORDE_1 = {944.981f, 1423.478f, 345.434f, 6.18f};
 Position const WS_WAITING_POS_HORDE_2 = {948.488f, 1459.834f, 343.066f, 6.27f};
@@ -3863,8 +3866,6 @@ std::atomic<uint32> allocStats[3][4];            // [WS, AB, EY][plans, bot assi
 enum AllocWhy : uint32 { AW_DIED, AW_GONE, AW_PULLED, AW_STOCK, AW_RESHUFFLE, AW_N };
 std::atomic<uint32> allocWhy[3][AW_N];
 std::atomic<uint32> allocStatsLogMs{0};
-// Comeback mode: plans made while behind, per BG [WS, AB, EY] (EotS counts stock strategy picks)
-std::atomic<uint32> comebackBehind[3], comebackPlans[3];
 
 void AllocLogStats()
 {
