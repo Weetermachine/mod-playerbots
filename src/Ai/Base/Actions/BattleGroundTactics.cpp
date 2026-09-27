@@ -5039,7 +5039,9 @@ void BGTactics::tripSample()
     PositionInfo pos = context->GetValue<PositionMap&>("position")->Get()["bg objective"];
     if (!pos.isSet())
         return;
-    bool const direct = BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::DirectPath);
+    // "direct" in the log: any movement other than the stock waypoint choice (direct routes or the road network)
+    bool const direct = BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::DirectPath) ||
+                        BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::WPGraph);
     uint32 const now = getMSTime();
 
     std::lock_guard<std::mutex> guard(tripLock);
