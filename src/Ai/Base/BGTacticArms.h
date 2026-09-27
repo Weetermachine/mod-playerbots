@@ -46,6 +46,7 @@ enum class BGTactic : uint8
     ClassRoles = 26,     // with Allocator (WSG): speed classes on attack, stun classes on defense and the chase
     HealerHunt = 27,     // WSG: up to 2 bots go after the enemy carrier's healer (interrupt/stun first)
     AB3Cap = 28,         // with Allocator (AB): take a compact 3, then hold them instead of attacking on
+    Rebuff = 29,         // all BGs: keep the buff strategy on after the gates open (stock turns it off)
 };
 
 // Per-game A/B arms. With AiPlayerbot.BGTactics.<BG>.Arms set (e.g.

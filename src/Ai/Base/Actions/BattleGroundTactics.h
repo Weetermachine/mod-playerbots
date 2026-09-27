@@ -135,6 +135,7 @@ private:
     // SmoothMove: while moving along a direct route, send the next hop before the current one ends
     bool smoothContinue();
     void tripSample();
+    void buffSample();
     bool allocatorObjective(PositionInfo& out);
     bool selectObjectiveWp(std::vector<BattleBotPath*> const& vPaths);
     bool moveToObjectiveWp(BattleBotPath* const& currentPath, uint32 currentPoint, bool reverse = false);

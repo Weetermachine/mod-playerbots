@@ -11,6 +11,7 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cstring>
 #include <mutex>
 #include <shared_mutex>
 #include <unordered_map>
@@ -44,6 +45,7 @@
 #include "PvpTriggers.h"
 #include "ServerFacade.h"
 #include "SpellAuraEffects.h"
+#include "SpellInfo.h"
 #include "Vehicle.h"
 
 // common bg positions
@@ -1591,8 +1593,17 @@ bool BGTactics::Execute(Event /*event*/)
         return false;
     }
 
+    // Stock turns buffing off once the gates open, so a bot that dies (every couple of minutes) plays on unbuffed.
+    // Rebuff keeps it on: buffs are cast out of combat, e.g. at the graveyard after a respawn.
     if (bg->GetStatus() == STATUS_IN_PROGRESS)
-        botAI->ChangeStrategy("-buff", BOT_STATE_NON_COMBAT);
+    {
+        if (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::Rebuff))
+            botAI->ChangeStrategy("+buff", BOT_STATE_NON_COMBAT);
+        else
+            botAI->ChangeStrategy("-buff", BOT_STATE_NON_COMBAT);
+    }
+    if (getName() == "check flag")
+        buffSample();
 
     std::vector<BattleBotPath*> const* vPaths;
     std::vector<uint32> const* vFlagIds;
@@ -4558,6 +4569,101 @@ void TripLog(uint32 now)  // needs tripLock
         }
 }
 }  // namespace
+
+// Buff log: bots in combat in WSG/AB/EotS, sampled about every 2 s each. Per buff, the share of samples carrying it,
+// counted only when the bot's team has a living member of the class that provides it (Intellect only for mana users).
+// Per 5 minutes, per BG and per team kind (Rebuff on / off).
+namespace
+{
+std::mutex buffLock;
+std::unordered_map<ObjectGuid, uint32> buffSampledMs;
+uint32 buffStat[3][2][5][2];  // [WS, AB, EY][rebuff off, on][stamina, stats, intellect, blessing, kings][has, available]
+uint32 buffLogMs = 0;
+
+bool HasBuffNamed(Unit* u, std::initializer_list<char const*> names)
+{
+    for (auto const& [id, app] : u->GetAppliedAuras())
+    {
+        SpellInfo const* info = app->GetBase()->GetSpellInfo();
+        char const* n = info ? info->SpellName[0] : nullptr;
+        if (!n)
+            continue;
+        for (char const* want : names)
+            if (std::strstr(n, want))
+                return true;
+    }
+    return false;
+}
+}  // namespace
+
+void BGTactics::buffSample()
+{
+    Battleground* bg = bot->GetBattleground();
+    if (!bg || bg->GetStatus() != STATUS_IN_PROGRESS || !bot->IsAlive() || !bot->IsInCombat())
+        return;
+    BattlegroundTypeId type = bg->GetBgTypeID();
+    if (type == BATTLEGROUND_RB)
+        type = bg->GetBgTypeID(true);
+    if (type != BATTLEGROUND_WS && type != BATTLEGROUND_AB && type != BATTLEGROUND_EY)
+        return;
+    uint32 const now = getMSTime();
+    {
+        std::lock_guard<std::mutex> guard(buffLock);
+        uint32& last = buffSampledMs[bot->GetGUID()];
+        if (last && getMSTimeDiff(last, now) < 2000)
+            return;
+        last = now;
+    }
+    bool priest = false, druid = false, mage = false, paladin = false;
+    for (auto const& ref : bg->GetBgMap()->GetPlayers())
+    {
+        Player* p = ref.GetSource();
+        if (!p || !p->IsAlive() || p->GetTeamId() != bot->GetTeamId())
+            continue;
+        uint8 const c = p->getClass();
+        priest |= c == CLASS_PRIEST;
+        druid |= c == CLASS_DRUID;
+        mage |= c == CLASS_MAGE;
+        paladin |= c == CLASS_PALADIN;
+    }
+    bool const manaUser = bot->getPowerType() == POWER_MANA;
+    bool const has[5] = {HasBuffNamed(bot, {"Fortitude"}), HasBuffNamed(bot, {"of the Wild"}),
+                         HasBuffNamed(bot, {"Arcane Intellect", "Arcane Brilliance", "Dalaran Intellect", "Dalaran Brilliance"}),
+                         HasBuffNamed(bot, {"Blessing of"}), HasBuffNamed(bot, {"Blessing of Kings"})};
+    bool const avail[5] = {priest, druid, mage && manaUser, paladin, paladin};
+    uint32 const b = type == BATTLEGROUND_WS ? 0 : type == BATTLEGROUND_AB ? 1 : 2;
+    uint32 const m = BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::Rebuff) ? 1 : 0;
+    std::lock_guard<std::mutex> guard(buffLock);
+    for (uint32 k = 0; k < 5; ++k)
+        if (avail[k])
+        {
+            ++buffStat[b][m][k][1];
+            buffStat[b][m][k][0] += has[k];
+        }
+    if (buffSampledMs.size() > 20000)
+        buffSampledMs.clear();
+    if (!buffLogMs)
+        buffLogMs = now;
+    else if (getMSTimeDiff(buffLogMs, now) > 5 * MINUTE * IN_MILLISECONDS)
+    {
+        buffLogMs = now;
+        static char const* const names[3] = {"WS", "AB", "EY"};
+        auto pct = [](uint32 const* v) { return v[1] ? 100.0 * v[0] / v[1] : 0.0; };
+        for (uint32 bb = 0; bb < 3; ++bb)
+            for (uint32 mm = 0; mm < 2; ++mm)
+            {
+                auto const& v = buffStat[bb][mm];
+                if (!v[0][1] && !v[1][1] && !v[3][1])
+                    continue;
+                LOG_INFO("module", "Buffs {} {} (5 min, bots in combat, where the team has the class): Fortitude {:.0f}% "
+                         "of {}, Wild {:.0f}% of {}, Intellect {:.0f}% of {}, any Blessing {:.0f}% of {}, Kings {:.0f}%",
+                         names[bb], mm ? "rebuff" : "stock", pct(v[0]), v[0][1], pct(v[1]), v[1][1], pct(v[2]), v[2][1],
+                         pct(v[3]), v[3][1], pct(v[4]));
+                for (uint32 k = 0; k < 5; ++k)
+                    buffStat[bb][mm][k][0] = buffStat[bb][mm][k][1] = 0;
+            }
+    }
+}
 
 void BGTactics::tripSample()
 {
