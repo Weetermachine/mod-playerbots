@@ -3970,6 +3970,10 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
 
         BattlegroundEY* eye = static_cast<BattlegroundEY*>(bg);
         TeamId const enemyTeam = team == TEAM_ALLIANCE ? TEAM_HORDE : TEAM_ALLIANCE;
+        // Tower rush: no flag jobs at all; every bot goes to towers (holding all 4 also makes enemy captures
+        // impossible: a carrier can only capture at a tower its team holds). A bot that picks the flag up still
+        // captures (the stock carrier code).
+        bool const rush = BGTacticArms::IsOn(bg, team, BGTactic::TowerRush);
         int32 us = 0, them = 0;
         for (auto const& [nodeId, _, __] : EY_AttackObjectives)
         {
@@ -4019,10 +4023,6 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
         }
         // Flag tuning (v2 made about half the stock team's flag captures): AllocFlagFloor raises the minimum
         // headcounts of the flag jobs, AllocFlagValue weighs them 2.5x in the value race.
-        // Tower rush: no flag jobs at all; every bot goes to towers (holding all 4 also makes enemy captures
-        // impossible: a carrier can only capture at a tower its team holds). A bot that picks the flag up still
-        // captures (the stock carrier code).
-        bool const rush = BGTacticArms::IsOn(bg, team, BGTactic::TowerRush);
         bool const flagFloor = BGTacticArms::IsOn(bg, team, BGTactic::AllocFlagFloor);
         float const flagMul = BGTacticArms::IsOn(bg, team, BGTactic::AllocFlagValue) ? 2.5f : 1.0f;
         if (enemyFC && !rush)
