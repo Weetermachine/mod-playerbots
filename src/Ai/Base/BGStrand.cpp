@@ -613,6 +613,15 @@ bool DefenseObjective(Player* bot, Battleground* bg, Order& out)
         if (!door || Destroyed(bg, BG_SA_ANCIENT_GATE))
             return false;
         HoldAt(bot, bg, Near(door, 8.0f, bot), out);
+        // SADefPack: emergency fallback to the door above any fight on the way, except to hit a demolisher in reach
+        if (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SADefPack))
+        {
+            bool demo = false;
+            for (Unit* v : DrivenSiege(bg))
+                demo = demo || (bot->GetExactDist2d(v) < 40.0f && bot->IsWithinLOSInMap(v));
+            out.urgent = !demo && bot->GetExactDist2d(door) > 30.0f;
+            Stat(demo ? "fallback_intercept" : out.urgent ? "fallback_on_way" : "fallback_at_door", bot);
+        }
         DefenseStage(bot, 4);
         return true;
     }
@@ -893,6 +902,18 @@ void KillStat(Player* victim)
     if (Destroyed(bg, BG_SA_ANCIENT_GATE))
         if (GameObject* relic = bg->GetBGObject(BG_SA_TITAN_RELIC); relic && victim->GetExactDist2d(relic) < 25.0f)
             StatAdd("relic_kill" + tag, "");
+}
+
+void SiegeKill(Unit* vehicle)
+{
+    Map* map = vehicle->GetMap();
+    Battleground* bg = map && map->IsBattleground() ? ((BattlegroundMap*)map)->GetBG() : nullptr;
+    if (!bg || Attackers(bg) == TEAM_NEUTRAL)
+        return;
+    TeamId const defenders = Attackers(bg) == TEAM_ALLIANCE ? TEAM_HORDE : TEAM_ALLIANCE;
+    std::string const tag = BGTacticArms::IsOn(bg, defenders, BGTactic::SADefPack) ? "" : "_ctrl";
+    bool const courtyard = Destroyed(bg, BG_SA_YELLOW_GATE) && !Destroyed(bg, BG_SA_ANCIENT_GATE);
+    StatAdd(std::string(courtyard ? "demo_kill_courtyard" : "demo_kill") + tag, "");
 }
 
 bool WarmupDefender(Player* bot, Battleground* bg)

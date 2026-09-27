@@ -75,6 +75,8 @@ namespace BGStrand
     // classify (a dismounted driver or an attacker near the relic, tagged by whether the defenders had the package).
     void Stat(char const* name, Player* bot);
     void KillStat(Player* victim);
+    // a driven siege vehicle died (demo_kill / demo_kill_courtyard, tagged like KillStat)
+    void SiegeKill(Unit* vehicle);
     // SADefense diagnostics: a charge was disarmed.
     void Disarmed();
     // SASlows: a driven enemy siege vehicle within 30 yd in line of sight that is not rooted or slowed.

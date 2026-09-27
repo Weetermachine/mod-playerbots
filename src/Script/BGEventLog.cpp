@@ -671,22 +671,34 @@ public:
         Player* p = attacker->GetCharmerOrOwnerPlayerOrPlayerItself();
         if (!p)
             return;
+        uint32 const k = attacker->IsVehicle() ? 1 : 0;  // 0: players on foot, 1: from a cannon
         std::lock_guard<std::mutex> guard(lock);
         ++hits;
+        ++srcHits[k];
+        srcDmg[k] += damage;
         dmg += damage;
         maxHp = victim->GetMaxHealth();
+        lastDriven[victim->GetGUID().GetCounter()] = getMSTime();
         hitters.insert(p->GetGUID().GetCounter());
         victims.insert(victim->GetGUID().GetCounter());
         Log();
     }
 
+    // the driver is out by the time it dies: a vehicle counts if it was hit while driven in the last 10 s
     void OnUnitDeath(Unit* unit, Unit* /*killer*/) override
     {
-        if (!Driven(unit))
+        if (!unit || unit->GetMapId() != 607 || !unit->IsVehicle())
             return;
-        std::lock_guard<std::mutex> guard(lock);
-        ++kills;
-        Log();
+        {
+            std::lock_guard<std::mutex> guard(lock);
+            auto const it = lastDriven.find(unit->GetGUID().GetCounter());
+            if (it == lastDriven.end() || getMSTimeDiff(it->second, getMSTime()) > 10000)
+                return;
+            lastDriven.erase(it);
+            ++kills;
+            Log();
+        }
+        BGStrand::SiegeKill(unit);
     }
 
 private:
@@ -704,10 +716,13 @@ private:
             logMs = now;
         else if (getMSTimeDiff(logMs, now) > 5 * MINUTE * IN_MILLISECONDS)
         {
-            LOG_INFO("module", "SA siege damage (5 min): hits {} by {} players on {} vehicles, damage {} ({:.1f} vehicle max healths of {}), kills {}",
-                     hits, hitters.size(), victims.size(), dmg, maxHp ? double(dmg) / maxHp : 0.0, maxHp, kills);
-            hits = kills = 0;
-            dmg = 0;
+            LOG_INFO("module", "SA siege damage (5 min): hits {} by {} players on {} vehicles, damage {} ({:.1f} vehicle max healths of {}), kills {} | on foot hits {} damage {} | cannons hits {} damage {}",
+                     hits, hitters.size(), victims.size(), dmg, maxHp ? double(dmg) / maxHp : 0.0, maxHp, kills,
+                     srcHits[0], srcDmg[0], srcHits[1], srcDmg[1]);
+            hits = kills = srcHits[0] = srcHits[1] = 0;
+            dmg = srcDmg[0] = srcDmg[1] = 0;
+            for (auto it = lastDriven.begin(); it != lastDriven.end();)
+                it = getMSTimeDiff(it->second, now) > 60000 ? lastDriven.erase(it) : std::next(it);
             hitters.clear();
             victims.clear();
             logMs = now;
@@ -715,9 +730,10 @@ private:
     }
 
     std::mutex lock;
-    uint32 hits = 0, kills = 0, maxHp = 0, logMs = 0;
-    uint64 dmg = 0;
+    uint32 hits = 0, kills = 0, maxHp = 0, logMs = 0, srcHits[2] = {};
+    uint64 dmg = 0, srcDmg[2] = {};
     std::set<ObjectGuid::LowType> hitters, victims;
+    std::unordered_map<ObjectGuid::LowType, uint32> lastDriven;
 };
 
 // SotA: snares and roots that land on driven siege vehicles (Server.log, per 5 min, by spell)

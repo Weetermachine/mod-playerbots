@@ -21,7 +21,8 @@ bool InvalidTargetValue::Calculate()
     {
         return target->GetMapId() != bot->GetMapId() || target->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE) ||
                target->HasUnitFlag(UNIT_FLAG_NON_ATTACKABLE) || target->HasUnitFlag(UNIT_FLAG_NON_ATTACKABLE_2) ||
-               !target->IsVisible() || !target->IsAlive() || target->IsPolymorphed() || target->IsCharmed() ||
+               !target->IsVisible() || !target->IsAlive() || target->IsPolymorphed() ||
+               (target->IsCharmed() && !target->IsVehicle()) ||  // a driven vehicle is charmed by its driver
                target->HasFearAura() || target->HasUnitState(UNIT_STATE_ISOLATED) || target->IsFriendlyTo(bot) ||
                !AttackersValue::IsValidTarget(target, bot);
     }
