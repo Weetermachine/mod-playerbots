@@ -333,6 +333,7 @@ bool GlobalSwitch(BGTactic tactic, TeamId team, BattlegroundTypeId type)
         case BGTactic::StockEscort:
         case BGTactic::ICSiegeFix:
         case BGTactic::EYRouteFix:
+        case BGTactic::SATactics:
         case BGTactic::TacticCount:
             return false;  // arms only
     }
