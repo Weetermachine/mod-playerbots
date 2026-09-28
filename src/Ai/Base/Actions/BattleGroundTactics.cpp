@@ -1827,6 +1827,10 @@ bool BGTactics::Execute(Event /*event*/)
             bot->HasAura(BG_EY_NETHERSTORM_FLAG_SPELL))
             return false;
 
+        // EYJunctionDirect: at a junction stock took a random route (often back the way the bot came)
+        if (bgType == BATTLEGROUND_EY && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::EYJunctionDirect))
+            return moveToObjective(true);
+
         if (!startNewPathBegin(*vPaths))
             return moveToObjective(true);
 
