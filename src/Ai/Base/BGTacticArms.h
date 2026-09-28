@@ -9,6 +9,7 @@
 
 #include <string>
 
+#include "ObjectGuid.h"
 #include "SharedDefines.h"
 
 class Battleground;
@@ -82,7 +83,19 @@ enum class BGTactic : uint8
     PvPAoE = 64,         // all BGs: enemy players count for the AoE triggers (stock counts only NPCs with threat)
     AVBothMines = 63,    // AV: 5 bots for our side's mine and 5 for the enemy side's
     EYSafeTower = 59,    // EotS: the carrier runs to the owned tower with the fewest enemies, not the nearest
+    // Stock bug fixes (behind switches so each can be A/B'd before it is submitted)
+    EYFelReaverFix = 65, // EotS: Fel Reaver (point id 0) counts as a capture tower for the carrier (0 meant "none")
+    PvPAttackers = 66,   // BGs: enemy players join "attackers" (threat lists only hold NPCs): interrupts, snares, CC
+    StealthFix = 67,     // BGs: a stealthed bot may target enemies that can't see it (the check was reversed)
+    PvPThreatFix = 68,   // BGs: no threat dumps, Tricks/Misdirection or taunts against players (no threat in PvP)
+    SpiritNearest = 69,  // BGs: a ghost goes to the nearest spirit healer, not the first found
+    WSGFixes = 70,       // WSG: strategy roll mapped to its enum; no (0,0,0) objective; the random spread applied
+    ABStealBack = 71,    // AB: attackers also go for nodes the enemy is assaulting (steal back), not our own assaults
+    GroundZFix = 72,     // AV/AB/EotS/WSG: a failed height lookup no longer writes an invalid z (the check was inverted)
+    AVFixes = 73,        // AV: no Alliance-only emergency Snowfall trigger; role re-roll unwraps random BG
+    TacticCount          // must stay below the mask width (128)
 };
+static_assert(uint32(BGTactic::TacticCount) <= 128, "BGTactic values must fit the 128-bit masks in BGTacticArms.cpp");
 
 // Per-game A/B arms. With AiPlayerbot.BGTactics.<BG>.Arms set (e.g.
 // "FCEscort.Alliance, FCEscort.Horde, FCChase.Alliance+FCChase.Horde, stock"), each game of that BG
@@ -111,6 +124,11 @@ namespace BGTacticArms
     // both teams in every game of that BG; arms add their tactics on top. A game keeps the baseline it started
     // with. The experiment hot reload sets it.
     void SetBaseline(BattlegroundTypeId type, std::string const& tactics);
+
+    // Revive times of players in battlegrounds (from the resurrect hook), for the graveyard wave: getMSTime() of the
+    // last revive, 0 if none seen.
+    void NoteRevive(ObjectGuid guid);
+    uint32 LastReviveMs(ObjectGuid guid);
 }
 
 #endif

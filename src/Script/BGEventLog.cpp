@@ -557,6 +557,8 @@ public:
     void OnPlayerReleasedGhost(Player* player) override { LogLifecycle("release", player); }
     void OnPlayerResurrect(Player* player, float /*restore_percent*/, bool& /*applySickness*/) override
     {
+        if (player->GetBattleground())
+            BGTacticArms::NoteRevive(player->GetGUID());  // graveyard wave (GYWave)
         LogLifecycle("revive", player);
     }
 

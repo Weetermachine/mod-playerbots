@@ -6,6 +6,7 @@
 
 #include "BGTacticArms.h"
 
+#include <bitset>
 #include <mutex>
 #include <unordered_map>
 #include <vector>
@@ -13,13 +14,16 @@
 #include "Battleground.h"
 #include "Config.h"
 #include "PlayerbotAIConfig.h"
+#include "Timer.h"
 
 namespace
 {
+constexpr size_t TACTIC_BITS = 128;  // BGTactic values must stay below this (static_assert in the header)
+
 struct Assignment
 {
     std::string name;
-    uint64 mask[2] = {0, 0};  // bit per BGTactic (up to 64), indexed by TeamId
+    std::bitset<TACTIC_BITS> mask[2];  // bit per BGTactic, indexed by TeamId
 };
 
 // Games of different BGs update on different map threads, so all access is locked.
@@ -149,7 +153,16 @@ int TacticBit(std::string const& tactic)
          : tactic == "AVBurnFirst" ? int(BGTactic::AVBurnFirst)
          : tactic == "DisruptTank" ? int(BGTactic::DisruptTank)
          : tactic == "AVBothMines" ? int(BGTactic::AVBothMines)
-         : tactic == "PvPAoE" ? int(BGTactic::PvPAoE) : -1;
+         : tactic == "PvPAoE" ? int(BGTactic::PvPAoE)
+         : tactic == "EYFelReaverFix" ? int(BGTactic::EYFelReaverFix)
+         : tactic == "PvPAttackers" ? int(BGTactic::PvPAttackers)
+         : tactic == "StealthFix" ? int(BGTactic::StealthFix)
+         : tactic == "PvPThreatFix" ? int(BGTactic::PvPThreatFix)
+         : tactic == "SpiritNearest" ? int(BGTactic::SpiritNearest)
+         : tactic == "WSGFixes" ? int(BGTactic::WSGFixes)
+         : tactic == "ABStealBack" ? int(BGTactic::ABStealBack)
+         : tactic == "GroundZFix" ? int(BGTactic::GroundZFix)
+         : tactic == "AVFixes" ? int(BGTactic::AVFixes) : -1;
 }
 
 char const* BGName(BattlegroundTypeId type)
@@ -159,7 +172,7 @@ char const* BGName(BattlegroundTypeId type)
 }
 
 // Baseline tactics of a BG type as a mask (both teams). Needs armsLock.
-uint64 BaselineMask(BattlegroundTypeId type)
+std::bitset<TACTIC_BITS> BaselineMask(BattlegroundTypeId type)
 {
     auto itr = baselines.find(type);
     if (itr == baselines.end())
@@ -169,13 +182,13 @@ uint64 BaselineMask(BattlegroundTypeId type)
             name ? sConfigMgr->GetOption<std::string>(std::string("AiPlayerbot.BGTactics.") + name + ".Baseline", "") : "";
         itr = baselines.emplace(type, cfg).first;
     }
-    uint64 mask = 0;
+    std::bitset<TACTIC_BITS> mask;
     for (std::string const& group : Split(itr->second, ','))
         for (std::string const& part : Split(group, '+'))
         {
             int const bit = TacticBit(part.substr(0, part.find('.')));  // a faction suffix is ignored
             if (bit >= 0)
-                mask |= 1ull << bit;
+                mask.set(bit);
         }
     return mask;
 }
@@ -198,9 +211,9 @@ Assignment ParseArm(std::string const& arm)
             continue;
 
         if (faction == "Alliance")
-            a.mask[TEAM_ALLIANCE] |= 1ull << bit;
+            a.mask[TEAM_ALLIANCE].set(bit);
         else if (faction == "Horde")
-            a.mask[TEAM_HORDE] |= 1ull << bit;
+            a.mask[TEAM_HORDE].set(bit);
     }
     return a;
 }
@@ -219,7 +232,7 @@ Assignment const* Assign(Battleground* bg)
 
     uint32 index = nextArm[type]++ % arms.size();
     Assignment a = ParseArm(arms[index]);
-    uint64 const base = BaselineMask(type);  // fixed for the game's lifetime
+    std::bitset<TACTIC_BITS> const base = BaselineMask(type);  // fixed for the game's lifetime
     a.mask[TEAM_ALLIANCE] |= base;
     a.mask[TEAM_HORDE] |= base;
     return &(games[bg->GetInstanceID()] = a);
@@ -300,6 +313,16 @@ bool GlobalSwitch(BGTactic tactic, TeamId team, BattlegroundTypeId type)
         case BGTactic::DisruptTank:
         case BGTactic::AVBothMines:
         case BGTactic::PvPAoE:
+        case BGTactic::EYFelReaverFix:
+        case BGTactic::PvPAttackers:
+        case BGTactic::StealthFix:
+        case BGTactic::PvPThreatFix:
+        case BGTactic::SpiritNearest:
+        case BGTactic::WSGFixes:
+        case BGTactic::ABStealBack:
+        case BGTactic::GroundZFix:
+        case BGTactic::AVFixes:
+        case BGTactic::TacticCount:
             return false;  // arms only
     }
     return false;
@@ -314,8 +337,8 @@ bool BGTacticArms::IsOn(Battleground* bg, TeamId team, BGTactic tactic)
     {
         std::lock_guard<std::mutex> guard(armsLock);
         if (Assignment const* a = Assign(bg))
-            return a->mask[team] & (1ull << uint8(tactic));
-        if (BaselineMask(RealType(bg)) & (1ull << uint8(tactic)))
+            return a->mask[team].test(uint32(tactic));
+        if (BaselineMask(RealType(bg)).test(uint32(tactic)))
             return true;
     }
 
@@ -341,6 +364,27 @@ void BGTacticArms::SetArms(BattlegroundTypeId type, std::string const& arms)
 {
     std::lock_guard<std::mutex> guard(armsLock);
     localArms[type] = arms;
+}
+
+namespace
+{
+std::mutex reviveLock;
+std::unordered_map<ObjectGuid, uint32> reviveMs;
+}  // namespace
+
+void BGTacticArms::NoteRevive(ObjectGuid guid)
+{
+    std::lock_guard<std::mutex> guard(reviveLock);
+    if (reviveMs.size() > 20000)
+        reviveMs.clear();
+    reviveMs[guid] = getMSTime();
+}
+
+uint32 BGTacticArms::LastReviveMs(ObjectGuid guid)
+{
+    std::lock_guard<std::mutex> guard(reviveLock);
+    auto it = reviveMs.find(guid);
+    return it == reviveMs.end() ? 0 : it->second;
 }
 
 void BGTacticArms::SetBaseline(BattlegroundTypeId type, std::string const& tactics)
