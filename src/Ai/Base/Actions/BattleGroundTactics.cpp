@@ -1747,7 +1747,9 @@ bool BGTactics::Execute(Event /*event*/)
                 return res > 0;
         // Direct pathing v3: not for flag carriers (on the shortest line through midfield WSG carriers captured
         // 18% of pickups instead of 28%); they keep the waypoint paths.
-        if (!carrier && (bgType == BATTLEGROUND_EY || bgType == BATTLEGROUND_WS || bgType == BATTLEGROUND_AB) &&
+        // DirectCarrier (with DirectPath): carriers on direct routes too, for the all-direct mirror
+        if ((!carrier || BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::DirectCarrier)) &&
+            (bgType == BATTLEGROUND_EY || bgType == BATTLEGROUND_WS || bgType == BATTLEGROUND_AB) &&
             BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::DirectPath))
             if (int const res = moveDirectRoute())
                 return res > 0;

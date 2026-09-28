@@ -60,6 +60,7 @@ enum class BGTactic : uint8
     NoSolo = 40,         // WSG/AB/EotS: no new fight alone (no friend within 20 yd) against 2+ enemies
     FinishKill = 41,     // WSG/AB/EotS: switch to an enemy under 30% health in reach
     EYRetake = 42,       // EotS (stock): first 5 min, a lost near tower is retaken by the 5 nearest bots first
+    DirectCarrier = 43,  // WSG/EotS, with DirectPath: flag carriers take direct routes too (v3 keeps them on waypoints)
 };
 
 // Per-game A/B arms. With AiPlayerbot.BGTactics.<BG>.Arms set (e.g.

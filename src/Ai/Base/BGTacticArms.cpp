@@ -122,7 +122,8 @@ int TacticBit(std::string const& tactic)
          : tactic == "Retake" ? int(BGTactic::Retake)
          : tactic == "NoSolo" ? int(BGTactic::NoSolo)
          : tactic == "FinishKill" ? int(BGTactic::FinishKill)
-         : tactic == "EYRetake" ? int(BGTactic::EYRetake) : -1;
+         : tactic == "EYRetake" ? int(BGTactic::EYRetake)
+         : tactic == "DirectCarrier" ? int(BGTactic::DirectCarrier) : -1;
 }
 
 char const* BGName(BattlegroundTypeId type)
@@ -250,6 +251,7 @@ bool GlobalSwitch(BGTactic tactic, TeamId team, BattlegroundTypeId type)
         case BGTactic::NoSolo:
         case BGTactic::FinishKill:
         case BGTactic::EYRetake:
+        case BGTactic::DirectCarrier:
             return false;  // arms only
     }
     return false;
