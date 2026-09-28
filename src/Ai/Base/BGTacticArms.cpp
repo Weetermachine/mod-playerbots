@@ -26,8 +26,7 @@ struct Assignment
 std::mutex armsLock;
 std::unordered_map<uint32, Assignment> games;  // by BG instance id
 std::unordered_map<uint32, uint32> nextArm;    // by BG type id
-std::string eyArms;
-bool eyArmsLoaded = false;
+std::unordered_map<uint32, std::string> localArms;  // EY, AV, IC arms by BG type id; loaded from the config on first use
 std::unordered_map<uint32, std::string> baselines;  // by BG type id; loaded from the config on first use
 
 BattlegroundTypeId RealType(Battleground* bg)
@@ -46,12 +45,18 @@ std::string const& ArmsConfig(BattlegroundTypeId type)
         case BATTLEGROUND_AB:
             return sPlayerbotAIConfig.abTacticArms;
         case BATTLEGROUND_EY:
-            if (!eyArmsLoaded)
+        case BATTLEGROUND_AV:
+        case BATTLEGROUND_IC:
+        {
+            auto itr = localArms.find(type);
+            if (itr == localArms.end())
             {
-                eyArms = sConfigMgr->GetOption<std::string>("AiPlayerbot.BGTactics.EY.Arms", "");
-                eyArmsLoaded = true;
+                char const* key = type == BATTLEGROUND_EY ? "EY" : type == BATTLEGROUND_AV ? "AV" : "IC";
+                itr = localArms.emplace(type, sConfigMgr->GetOption<std::string>(
+                                                  std::string("AiPlayerbot.BGTactics.") + key + ".Arms", "")).first;
             }
-            return eyArms;
+            return itr->second;
+        }
         default:
             return none;
     }
@@ -123,12 +128,18 @@ int TacticBit(std::string const& tactic)
          : tactic == "NoSolo" ? int(BGTactic::NoSolo)
          : tactic == "FinishKill" ? int(BGTactic::FinishKill)
          : tactic == "EYRetake" ? int(BGTactic::EYRetake)
-         : tactic == "DirectCarrier" ? int(BGTactic::DirectCarrier) : -1;
+         : tactic == "DirectCarrier" ? int(BGTactic::DirectCarrier)
+         : tactic == "AVHoldTower" ? int(BGTactic::AVHoldTower)
+         : tactic == "AVBossForce" ? int(BGTactic::AVBossForce)
+         : tactic == "AVCaptainHome" ? int(BGTactic::AVCaptainHome)
+         : tactic == "ICGuardFix" ? int(BGTactic::ICGuardFix)
+         : tactic == "ICStayVehicle" ? int(BGTactic::ICStayVehicle) : -1;
 }
 
 char const* BGName(BattlegroundTypeId type)
 {
-    return type == BATTLEGROUND_WS ? "WSG" : type == BATTLEGROUND_AB ? "AB" : type == BATTLEGROUND_EY ? "EY" : nullptr;
+    return type == BATTLEGROUND_WS ? "WSG" : type == BATTLEGROUND_AB ? "AB" : type == BATTLEGROUND_EY ? "EY"
+         : type == BATTLEGROUND_AV ? "AV" : type == BATTLEGROUND_IC ? "IC" : nullptr;
 }
 
 // Baseline tactics of a BG type as a mask (both teams). Needs armsLock.
@@ -252,6 +263,11 @@ bool GlobalSwitch(BGTactic tactic, TeamId team, BattlegroundTypeId type)
         case BGTactic::FinishKill:
         case BGTactic::EYRetake:
         case BGTactic::DirectCarrier:
+        case BGTactic::AVHoldTower:
+        case BGTactic::AVBossForce:
+        case BGTactic::AVCaptainHome:
+        case BGTactic::ICGuardFix:
+        case BGTactic::ICStayVehicle:
             return false;  // arms only
     }
     return false;
@@ -286,9 +302,13 @@ std::string BGTacticArms::ArmName(Battleground* bg)
 
 void BGTacticArms::SetEYArms(std::string const& arms)
 {
+    SetArms(BATTLEGROUND_EY, arms);
+}
+
+void BGTacticArms::SetArms(BattlegroundTypeId type, std::string const& arms)
+{
     std::lock_guard<std::mutex> guard(armsLock);
-    eyArms = arms;
-    eyArmsLoaded = true;
+    localArms[type] = arms;
 }
 
 void BGTacticArms::SetBaseline(BattlegroundTypeId type, std::string const& tactics)

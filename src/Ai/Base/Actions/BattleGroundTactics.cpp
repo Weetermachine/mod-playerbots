@@ -2060,7 +2060,10 @@ bool BGTactics::selectObjective(bool reset)
             }
 
             // --- Captain ---
-            if (!BgObjective && urand(0, 99) < 90)
+            // AVCaptainHome: defenders skip it (stock sends 90% of the team, defenders included; both captains die
+            // at ~3.5 min in every game, at ~75 deaths per game in the first 5 minutes)
+            if (!BgObjective && urand(0, 99) < 90 &&
+                !(isDefender && BGTacticArms::IsOn(bg, team, BGTactic::AVCaptainHome)))
             {
                 if (av->IsCaptainAlive(team == TEAM_HORDE ? TEAM_ALLIANCE : TEAM_HORDE))
                 {
@@ -2129,6 +2132,28 @@ bool BGTactics::selectObjective(bool reset)
                 }
             }
 
+            // --- Hold what we assaulted (AVHoldTower) ---
+            // Stock attackers leave a tower or bunker once it is assaulted (skipped 99% below), so nobody holds it
+            // for the 4 minutes before it burns and the defenders click it back (98 Iceblood, 85 Tower Point and 65
+            // Icewing re-takes in 121 games). Up to 4 bots stay on each.
+            if (!BgObjective && BGTacticArms::IsOn(bg, team, BGTactic::AVHoldTower))
+            {
+                for (auto const& [nodeId, goId] : attackObjectives)
+                {
+                    const BG_AV_NodeInfo& node = av->GetAVNodeInfo(nodeId);
+                    if (node.State != POINT_ASSAULTED || node.OwnerId != team)
+                        continue;
+                    GameObject* go = bg->GetBGObject(goId);
+                    if (!go || bot->GetDistance(go) > 250.0f)
+                        continue;
+                    if (bot->GetDistance(go) < 40.0f || getPlayersInArea(team, go->GetPosition(), 40.0f, false) < 4)
+                    {
+                        BgObjective = go;
+                        break;
+                    }
+                }
+            }
+
             // --- Attacker Logic ---
             if (!BgObjective)
             {
@@ -2176,7 +2201,17 @@ bool BGTactics::selectObjective(bool reset)
                     uint32 bossId = (team == TEAM_HORDE) ? AV_CREATURE_A_BOSS : AV_CREATURE_H_BOSS;
                     if (Creature* boss = bg->GetBGCreature(bossId))
                         if (boss->IsAlive())
+                        {
+                            // AVBossForce: the general only with 20+ of us near him or his last graveyard ours, as
+                            // the boss rule above; until then gather at the wait point (stock sends everyone in a
+                            // trickle: 1-4 attackers half the time, 36-51 deaths per game at the generals)
+                            uint8 const lastGY = (team == TEAM_HORDE) ? BG_AV_NODES_FIRSTAID_STATION : BG_AV_NODES_FROSTWOLF_HUT;
+                            if (BGTacticArms::IsOn(bg, team, BGTactic::AVBossForce) &&
+                                av->GetAVNodeInfo(lastGY).OwnerId != team &&
+                                getPlayersInArea(team, boss->GetPosition(), 200.0f, false) < 20)
+                                return true;  // the wait point set above
                             BgObjective = boss;
+                        }
                 }
             }
 
@@ -3517,7 +3552,11 @@ bool BGTactics::selectObjective(bool reset)
                         auto const& objective =
                             IC_AttackObjectives[(i + role) %
                                                 len];  // use role to determine which objective checked first
-                        if (isleOfConquestBG->GetICNodePoint(objective.first).nodeState != NODE_STATE_CONTROLLED_H)
+                        // ICGuardFix: the Alliance's own state (stock compares with the Horde's, copied from the
+                        // Horde block, so Alliance bots guard nodes they already hold)
+                        uint32 const ours = BGTacticArms::IsOn(bg, TEAM_ALLIANCE, BGTactic::ICGuardFix)
+                                                ? NODE_STATE_CONTROLLED_A : NODE_STATE_CONTROLLED_H;
+                        if (isleOfConquestBG->GetICNodePoint(objective.first).nodeState != ours)
                         {
                             if (GameObject* pGO = bg->GetBGObject(objective.second))
                             {

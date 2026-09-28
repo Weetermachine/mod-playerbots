@@ -61,6 +61,11 @@ enum class BGTactic : uint8
     FinishKill = 41,     // WSG/AB/EotS: switch to an enemy under 30% health in reach
     EYRetake = 42,       // EotS (stock): first 5 min, a lost near tower is retaken by the 5 nearest bots first
     DirectCarrier = 43,  // WSG/EotS, with DirectPath: flag carriers take direct routes too (v3 keeps them on waypoints)
+    AVHoldTower = 44,    // AV: a tower/bunker we assaulted keeps up to 4 bots on it until it burns
+    AVBossForce = 45,    // AV: the general only in force (20+ of us near, or his last graveyard ours); else wait
+    AVCaptainHome = 46,  // AV: defenders skip the rush to the enemy captain
+    ICGuardFix = 47,     // IoC: Alliance idle bots guard nodes not yet ours (stock checks the Horde state)
+    ICStayVehicle = 48,  // IoC: bots do not leave a vehicle at random
 };
 
 // Per-game A/B arms. With AiPlayerbot.BGTactics.<BG>.Arms set (e.g.
@@ -82,6 +87,9 @@ namespace BGTacticArms
     // Eye of the Storm arms (AiPlayerbot.BGTactics.EY.Arms) live here rather than in PlayerbotAIConfig;
     // the experiment hot reload sets them.
     void SetEYArms(std::string const& arms);
+
+    // Arms of the BGs kept here (EY, AV, IC: AiPlayerbot.BGTactics.<EY|AV|IC>.Arms), set by the hot reload.
+    void SetArms(BattlegroundTypeId type, std::string const& arms);
 
     // Baseline (AiPlayerbot.BGTactics.<WSG|AB|EY>.Baseline, e.g. "FCEscort, FCChase"): accepted tactics, on for
     // both teams in every game of that BG; arms add their tactics on top. A game keeps the baseline it started

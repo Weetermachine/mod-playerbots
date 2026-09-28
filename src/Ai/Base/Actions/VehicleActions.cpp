@@ -6,6 +6,7 @@
 
 #include "VehicleActions.h"
 
+#include "BGTacticArms.h"
 #include "BattlegroundIC.h"
 #include "ItemVisitors.h"
 #include "ObjectDefines.h"
@@ -101,6 +102,18 @@ bool LeaveVehicleAction::Execute(Event /*event*/)
     Vehicle* myVehicle = bot->GetVehicle();
     if (!myVehicle)
         return false;
+
+    // ICStayVehicle: in Isle of Conquest the random trigger makes bots leave their siege vehicles (about 5 riding at
+    // the peak, no keep breached in 100 games); stay while the game runs
+    if (Battleground* bg = bot->GetBattleground())
+        if (bg->GetStatus() == STATUS_IN_PROGRESS && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::ICStayVehicle))
+        {
+            BattlegroundTypeId type = bg->GetBgTypeID();
+            if (type == BATTLEGROUND_RB)
+                type = bg->GetBgTypeID(true);
+            if (type == BATTLEGROUND_IC)
+                return false;
+        }
 
     VehicleSeatEntry const* seat = myVehicle->GetSeatForPassenger(bot);
     if (!seat || !seat->CanEnterOrExit())
