@@ -3976,16 +3976,22 @@ bool PlayerbotAI::CastSpell(uint32 spellId, float x, float y, float z, Item* ite
     return true;
 }
 
-// ICSiegeFix: this bot's vehicle should shoot the gate (a location spell, a siege position set, the fix on)
+// ICSiegeFix: this bot's vehicle should hit the gate: a location spell with a siege position set, or Ram at the gate
 static bool SiegeShot(Player* bot, AiObjectContext* context, uint32 spellId)
 {
     Battleground* bg = bot->GetBattleground();
     if (!bg || !bot->GetVehicle() || !BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::ICSiegeFix))
         return false;
     SpellInfo const* info = sSpellMgr->GetSpellInfo(spellId);
-    if (!info || !(info->Targets & TARGET_FLAG_DEST_LOCATION))
+    PositionInfo const siege = context->GetValue<PositionMap&>("position")->Get()["bg siege"];
+    if (!info || !siege.isSet())
         return false;
-    return context->GetValue<PositionMap&>("position")->Get()["bg siege"].isSet();
+    if (info->Targets & TARGET_FLAG_DEST_LOCATION)
+        return true;  // Hurl Boulder, Glaive Throw: aimed at the gate
+    // Ram: no explicit target, it damages buildings just in front of the vehicle; cast at the gate (within 15 yd)
+    Unit* base = bot->GetVehicleBase();
+    return !info->Targets && info->HasEffect(SPELL_EFFECT_WMO_DAMAGE) && base &&
+           base->GetExactDist2d(siege.x, siege.y) < 15.0f;
 }
 
 bool PlayerbotAI::CanCastVehicleSpell(uint32 spellId, Unit* target)

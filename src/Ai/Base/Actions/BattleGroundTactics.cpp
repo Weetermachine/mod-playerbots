@@ -3559,6 +3559,14 @@ bool BGTactics::selectObjective(bool reset)
                         if (vehicleId == NPC_SIEGE_ENGINE_H)  // target gate directly if siege engine
                         {
                             BgObjective = gate;
+                            // ICSiegeFix: the gate is also the siege position, so Ram (no target: it hits buildings
+                            // just in front) fires once the engine reaches it
+                            if (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::ICSiegeFix))
+                            {
+                                PositionInfo siegePos = context->GetValue<PositionMap&>("position")->Get()["bg siege"];
+                                siegePos.Set(gate->GetPositionX(), gate->GetPositionY(), gate->GetPositionZ(), bot->GetMapId());
+                                posMap["bg siege"] = siegePos;
+                            }
                             // LOG_INFO("playerbots", "bot={} (in siege-engine) attack gate", bot->GetName());
                         }
                         else  // target gate directly at range if other vehicle
@@ -3715,6 +3723,14 @@ bool BGTactics::selectObjective(bool reset)
                         if (vehicleId == NPC_SIEGE_ENGINE_A)  // target gate directly if siege engine
                         {
                             BgObjective = gate;
+                            // ICSiegeFix: the gate is also the siege position, so Ram (no target: it hits buildings
+                            // just in front) fires once the engine reaches it
+                            if (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::ICSiegeFix))
+                            {
+                                PositionInfo siegePos = context->GetValue<PositionMap&>("position")->Get()["bg siege"];
+                                siegePos.Set(gate->GetPositionX(), gate->GetPositionY(), gate->GetPositionZ(), bot->GetMapId());
+                                posMap["bg siege"] = siegePos;
+                            }
                             // LOG_INFO("playerbots", "bot={} (in siege-engine) attack gate", bot->GetName());
                         }
                         else  // target gate directly at range if other vehicle
