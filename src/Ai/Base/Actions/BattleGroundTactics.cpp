@@ -8,6 +8,7 @@
 #include "BGAoeSquad.h"
 #include "BGBossRaid.h"
 #include "BGDisrupt.h"
+#include "BGHealerGuard.h"
 #include "BGTacticArms.h"
 
 #include <algorithm>
@@ -57,6 +58,7 @@ std::atomic<uint32> comebackBehind[3], comebackPlans[3];
 // Batch 1 tactics, plans that used them (5 min): intercept, escort healer, standoff break, reinforce, retake
 std::atomic<uint32> batchUsed[5];
 std::atomic<uint32> eyRetakeUsed{0};
+std::atomic<uint32> siegeEscortPicks{0};  // ICSiegeEscort: objective picks escorting a vehicle (logged with the IoC guard step)
 // IoC guard step (the last "guard point that's not fully capped" fallback), per 5 min. Rows: Alliance stock, Alliance
 // with ICGuardFix, Horde. Columns: objective picks, reached the guard step, went to a node its team fully holds, to one
 // the enemy fully holds, to one being captured or neutral, no node (fell through to the vehicle guard spot).
@@ -81,6 +83,9 @@ void IcGuardLog()
             v[k] = icGuard[r][k].exchange(0);
         if (!v[0])
             continue;
+        if (r == 0)
+            if (uint32 const se = siegeEscortPicks.exchange(0))
+                LOG_INFO("module", "ICSiegeEscort (5 min): escort picks {}", se);
         LOG_INFO("module", "IoC guard step {} (5 min): objective picks {}, reached the guard step {} ({:.1f}%): to a node "
                  "we hold {}, to one they hold {}, to one being captured/neutral {}, none {}",
                  rows[r], v[0], v[1], 100.0 * v[1] / v[0], v[2], v[3], v[4], v[5]);
@@ -1967,7 +1972,8 @@ bool BGTactics::selectObjective(bool reset)
     // objective was
     {
         Position hold;
-        if (BGDisrupt::Hold(botAI, bg, hold) || BGAoeSquad::Hold(botAI, bg, hold))
+        if (BGDisrupt::Hold(botAI, bg, hold) || BGAoeSquad::Hold(botAI, bg, hold) ||
+            BGHealerGuard::Hold(botAI, bg, hold))
         {
             pos.Set(hold.GetPositionX(), hold.GetPositionY(), hold.GetPositionZ(), bot->GetMapId());
             posMap["bg objective"] = pos;
@@ -2046,7 +2052,9 @@ bool BGTactics::selectObjective(bool reset)
             }
 
             // --- Mine Capture (rarely works, needs some improvement) ---
-            if (!BgObjective && enableMineCapture && role == 0)
+            // AVMines: roles 0-4 (5 bots) instead of role 0 alone, which rarely beats the mine boss and his mobs
+            if (!BgObjective && enableMineCapture &&
+                (role == 0 || (role < 5 && BGTacticArms::IsOn(bg, team, BGTactic::AVMines))))
             {
                 BG_AV_OTHER_VALUES mineType = (team == TEAM_HORDE) ? AV_SOUTH_MINE : AV_NORTH_MINE;
                 if (av->GetMineOwner(mineType) != team)
@@ -2237,7 +2245,24 @@ bool BGTactics::selectObjective(bool reset)
                         break;
                 }
 
-                if (!candidates.empty())
+                // AVGraveyards: the nearest capturable graveyard first (our respawns closer to the fight; winners end
+                // holding 2.2 enemy graveyards, losers 1.7)
+                GameObject* gyPick = nullptr;
+                if (BGTacticArms::IsOn(bg, team, BGTactic::AVGraveyards))
+                    for (auto const& [nodeId, goId] : attackObjectives)
+                    {
+                        if (nodeId >= BG_AV_NODES_DUNBALDAR_SOUTH)
+                            continue;  // towers and bunkers
+                        const BG_AV_NodeInfo& node = av->GetAVNodeInfo(nodeId);
+                        GameObject* go = bg->GetBGObject(goId);
+                        if (!go || node.TotalOwnerId == team || (node.State == POINT_ASSAULTED && node.OwnerId == team))
+                            continue;
+                        if (!gyPick || bot->GetDistance(go) < bot->GetDistance(gyPick))
+                            gyPick = go;
+                    }
+                if (gyPick)
+                    BgObjective = gyPick;
+                else if (!candidates.empty())
                     BgObjective = candidates[urand(0, candidates.size() - 1)];
                 else
                 {
@@ -2886,6 +2911,10 @@ bool BGTactics::selectObjective(bool reset)
                         continue;
 
                     float dist = bot->GetDistance(it->second);
+                    // EYSafeTower: each enemy within 40 yd of the tower counts as 60 yd more
+                    if (BGTacticArms::IsOn(bg, team, BGTactic::EYSafeTower))
+                        dist += 60.0f * getPlayersInArea(team == TEAM_ALLIANCE ? TEAM_HORDE : TEAM_ALLIANCE, it->second,
+                                                         40.0f, false);
                     if (dist < bestDist)
                     {
                         bestDist = dist;
@@ -3357,6 +3386,39 @@ bool BGTactics::selectObjective(bool reset)
             bool inVehicle = botAI->IsInVehicle();
             bool controlsVehicle = botAI->IsInVehicle(true);
             uint32 vehicleId = inVehicle ? bot->GetVehicleBase()->GetEntry() : 0;
+
+            // ICSiegeEscort: a bot on foot within 150 yd of one of our driven demolishers / siege engines that has
+            // fewer than 5 of us within 15 yd walks 6 yd behind it (it fights whatever attacks there)
+            if (!inVehicle && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::ICSiegeEscort))
+            {
+                Unit* best = nullptr;
+                for (auto const& ref : bg->GetBgMap()->GetPlayers())
+                {
+                    Player* p = ref.GetSource();
+                    Unit* veh = p && p->IsAlive() && p->GetTeamId() == bot->GetTeamId() && p->GetVehicle()
+                                    ? p->GetVehicleBase() : nullptr;
+                    if (!veh || !veh->IsAlive() || p->GetVehicle()->GetSeatForPassenger(p) == nullptr ||
+                        !p->GetVehicle()->GetSeatForPassenger(p)->CanControl())
+                        continue;
+                    uint32 const e = veh->GetEntry();
+                    if (e != NPC_DEMOLISHER && e != NPC_SIEGE_ENGINE_A && e != NPC_SIEGE_ENGINE_H)
+                        continue;
+                    if (bot->GetExactDist2d(veh) > 150.0f ||
+                        (bot->GetExactDist2d(veh) > 15.0f && getPlayersInArea(bot->GetTeamId(), veh->GetPosition(), 15.0f, false) >= 5))
+                        continue;
+                    if (!best || bot->GetExactDist2d(veh) < bot->GetExactDist2d(best))
+                        best = veh;
+                }
+                if (best)
+                {
+                    float const o = best->GetOrientation() + float(M_PI);
+                    pos.Set(best->GetPositionX() + std::cos(o) * 6.0f, best->GetPositionY() + std::sin(o) * 6.0f,
+                            best->GetPositionZ(), bot->GetMapId());
+                    posMap["bg objective"] = pos;
+                    ++siegeEscortPicks;
+                    return true;
+                }
+            }
 
             // skip if not the driver
             if (inVehicle && !controlsVehicle)
@@ -4904,7 +4966,7 @@ float DistToWaypointRoutes(std::vector<BattleBotPath*> const& paths, float x, fl
 
 std::mutex tripLock;
 std::unordered_map<ObjectGuid, Trip> trips;
-TripStats tripStats[3][2];  // [WS, AB, EY][stock, direct]
+TripStats tripStats[5][2];  // [WS, AB, EY, AV, IC][stock, direct]
 uint32 tripLogMs = 0;
 
 void TripLog(uint32 now)  // needs tripLock
@@ -4917,8 +4979,8 @@ void TripLog(uint32 now)  // needs tripLock
     if (getMSTimeDiff(tripLogMs, now) <= 5 * MINUTE * IN_MILLISECONDS)
         return;
     tripLogMs = now;
-    static char const* const names[3] = {"WS", "AB", "EY"};
-    for (uint32 b = 0; b < 3; ++b)
+    static char const* const names[5] = {"WS", "AB", "EY", "AV", "IC"};
+    for (uint32 b = 0; b < 5; ++b)
         for (uint32 d = 0; d < 2; ++d)
         {
             TripStats& s = tripStats[b][d];
@@ -5082,10 +5144,16 @@ bool BGTactics::gyWaveHold()
         if (p && p != bot && p->IsAlive() && p->GetTeamId() == bot->GetTeamId() && bot->GetExactDist2d(p) < 25.0f)
             ++near;
     }
-    bool const timedOut = getMSTimeDiff(reviveMs, now) >= 10 * IN_MILLISECONDS;
-    if (near >= 3 || timedOut)
+    // 40v40 maps (AV, IoC): wait for 5 teammates or 15 s
+    BattlegroundTypeId waveType = bg->GetBgTypeID();
+    if (waveType == BATTLEGROUND_RB)
+        waveType = bg->GetBgTypeID(true);
+    bool const bigMap = waveType == BATTLEGROUND_AV || waveType == BATTLEGROUND_IC;
+    uint32 const needNear = bigMap ? 5 : 3;
+    bool const timedOut = getMSTimeDiff(reviveMs, now) >= (bigMap ? 15 : 10) * IN_MILLISECONDS;
+    if (near >= needNear || timedOut)
     {
-        ++(near >= 3 ? waveByGroup : waveByTimeout);
+        ++(near >= needNear ? waveByGroup : waveByTimeout);
         std::lock_guard<std::mutex> guard(waveLock);
         waveStates[bot->GetGUID()].reviveMs = 0;
         uint32 last = waveLogMs.load();
@@ -5094,7 +5162,8 @@ bool BGTactics::gyWaveHold()
         else if (getMSTimeDiff(last, now) > 5 * MINUTE * IN_MILLISECONDS)
         {
             waveLogMs = now;
-            LOG_INFO("module", "GYWave (5 min): respawn waits {}, left with 3+ teammates {}, left alone after 10 s {}",
+            LOG_INFO("module", "GYWave (5 min): respawn waits {}, left with the group (3+, AV/IoC 5+) {}, left alone "
+                     "after the wait (10 s, AV/IoC 15 s) {}",
                      waveHolds.exchange(0), waveByGroup.exchange(0), waveByTimeout.exchange(0));
         }
         return false;
@@ -5352,9 +5421,11 @@ void BGTactics::tripSample()
     BattlegroundTypeId type = bg->GetBgTypeID();
     if (type == BATTLEGROUND_RB)
         type = bg->GetBgTypeID(true);
-    if (type != BATTLEGROUND_WS && type != BATTLEGROUND_AB && type != BATTLEGROUND_EY)
+    if (type != BATTLEGROUND_WS && type != BATTLEGROUND_AB && type != BATTLEGROUND_EY && type != BATTLEGROUND_AV &&
+        type != BATTLEGROUND_IC)
         return;
-    uint32 const b = type == BATTLEGROUND_WS ? 0 : type == BATTLEGROUND_AB ? 1 : 2;
+    uint32 const b = type == BATTLEGROUND_WS ? 0 : type == BATTLEGROUND_AB ? 1 : type == BATTLEGROUND_EY ? 2
+                   : type == BATTLEGROUND_AV ? 3 : 4;
     // carrier log: is our carrier alone (no living friendly player within 20 yd)?
     if (bot->HasAura(BG_WS_SPELL_WARSONG_FLAG) || bot->HasAura(BG_WS_SPELL_SILVERWING_FLAG) ||
         bot->HasAura(BG_EY_NETHERSTORM_FLAG_SPELL))
@@ -5442,7 +5513,9 @@ void BGTactics::tripSample()
     t.indoor += !bot->IsOutdoors();
     if (t.samples % 8 == 0)  // every 8th sample: is the bot on one of the map's waypoint routes (within 5 yd)?
     {
-        std::vector<BattleBotPath*> const& paths = type == BATTLEGROUND_WS ? vPaths_WS : type == BATTLEGROUND_AB ? vPaths_AB : vPaths_EY;
+        std::vector<BattleBotPath*> const& paths = type == BATTLEGROUND_WS ? vPaths_WS : type == BATTLEGROUND_AB ? vPaths_AB
+                                                 : type == BATTLEGROUND_EY ? vPaths_EY : type == BATTLEGROUND_AV ? vPaths_AV
+                                                 : vPaths_IC;
         ++t.pathChecks;
         t.onPath += DistToWaypointRoutes(paths, bot->GetPositionX(), bot->GetPositionY()) < 5.0f;
     }

@@ -72,6 +72,11 @@ enum class BGTactic : uint8
     AoEGeneral = 52,     // AV: 5+ enemies at our general: every area-damage bot goes to him and hits the packs
     BossRaid = 53,       // AV: the enemy general as a raid boss: gather, tanks pull, guards first, healers on tanks
     Disrupt = 54,        // AV: 5 bots hit the enemies fighting our general/captain (healers, their tank first)
+    AVMines = 55,        // AV: 5 bots (not 1) go for the mine boss
+    ICSiegeEscort = 56,  // IoC: up to 5 bots escort each of our demolishers / siege engines
+    AVGraveyards = 57,   // AV: attackers take the nearest capturable graveyard before towers
+    HealerGuard = 58,    // any BG without the allocator: a melee bodyguard per healer
+    EYSafeTower = 59,    // EotS: the carrier runs to the owned tower with the fewest enemies, not the nearest
 };
 
 // Per-game A/B arms. With AiPlayerbot.BGTactics.<BG>.Arms set (e.g.

@@ -139,7 +139,12 @@ int TacticBit(std::string const& tactic)
          : tactic == "AoESquadAll" ? int(BGTactic::AoESquadAll)
          : tactic == "AoEGeneral" ? int(BGTactic::AoEGeneral)
          : tactic == "BossRaid" ? int(BGTactic::BossRaid)
-         : tactic == "Disrupt" ? int(BGTactic::Disrupt) : -1;
+         : tactic == "Disrupt" ? int(BGTactic::Disrupt)
+         : tactic == "AVMines" ? int(BGTactic::AVMines)
+         : tactic == "ICSiegeEscort" ? int(BGTactic::ICSiegeEscort)
+         : tactic == "AVGraveyards" ? int(BGTactic::AVGraveyards)
+         : tactic == "HealerGuard" ? int(BGTactic::HealerGuard)
+         : tactic == "EYSafeTower" ? int(BGTactic::EYSafeTower) : -1;
 }
 
 char const* BGName(BattlegroundTypeId type)
@@ -280,6 +285,11 @@ bool GlobalSwitch(BGTactic tactic, TeamId team, BattlegroundTypeId type)
         case BGTactic::AoEGeneral:
         case BGTactic::BossRaid:
         case BGTactic::Disrupt:
+        case BGTactic::AVMines:
+        case BGTactic::ICSiegeEscort:
+        case BGTactic::AVGraveyards:
+        case BGTactic::HealerGuard:
+        case BGTactic::EYSafeTower:
             return false;  // arms only
     }
     return false;

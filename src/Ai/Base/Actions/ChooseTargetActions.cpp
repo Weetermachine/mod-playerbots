@@ -13,6 +13,7 @@
 #include "BGAoeSquad.h"
 #include "BGBossRaid.h"
 #include "BGDisrupt.h"
+#include "BGHealerGuard.h"
 #include "BGTacticArms.h"
 #include "BattleGroundTactics.h"
 
@@ -416,6 +417,8 @@ Unit* FindFocusTarget(PlayerbotAI* botAI)
         return raid;
     if (Unit* hit = BGDisrupt::Target(botAI))  // disruption (AV): the enemies fighting our general or captain
         return hit;
+    if (Unit* onHealer = BGHealerGuard::Target(botAI))  // healer bodyguard: whoever is on our healer
+        return onHealer;
     if (Unit* pack = BGAoeSquad::Target(botAI))  // AoE squad (AV/IoC): the densest enemy pack in range
         return pack;
     if (bg && BGTacticArms::IsOn(bg, bot->GetBgTeamId(), BGTactic::FinishKill) &&
