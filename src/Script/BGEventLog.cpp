@@ -147,6 +147,7 @@ public:
         if (bg->GetBgTypeID() != BATTLEGROUND_WS)
         {
             LogObjectives(bg);
+            LogPositions(bg);
             return;
         }
         BattlegroundWS* ws = dynamic_cast<BattlegroundWS*>(bg);
@@ -193,6 +194,7 @@ private:
         uint32 lastSampleMs = 0;     // AV generals / IoC vehicles sampling
         std::string lastSample;      // last logged sample (without time fields)
         uint32 lastSampleLogMs = 0;
+        uint32 lastPosMs = 0;        // AV/IoC position snapshot
         ObjectGuid general[2];       // AV: Vanndar (Alliance), Drek'Thar (Horde)
     };
 
@@ -299,6 +301,39 @@ private:
             }
         }
         return s.str();
+    }
+
+    // Position snapshot (AV/IoC), every POS_MS: one line per game, every player as guid,team,x,y,state
+    // (state: a alive, d dead, v driving/riding a vehicle), to see where bots spend their time (e.g. idle guards at a
+    // base nobody attacks, which never show up in death positions).
+    static constexpr uint32 POS_MS = 30000;
+    void LogPositions(Battleground* bg)
+    {
+        BattlegroundTypeId const type = bg->GetBgTypeID();
+        if (type != BATTLEGROUND_AV && type != BATTLEGROUND_IC)
+            return;
+        uint32 const now = getMSTime();
+        {
+            std::lock_guard<std::mutex> guard(wsgStateLock);
+            ObjState& st = objStates[bg->GetInstanceID()];
+            if (st.lastPosMs && getMSTimeDiff(st.lastPosMs, now) < POS_MS)
+                return;
+            st.lastPosMs = now;
+        }
+        std::ostringstream pts;
+        bool first = true;
+        for (auto const& ref : bg->GetBgMap()->GetPlayers())
+        {
+            Player* p = ref.GetSource();
+            if (!p || !p->IsInWorld())
+                continue;
+            char const state = !p->IsAlive() ? 'd' : p->GetVehicle() ? 'v' : 'a';
+            pts << (first ? "" : ";") << p->GetGUID().GetCounter() << ',' << (p->GetTeamId() == TEAM_HORDE ? 'H' : 'A')
+                << ',' << int32(p->GetPositionX()) << ',' << int32(p->GetPositionY()) << ',' << state;
+            first = false;
+        }
+        LOG_INFO("playerbots.bgevents", "event=pos bg={} type={} bg_ms={} pts={}", bg->GetInstanceID(), uint32(type),
+                 bg->GetStartTime(), pts.str());
     }
 
     // Periodic samples for AV/IoC: logged when changed, or every SAMPLE_HEARTBEAT_MS.
