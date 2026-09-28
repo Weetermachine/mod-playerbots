@@ -4174,8 +4174,13 @@ bool PlayerbotAI::CastVehicleSpell(uint32 spellId, Unit* target)
         if (spellTarget != vehicleBase)
             dest = WorldLocation(spellTarget->GetMapId(), spellTarget->GetPosition());
         else if (siegePos.isSet())
-            dest = WorldLocation(bot->GetMapId(), siegePos.x + frand(-5.0f, 5.0f), siegePos.y + frand(-5.0f, 5.0f),
+        {
+            // ICSiegeFix: +-2 yd (Glaive's building damage reaches 5 yd from the impact, Boulder's 10 yd; +-5 yd sent
+            // a good share of glaives past the gate)
+            float const jitter = SiegeShot(bot, aiObjectContext, spellId) ? 2.0f : 5.0f;
+            dest = WorldLocation(bot->GetMapId(), siegePos.x + frand(-jitter, jitter), siegePos.y + frand(-jitter, jitter),
                                  siegePos.z, 0.0f);
+        }
         else
             return false;
 
