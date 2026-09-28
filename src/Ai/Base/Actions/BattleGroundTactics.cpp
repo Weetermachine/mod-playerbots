@@ -7,6 +7,7 @@
 #include "BattleGroundTactics.h"
 #include "BGAoeSquad.h"
 #include "BGBossRaid.h"
+#include "BGDisrupt.h"
 #include "BGTacticArms.h"
 
 #include <algorithm>
@@ -1962,10 +1963,11 @@ bool BGTactics::selectObjective(bool reset)
 
     PositionMap& posMap = context->GetValue<PositionMap&>("position")->Get();
     PositionInfo pos = context->GetValue<PositionMap&>("position")->Get()["bg objective"];
-    // AoE squad (AV/IoC arms): while its choke is busy a member holds behind it, whatever its objective was
+    // Disruption (AV) and AoE squad (AV/IoC) arms: while their site is busy a member goes there, whatever its
+    // objective was
     {
         Position hold;
-        if (BGAoeSquad::Hold(botAI, bg, hold))
+        if (BGDisrupt::Hold(botAI, bg, hold) || BGAoeSquad::Hold(botAI, bg, hold))
         {
             pos.Set(hold.GetPositionX(), hold.GetPositionY(), hold.GetPositionZ(), bot->GetMapId());
             posMap["bg objective"] = pos;

@@ -12,6 +12,7 @@
 
 #include "BGAoeSquad.h"
 #include "BGBossRaid.h"
+#include "BGDisrupt.h"
 #include "BGTacticArms.h"
 #include "BattleGroundTactics.h"
 
@@ -413,6 +414,8 @@ Unit* FindFocusTarget(PlayerbotAI* botAI)
     Battleground* bg = bot->GetBattleground();
     if (Unit* raid = BGBossRaid::Target(botAI))  // raid boss (AV): tanks on the general/guards, then guards, general
         return raid;
+    if (Unit* hit = BGDisrupt::Target(botAI))  // disruption (AV): the enemies fighting our general or captain
+        return hit;
     if (Unit* pack = BGAoeSquad::Target(botAI))  // AoE squad (AV/IoC): the densest enemy pack in range
         return pack;
     if (bg && BGTacticArms::IsOn(bg, bot->GetBgTeamId(), BGTactic::FinishKill) &&
