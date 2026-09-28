@@ -3440,6 +3440,17 @@ bool BGTactics::selectObjective(bool reset)
         case BATTLEGROUND_IC:
         {
             BattlegroundIC* isleOfConquestBG = (BattlegroundIC*)bg;
+            // ICSiegeFix: the Horde siege spot 65 yd from the Alliance front gate (stock: 94 yd and 24 yd below it;
+            // the Alliance spot is 59 yd from the Horde gate)
+            Position icHordePark = IC_GATE_ATTACK_POS_HORDE;
+            if (BGTacticArms::IsOn(bg, TEAM_HORDE, BGTactic::ICSiegeFix))
+            {
+                float z = 40.0f;
+                float const h = bg->GetBgMap()->GetHeight(478.3f, -830.2f, 60.0f);
+                if (h > INVALID_HEIGHT)
+                    z = h;
+                icHordePark.Relocate(478.3f, -830.2f, z);
+            }
             uint32 const icRow = bot->GetTeamId() == TEAM_HORDE ? 2
                                : BGTacticArms::IsOn(bg, TEAM_ALLIANCE, BGTactic::ICGuardFix) ? 1 : 0;
             ++icGuard[icRow][0];
@@ -3554,12 +3565,12 @@ bool BGTactics::selectObjective(bool reset)
                         {
                             // just make bot stay where it is if already close
                             // (stops them shifting around between the random spots)
-                            if (bot->GetDistance(IC_GATE_ATTACK_POS_HORDE) < 8.0f)
+                            if (bot->GetDistance(icHordePark) < 8.0f)
                                 pos.Set(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), bot->GetMapId());
                             else
-                                pos.Set(IC_GATE_ATTACK_POS_HORDE.GetPositionX() + frand(-5.0f, +5.0f),
-                                        IC_GATE_ATTACK_POS_HORDE.GetPositionY() + frand(-5.0f, +5.0f),
-                                        IC_GATE_ATTACK_POS_HORDE.GetPositionZ(), bot->GetMapId());
+                                pos.Set(icHordePark.GetPositionX() + frand(-5.0f, +5.0f),
+                                        icHordePark.GetPositionY() + frand(-5.0f, +5.0f),
+                                        icHordePark.GetPositionZ(), bot->GetMapId());
                             posMap["bg objective"] = pos;
                             // set siege position
                             PositionInfo siegePos = context->GetValue<PositionMap&>("position")->Get()["bg siege"];
@@ -3647,12 +3658,12 @@ bool BGTactics::selectObjective(bool reset)
                 {
                     // just make bot stay where it is if already close
                     // (stops them shifting around between the random spots)
-                    if (bot->GetDistance(IC_GATE_ATTACK_POS_HORDE) < 8.0f)
+                    if (bot->GetDistance(icHordePark) < 8.0f)
                         pos.Set(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), bot->GetMapId());
                     else
-                        pos.Set(IC_GATE_ATTACK_POS_HORDE.GetPositionX() + frand(-5.0f, +5.0f),
-                                IC_GATE_ATTACK_POS_HORDE.GetPositionY() + frand(-5.0f, +5.0f),
-                                IC_GATE_ATTACK_POS_HORDE.GetPositionZ(), bot->GetMapId());
+                        pos.Set(icHordePark.GetPositionX() + frand(-5.0f, +5.0f),
+                                icHordePark.GetPositionY() + frand(-5.0f, +5.0f),
+                                icHordePark.GetPositionZ(), bot->GetMapId());
                     posMap["bg objective"] = pos;
                     // LOG_INFO("playerbots", "bot={} guard vehicles as they attack gate", bot->GetName());
                     return true;

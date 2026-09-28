@@ -300,6 +300,14 @@ private:
         for (int side = 0; side < 2; ++side)
         {
             char const* k = side == 0 ? "a" : "h";
+            // gate health (building hit points; 0 = destroyed), left/right/front for the Alliance, front/left/right for the Horde
+            s << ' ' << k << "_gates=";
+            for (int g = 0; g < 3; ++g)
+            {
+                uint32 const idx = (side == 0 ? BG_IC_GO_ALLIANCE_GATE_1 : BG_IC_GO_HORDE_GATE_1) + g;
+                GameObject* go = bg->GetBGObject(idx);
+                s << (g ? "," : "") << (go ? go->GetGOValue()->Building.Health : 0);
+            }
             s << ' ' << k << "_riding=" << riding[side] << ' ' << k << "_vehicles=";
             if (byEntry[side].empty())
                 s << '-';

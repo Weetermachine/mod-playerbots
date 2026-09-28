@@ -93,6 +93,7 @@ enum class BGTactic : uint8
     ABStealBack = 71,    // AB: attackers also go for nodes the enemy is assaulting (steal back), not our own assaults
     GroundZFix = 72,     // AV/AB/EotS/WSG: a failed height lookup no longer writes an invalid z (the check was inverted)
     AVFixes = 73,        // AV: no Alliance-only emergency Snowfall trigger; role re-roll unwraps random BG
+    ICSiegeFix = 75,     // IoC: vehicles at their siege spot fire at the gate (without a target too); Horde spot at 65 yd
     StockEscort = 74,    // WSG/EotS: without an escort arm, every bot within 200 yd protects our carrier, as
                          // upstream (our first escort commit turned that off for the "stock" team)
     TacticCount          // must stay below the mask width (128)

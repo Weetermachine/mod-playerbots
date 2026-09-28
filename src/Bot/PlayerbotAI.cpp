@@ -6,6 +6,7 @@
 #include "PlayerbotAI.h"
 
 #include "BGCastLog.h"
+#include "BGTacticArms.h"
 
 #include <cmath>
 #include <mutex>
@@ -3975,12 +3976,29 @@ bool PlayerbotAI::CastSpell(uint32 spellId, float x, float y, float z, Item* ite
     return true;
 }
 
+// ICSiegeFix: this bot's vehicle should shoot the gate (a location spell, a siege position set, the fix on)
+static bool SiegeShot(Player* bot, AiObjectContext* context, uint32 spellId)
+{
+    Battleground* bg = bot->GetBattleground();
+    if (!bg || !bot->GetVehicle() || !BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::ICSiegeFix))
+        return false;
+    SpellInfo const* info = sSpellMgr->GetSpellInfo(spellId);
+    if (!info || !(info->Targets & TARGET_FLAG_DEST_LOCATION))
+        return false;
+    return context->GetValue<PositionMap&>("position")->Get()["bg siege"].isSet();
+}
+
 bool PlayerbotAI::CanCastVehicleSpell(uint32 spellId, Unit* target)
 {
     if (!spellId)
         return false;
 
-    if (!IsValidUnit(target))
+    // ICSiegeFix: a vehicle with a siege position (the enemy gate, set by the IoC tactics) fires its location spells
+    // (Hurl Boulder, Glaive Throw) at the gate, with or without a target. Stock required a valid target first, so the
+    // no-target gate shot below could never run, and with a target the shot went at the target instead of the gate.
+    if (SiegeShot(bot, aiObjectContext, spellId))
+        target = nullptr;
+    else if (!IsValidUnit(target))
         return false;
 
     Vehicle* vehicle = bot->GetVehicle();
@@ -4065,7 +4083,12 @@ bool PlayerbotAI::CastVehicleSpell(uint32 spellId, Unit* target)
     if (!spellId)
         return false;
 
-    if (!IsValidUnit(target))
+    // ICSiegeFix: a vehicle with a siege position (the enemy gate, set by the IoC tactics) fires its location spells
+    // (Hurl Boulder, Glaive Throw) at the gate, with or without a target. Stock required a valid target first, so the
+    // no-target gate shot below could never run, and with a target the shot went at the target instead of the gate.
+    if (SiegeShot(bot, aiObjectContext, spellId))
+        target = nullptr;
+    else if (!IsValidUnit(target))
         return false;
 
     Vehicle* vehicle = bot->GetVehicle();
