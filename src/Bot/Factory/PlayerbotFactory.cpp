@@ -4,6 +4,7 @@
  */
 
 #include "PlayerbotFactory.h"
+#include "MountLevels.h"
 
 #include <array>
 #include <utility>
@@ -3043,13 +3044,13 @@ void PlayerbotFactory::InitSkills()
     bot->UpdateSkillsForLevel();
 
     bot->SetSkill(SKILL_RIDING, 0, 0, 0);
-    if (bot->GetLevel() >= sPlayerbotAIConfig.useGroundMountAtMinLevel)
+    if (bot->GetLevel() >= MountLevels::Ground())
         bot->learnSpell(33388);
-    if (bot->GetLevel() >= sPlayerbotAIConfig.useFastGroundMountAtMinLevel)
+    if (bot->GetLevel() >= MountLevels::FastGround())
         bot->learnSpell(33391);
-    if (bot->GetLevel() >= sPlayerbotAIConfig.useFlyMountAtMinLevel)
+    if (bot->GetLevel() >= MountLevels::Fly())
         bot->learnSpell(34090);
-    if (bot->GetLevel() >= sPlayerbotAIConfig.useFastFlyMountAtMinLevel)
+    if (bot->GetLevel() >= MountLevels::FastFly())
         bot->learnSpell(34091);
 
     uint32 skillLevel = bot->GetLevel() < 40 ? 0 : 1;
@@ -3678,10 +3679,10 @@ uint32 PlayerbotFactory::CalcMixedGearScore(uint32 gs, uint32 quality)
 
 void PlayerbotFactory::InitMounts()
 {
-    uint32 firstmount = sPlayerbotAIConfig.useGroundMountAtMinLevel;
-    uint32 secondmount = sPlayerbotAIConfig.useFastGroundMountAtMinLevel;
-    uint32 thirdmount = sPlayerbotAIConfig.useFlyMountAtMinLevel;
-    uint32 fourthmount = sPlayerbotAIConfig.useFastFlyMountAtMinLevel;
+    uint32 firstmount = MountLevels::Ground();
+    uint32 secondmount = MountLevels::FastGround();
+    uint32 thirdmount = MountLevels::Fly();
+    uint32 fourthmount = MountLevels::FastFly();
 
     if (bot->GetLevel() < firstmount)
         return;

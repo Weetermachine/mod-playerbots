@@ -243,6 +243,12 @@ AiPlayerbot.BotRepairWhenSummon = 1
 # MOUNT
 #
 
+# Take the riding levels below from the server's trainers (trainer_spell.ReqLevel of Apprentice, Journeyman,
+# Expert and Artisan Riding), so bots learn and use riding when players can on this server. A riding spell
+# missing from trainer_spell uses the level set below.
+# Default: 1 (enabled)
+AiPlayerbot.MountLevelsFromTrainers = 1
+
 # Defines at what level a bot will naturally use its 60% ground mount
 # Note: was level 20 during WotLK, 30 during TBC, 40 during Vanilla
 # Default: 20

@@ -5,6 +5,7 @@
  */
 
 #include "CheckMountStateAction.h"
+#include "MountLevels.h"
 #include "AreaDefines.h"
 #include "BattleGroundTactics.h"
 #include "BattlegroundEY.h"
@@ -181,7 +182,7 @@ bool CheckMountStateAction::isUseful()
         return false;
 
     // Not useful when level lower than minimum required
-    if (bot->GetLevel() < sPlayerbotAIConfig.useGroundMountAtMinLevel)
+    if (bot->GetLevel() < MountLevels::Ground())
         return false;
 
     // Allow mounting while transformed only if the form allows it
@@ -518,7 +519,7 @@ int32 CheckMountStateAction::CalculateMasterMountSpeed(Player* master) const
     int32 ridingSkill = bot->GetPureSkillValue(SKILL_RIDING);
     int32 botLevel = bot->GetLevel();
 
-    if (ridingSkill <= 75 && botLevel < static_cast<int32>(sPlayerbotAIConfig.useFastGroundMountAtMinLevel))
+    if (ridingSkill <= 75 && botLevel < static_cast<int32>(MountLevels::FastGround()))
         return 59;
 
     // check if bot has master and if master is self
