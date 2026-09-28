@@ -133,7 +133,10 @@ int TacticBit(std::string const& tactic)
          : tactic == "AVBossForce" ? int(BGTactic::AVBossForce)
          : tactic == "AVCaptainHome" ? int(BGTactic::AVCaptainHome)
          : tactic == "ICGuardFix" ? int(BGTactic::ICGuardFix)
-         : tactic == "ICStayVehicle" ? int(BGTactic::ICStayVehicle) : -1;
+         : tactic == "ICStayVehicle" ? int(BGTactic::ICStayVehicle)
+         : tactic == "AoESquad2" ? int(BGTactic::AoESquad2)
+         : tactic == "AoESquad5" ? int(BGTactic::AoESquad5)
+         : tactic == "AoESquadAll" ? int(BGTactic::AoESquadAll) : -1;
 }
 
 char const* BGName(BattlegroundTypeId type)
@@ -268,6 +271,9 @@ bool GlobalSwitch(BGTactic tactic, TeamId team, BattlegroundTypeId type)
         case BGTactic::AVCaptainHome:
         case BGTactic::ICGuardFix:
         case BGTactic::ICStayVehicle:
+        case BGTactic::AoESquad2:
+        case BGTactic::AoESquad5:
+        case BGTactic::AoESquadAll:
             return false;  // arms only
     }
     return false;

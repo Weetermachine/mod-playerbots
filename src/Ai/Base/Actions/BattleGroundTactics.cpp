@@ -5,6 +5,7 @@
  */
 
 #include "BattleGroundTactics.h"
+#include "BGAoeSquad.h"
 #include "BGTacticArms.h"
 
 #include <algorithm>
@@ -1957,6 +1958,16 @@ bool BGTactics::selectObjective(bool reset)
 
     PositionMap& posMap = context->GetValue<PositionMap&>("position")->Get();
     PositionInfo pos = context->GetValue<PositionMap&>("position")->Get()["bg objective"];
+    // AoE squad (AV/IoC arms): while its choke is busy a member holds behind it, whatever its objective was
+    {
+        Position hold;
+        if (BGAoeSquad::Hold(botAI, bg, hold))
+        {
+            pos.Set(hold.GetPositionX(), hold.GetPositionY(), hold.GetPositionZ(), bot->GetMapId());
+            posMap["bg objective"] = pos;
+            return true;
+        }
+    }
     if (pos.isSet() && !reset)
         return false;
 

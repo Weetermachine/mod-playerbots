@@ -10,6 +10,7 @@
 #include <mutex>
 #include <unordered_map>
 
+#include "BGAoeSquad.h"
 #include "BGTacticArms.h"
 #include "BattleGroundTactics.h"
 
@@ -409,6 +410,8 @@ Unit* FindFocusTarget(PlayerbotAI* botAI)
 {
     Player* bot = botAI->GetBot();
     Battleground* bg = bot->GetBattleground();
+    if (Unit* pack = BGAoeSquad::Target(botAI))  // AoE squad (AV/IoC): the densest enemy pack in range
+        return pack;
     if (bg && BGTacticArms::IsOn(bg, bot->GetBgTeamId(), BGTactic::FinishKill) &&
         !BGTacticArms::IsOn(bg, bot->GetBgTeamId(), BGTactic::FocusFire) &&
         !BGTacticArms::IsOn(bg, bot->GetBgTeamId(), BGTactic::FocusPartial))

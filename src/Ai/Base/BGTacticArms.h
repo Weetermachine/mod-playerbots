@@ -66,6 +66,9 @@ enum class BGTactic : uint8
     AVCaptainHome = 46,  // AV: defenders skip the rush to the enemy captain
     ICGuardFix = 47,     // IoC: Alliance idle bots guard nodes not yet ours (stock checks the Horde state)
     ICStayVehicle = 48,  // IoC: bots do not leave a vehicle at random
+    AoESquad2 = 49,      // AV/IoC: 2 area-damage bots hold behind a busy choke and hit the densest pack (BGAoeSquad)
+    AoESquad5 = 50,      // AV/IoC: the same with 5
+    AoESquadAll = 51,    // AV/IoC: the same with every area-damage bot
 };
 
 // Per-game A/B arms. With AiPlayerbot.BGTactics.<BG>.Arms set (e.g.

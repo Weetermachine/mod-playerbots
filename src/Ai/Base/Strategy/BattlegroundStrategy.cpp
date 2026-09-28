@@ -53,6 +53,7 @@ void WarsongStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 
 void AlteracStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
+    triggers.push_back(new TriggerNode("focus target differs", { NextAction("focus fire", ACTION_RAID + 0.2f)}));  // AoE squad packs
     triggers.push_back(new TriggerNode("alliance no snowfall gy", { NextAction("bg move to objective", ACTION_EMERGENCY)}));
     triggers.push_back(new TriggerNode("timer bg", { NextAction("bg reset objective force", ACTION_EMERGENCY)}));
 }
@@ -90,6 +91,7 @@ void EyeStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 //TODO: Do Priorities
 void IsleStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
+    triggers.push_back(new TriggerNode("focus target differs", { NextAction("focus fire", ACTION_RAID + 0.2f)}));  // AoE squad packs
     triggers.push_back(new TriggerNode("bg active", { NextAction("bg check flag", ACTION_MOVE)}));
     triggers.push_back(new TriggerNode("timer", { NextAction("enter vehicle", ACTION_MOVE + 8.0f)}));
     triggers.push_back(new TriggerNode("random", { NextAction("leave vehicle", ACTION_MOVE + 7.0f)}));
