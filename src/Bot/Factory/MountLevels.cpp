@@ -11,6 +11,7 @@
 
 #include "Config.h"
 #include "DatabaseEnv.h"
+#include "QueryResult.h"
 #include "Log.h"
 #include "PlayerbotAIConfig.h"
 
