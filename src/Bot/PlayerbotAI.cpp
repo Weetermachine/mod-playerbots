@@ -3990,7 +3990,7 @@ static bool SiegeShot(Player* bot, AiObjectContext* context, uint32 spellId)
         return true;  // Hurl Boulder, Glaive Throw: aimed at the gate
     // Ram: no explicit target, it damages buildings just in front of the vehicle; cast at the gate (within 15 yd)
     Unit* base = bot->GetVehicleBase();
-    return !info->Targets && info->HasEffect(SPELL_EFFECT_WMO_DAMAGE) && base &&
+    return !info->Targets && info->HasEffect(SPELL_EFFECT_GAMEOBJECT_DAMAGE) && base &&
            base->GetExactDist2d(siege.x, siege.y) < 15.0f;
 }
 
