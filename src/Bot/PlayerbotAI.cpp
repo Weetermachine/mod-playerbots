@@ -5,6 +5,8 @@
 
 #include "PlayerbotAI.h"
 
+#include "BGCastLog.h"
+
 #include <cmath>
 #include <mutex>
 #include <sstream>
@@ -3827,6 +3829,7 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget)
 
     aiObjectContext->GetValue<LastSpellCast&>("last spell cast")->Get().Set(spellId, target->GetGUID(), time(nullptr));
 
+    BGCastLog::Cast(bot, spellInfo);
     aiObjectContext->GetValue<PositionMap&>("position")->Get()["random"].Reset();
 
     if (oldSel)
@@ -3956,6 +3959,7 @@ bool PlayerbotAI::CastSpell(uint32 spellId, float x, float y, float z, Item* ite
 
     // WaitForSpellCast(spell);
     aiObjectContext->GetValue<LastSpellCast&>("last spell cast")->Get().Set(spellId, bot->GetGUID(), time(nullptr));
+    BGCastLog::Cast(bot, spellInfo);
     aiObjectContext->GetValue<PositionMap&>("position")->Get()["random"].Reset();
 
     if (oldSel)

@@ -6,6 +6,8 @@
 
 #include "GenericTriggers.h"
 
+#include "BGCastLog.h"
+
 #include <string>
 
 #include "GenericBuffUtils.h"
@@ -253,7 +255,9 @@ bool AoeTrigger::IsActive()
         if (unit->GetDistance(current_target->GetPosition()) <= range)
             attackers_count++;
     }
-    return attackers_count >= amount;
+    bool const active = attackers_count >= amount;
+    BGCastLog::AoeCheck(bot, amount, active);
+    return active;
 }
 
 bool NoFoodTrigger::IsActive()
