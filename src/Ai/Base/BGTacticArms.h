@@ -76,6 +76,7 @@ enum class BGTactic : uint8
     ICSiegeEscort = 56,  // IoC: up to 5 bots escort each of our demolishers / siege engines
     AVGraveyards = 57,   // AV: attackers take the nearest capturable graveyard before towers
     HealerGuard = 58,    // any BG without the allocator: a melee bodyguard per healer
+    AVNoMines = 60,      // AV: nobody goes for the mines (the stock mine bot takes a normal job)
     EYSafeTower = 59,    // EotS: the carrier runs to the owned tower with the fewest enemies, not the nearest
 };
 

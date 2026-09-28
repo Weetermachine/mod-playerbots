@@ -2053,7 +2053,8 @@ bool BGTactics::selectObjective(bool reset)
 
             // --- Mine Capture (rarely works, needs some improvement) ---
             // AVMines: roles 0-4 (5 bots) instead of role 0 alone, which rarely beats the mine boss and his mobs
-            if (!BgObjective && enableMineCapture &&
+            // AVNoMines: nobody goes (the guides' advice: mines don't win AV)
+            if (!BgObjective && enableMineCapture && !BGTacticArms::IsOn(bg, team, BGTactic::AVNoMines) &&
                 (role == 0 || (role < 5 && BGTacticArms::IsOn(bg, team, BGTactic::AVMines))))
             {
                 BG_AV_OTHER_VALUES mineType = (team == TEAM_HORDE) ? AV_SOUTH_MINE : AV_NORTH_MINE;
