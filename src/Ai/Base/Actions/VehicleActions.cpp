@@ -8,6 +8,7 @@
 
 #include "BGTacticArms.h"
 #include "BattlegroundIC.h"
+#include "BattlegroundSA.h"
 #include "ItemVisitors.h"
 #include "ObjectDefines.h"
 #include "Playerbots.h"
@@ -53,7 +54,8 @@ bool EnterVehicleAction::Execute(Event event)
 
         // dont let them get in the cannons as they'll stay forever and do nothing useful
         // dont let them in catapult they cant use them at all
-        if (NPC_KEEP_CANNON == vehicleBase->GetEntry() || NPC_CATAPULT == vehicleBase->GetEntry())
+        if (NPC_KEEP_CANNON == vehicleBase->GetEntry() || NPC_CATAPULT == vehicleBase->GetEntry() ||
+            NPC_ANTI_PERSONNAL_CANNON == vehicleBase->GetEntry())
             continue;
 
         if (!vehicleBase->IsFriendlyTo(bot))

@@ -8,7 +8,7 @@
 // With AiPlayerbot.ExperimentHotReload = 1, playerbots.conf is checked every few seconds and, when it
 // changed, these keys are re-read (nothing else):
 //   AiPlayerbot.BGTactics.<WSG|AB|EY>.Arms, the per-faction BGTactics switches, and
-//   AiPlayerbot.RandomBotAutoJoinBG<WS|AB|AV|EY|IC>Count (0 drains a BG: running games finish, no new ones).
+//   AiPlayerbot.RandomBotAutoJoinBG<WS|AB|AV|EY|IC|SA>Count (0 drains a BG: running games finish, no new ones).
 // Running games keep their arm; new games use the new settings. The file is parsed here directly
 // instead of reloading ConfigMgr, so nothing else changes under running code.
 
@@ -81,6 +81,9 @@ private:
             {"AiPlayerbot.BGTactics.IC.Arms", [](std::string const& s) { BGTacticArms::SetArms(BATTLEGROUND_IC, s); }},
             {"AiPlayerbot.BGTactics.AV.Baseline", [](std::string const& s) { BGTacticArms::SetBaseline(BATTLEGROUND_AV, s); }},
             {"AiPlayerbot.BGTactics.IC.Baseline", [](std::string const& s) { BGTacticArms::SetBaseline(BATTLEGROUND_IC, s); }},
+            {"AiPlayerbot.BGTactics.SA.Arms", [](std::string const& s) { BGTacticArms::SetArms(BATTLEGROUND_SA, s); }},
+            {"AiPlayerbot.BGTactics.SA.Baseline", [](std::string const& s) { BGTacticArms::SetBaseline(BATTLEGROUND_SA, s); }},
+            {"AiPlayerbot.RandomBotAutoJoinBGSACount", count(c.randomBotAutoJoinBGSACount)},
             {"AiPlayerbot.BGTactics.WSG.FCEscort.Alliance", flag(c.wsgFCEscort[TEAM_ALLIANCE])},
             {"AiPlayerbot.BGTactics.WSG.FCEscort.Horde", flag(c.wsgFCEscort[TEAM_HORDE])},
             {"AiPlayerbot.BGTactics.WSG.FCChase.Alliance", flag(c.wsgFCChase[TEAM_ALLIANCE])},
@@ -117,10 +120,10 @@ private:
         }
 
         LOG_INFO("server",
-                 "Experiment reload: {} settings from {} (WSG arms \"{}\", AB arms \"{}\", auto-join WS {} AB {} AV {} EY {} IC {})",
+                 "Experiment reload: {} settings from {} (WSG arms \"{}\", AB arms \"{}\", auto-join WS {} AB {} AV {} EY {} IC {} SA {})",
                  applied, path, c.wsgTacticArms, c.abTacticArms, c.randomBotAutoJoinBGWSCount,
                  c.randomBotAutoJoinBGABCount, c.randomBotAutoJoinBGAVCount, c.randomBotAutoJoinBGEYCount,
-                 c.randomBotAutoJoinBGICCount);
+                 c.randomBotAutoJoinBGICCount, c.randomBotAutoJoinBGSACount);
     }
 
     uint32 _timer = 0;

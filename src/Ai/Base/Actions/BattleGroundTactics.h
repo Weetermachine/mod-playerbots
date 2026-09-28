@@ -159,6 +159,7 @@ private:
     bool useBuff();
     uint32 getPlayersInArea(TeamId teamId, Position point, float range, bool combat = true);
     bool IsLockedInsideKeep();
+    bool strandMove();
 };
 
 class ArenaTactics : public MovementAction

@@ -1369,11 +1369,13 @@ AiPlayerbot.RandomBotAutoJoinBGMinOnlinePct = 100
 # AiPlayerbot.RandomBotAutoJoinAVBrackets = 0,1,2,3
 # AiPlayerbot.RandomBotAutoJoinEYBrackets = 0,1,2
 # AiPlayerbot.RandomBotAutoJoinICBrackets = 0,1
+# AiPlayerbot.RandomBotAutoJoinSABrackets = 0,1
 AiPlayerbot.RandomBotAutoJoinWSBrackets = 7
 AiPlayerbot.RandomBotAutoJoinABBrackets = 6
 AiPlayerbot.RandomBotAutoJoinAVBrackets = 3
 AiPlayerbot.RandomBotAutoJoinEYBrackets = 2
 AiPlayerbot.RandomBotAutoJoinICBrackets = 1
+AiPlayerbot.RandomBotAutoJoinSABrackets = 1
 
 # Battlegrounds battles count (per bracket):
 AiPlayerbot.RandomBotAutoJoinBGWSCount = 1
@@ -1381,6 +1383,7 @@ AiPlayerbot.RandomBotAutoJoinBGABCount = 1
 AiPlayerbot.RandomBotAutoJoinBGAVCount = 0
 AiPlayerbot.RandomBotAutoJoinBGEYCount = 1
 AiPlayerbot.RandomBotAutoJoinBGICCount = 0
+AiPlayerbot.RandomBotAutoJoinBGSACount = 0
 
 # Arena bracket (single bracket only):
 # Custom code changes are required for lower-level arena brackets to function properly.

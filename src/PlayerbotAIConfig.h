@@ -249,12 +249,14 @@ public:
     std::string abTacticArms;
 
     std::string randomBotAutoJoinICBrackets;
+    std::string randomBotAutoJoinSABrackets;
     std::string randomBotAutoJoinEYBrackets;
     std::string randomBotAutoJoinAVBrackets;
     std::string randomBotAutoJoinABBrackets;
     std::string randomBotAutoJoinWSBrackets;
 
     uint32 randomBotAutoJoinBGICCount;
+    uint32 randomBotAutoJoinBGSACount;
     uint32 randomBotAutoJoinBGEYCount;
     uint32 randomBotAutoJoinBGAVCount;
     uint32 randomBotAutoJoinBGABCount;

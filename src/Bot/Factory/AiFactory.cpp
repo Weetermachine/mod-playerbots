@@ -6,6 +6,8 @@
 
 #include "AiFactory.h"
 
+#include "BGTacticArms.h"
+
 #include "BattlegroundMgr.h"
 #include "DKAiObjectContext.h"
 #include "DruidAiObjectContext.h"
@@ -480,6 +482,10 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
         if (bgType == BATTLEGROUND_IC)
             engine->addStrategy("isle", false);
 
+        if (bgType == BATTLEGROUND_SA &&
+            BGTacticArms::IsOn(player->GetBattleground(), player->GetTeamId(), BGTactic::SATactics))
+            engine->addStrategy("strand", false);
+
         if (player->InArena())
         {
             engine->addStrategy("arena", false);
@@ -685,7 +691,9 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
         if (bgType == BATTLEGROUND_RB)
             bgType = player->GetBattleground()->GetBgTypeID(true);
 
-        if ((bgType <= BATTLEGROUND_EY || bgType == BATTLEGROUND_IC) &&
+        bool const strand = bgType == BATTLEGROUND_SA &&
+                            BGTacticArms::IsOn(player->GetBattleground(), player->GetTeamId(), BGTactic::SATactics);
+        if ((bgType <= BATTLEGROUND_EY || bgType == BATTLEGROUND_IC || strand) &&
             !player->InArena())  // do not add for not supported bg or arena
             nonCombatEngine->addStrategy("battleground", false);
 
@@ -703,6 +711,9 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
 
         if (bgType == BATTLEGROUND_IC)
             nonCombatEngine->addStrategy("isle", false);
+
+        if (strand)
+            nonCombatEngine->addStrategy("strand", false);
 
         if (player->InArena())
         {

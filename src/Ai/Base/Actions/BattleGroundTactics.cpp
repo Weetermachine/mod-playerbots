@@ -6,6 +6,7 @@
 
 #include "BattleGroundTactics.h"
 #include "BGAoeSquad.h"
+#include "BGStrand.h"
 #include "BGBossRaid.h"
 #include "BGDisrupt.h"
 #include "BGHealerGuard.h"
@@ -1684,6 +1685,15 @@ bool BGTactics::Execute(Event /*event*/)
             vFlagIds = &vFlagsIC;
             break;
         }
+        case BATTLEGROUND_SA:
+        {
+            if (!BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SATactics))
+                return false;
+            static std::vector<BattleBotPath*> const noPaths;
+            vPaths = &noPaths;
+            vFlagIds = nullptr;
+            break;
+        }
         default:
             // can't use this in this BG - no vPaths/vFlagIds (will crash server)
             botAI->ResetStrategies();
@@ -1729,6 +1739,9 @@ bool BGTactics::Execute(Event /*event*/)
     if (getName() == "back off")
         return backOff();
 
+    if (getName() == "move to objective" && bgType == BATTLEGROUND_SA)
+        return strandMove();
+
     if (getName() == "move to objective")
     {
         tripSample();
@@ -1766,7 +1779,8 @@ bool BGTactics::Execute(Event /*event*/)
         // there with enemies around; its weapons still fire on the way (the vehicle attacks outrank this action).
         // Stock stopped whenever an enemy player was in range, so siege engines rarely reached a contested gate.
         bool const siegeDrive = bot->GetVehicle() && botAI->IsInVehicle(true) &&
-                                BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::ICSiegeFix) &&
+                                (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::ICSiegeFix) ||
+                                 BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SATactics)) &&
                                 context->GetValue<PositionMap&>("position")->Get()["bg siege"].isSet();
         if (inCombat && !siegeDrive && !PlayerHasFlag::IsCapturingFlag(bot))
         {
@@ -1833,6 +1847,56 @@ bool BGTactics::Execute(Event /*event*/)
         return resetObjective();
 
     return false;
+}
+
+bool BGTactics::strandMove()
+{
+    Battleground* bg = bot->GetBattleground();
+    if (bg->GetStatus() != STATUS_IN_PROGRESS || bot->IsNonMeleeSpellCast(false))
+        return false;
+    if (BGStrand::GoAshore(bot, bg))
+        return true;
+
+    BGStrand::Order order;
+    if (!BGStrand::Objective(bot, bg, order))
+        return false;
+    PositionMap& posMap = context->GetValue<PositionMap&>("position")->Get();
+    PositionInfo siege = posMap["bg siege"];
+    if (order.hasSiege)
+        siege.Set(order.siege.GetPositionX(), order.siege.GetPositionY(), order.siege.GetPositionZ(), bot->GetMapId());
+    else
+        siege.Reset();
+    posMap["bg siege"] = siege;
+    PositionInfo pos = posMap["bg objective"];
+    pos.Set(order.move.GetPositionX(), order.move.GetPositionY(), order.move.GetPositionZ(), bot->GetMapId());
+    posMap["bg objective"] = pos;
+
+    if (order.use && bot->IsWithinDistInMap(order.use, INTERACTION_DISTANCE))
+    {
+        if (bot->IsMounted())
+            bot->RemoveAurasByType(SPELL_AURA_MOUNTED);
+        if (bot->IsInDisallowedMountForm())
+            bot->RemoveAurasByType(SPELL_AURA_MOD_SHAPESHIFT);
+        SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(SPELL_CAPTURE_BANNER);
+        if (!spellInfo)
+            return false;
+        Spell* spell = new Spell(bot, spellInfo, TRIGGERED_NONE);
+        spell->m_targets.SetGOTarget(order.use);
+        spell->prepare(&spell->m_targets);
+        botAI->WaitForSpellCast(spell);
+        return true;
+    }
+
+    Unit* mover = bot->GetVehicleBase() ? bot->GetVehicleBase() : bot;
+    if (mover->isMoving() || mover->GetDistance(order.move) < 4.0f)
+        return false;
+    // drivers keep driving with enemies around (their weapons fire on the way), the others fight
+    if (!bot->GetVehicle() && bot->IsInCombat())
+        return false;
+    if (!bot->GetVehicle())
+        if (int const res = moveDirectRoute())
+            return res > 0;
+    return MoveNear(bot->GetMapId(), order.move.GetPositionX(), order.move.GetPositionY(), order.move.GetPositionZ(), 1.5f);
 }
 
 bool BGTactics::moveToStart(bool force)
@@ -2018,6 +2082,8 @@ bool BGTactics::selectObjective(bool reset)
     BattlegroundTypeId bgType = bg->GetBgTypeID();
     if (bgType == BATTLEGROUND_RB)
         bgType = bg->GetBgTypeID(true);
+    if (bgType == BATTLEGROUND_SA)
+        return false;  // strandMove picks the objective every time
     switch (bgType)
     {
         case BATTLEGROUND_AV:

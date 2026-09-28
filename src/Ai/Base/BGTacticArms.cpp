@@ -39,6 +39,8 @@ BattlegroundTypeId RealType(Battleground* bg)
     return type == BATTLEGROUND_RB ? bg->GetBgTypeID(true) : type;
 }
 
+char const* BGName(BattlegroundTypeId type);
+
 std::string const& ArmsConfig(BattlegroundTypeId type)
 {
     static std::string const none;
@@ -51,11 +53,12 @@ std::string const& ArmsConfig(BattlegroundTypeId type)
         case BATTLEGROUND_EY:
         case BATTLEGROUND_AV:
         case BATTLEGROUND_IC:
+        case BATTLEGROUND_SA:
         {
             auto itr = localArms.find(type);
             if (itr == localArms.end())
             {
-                char const* key = type == BATTLEGROUND_EY ? "EY" : type == BATTLEGROUND_AV ? "AV" : "IC";
+                char const* key = BGName(type);
                 itr = localArms.emplace(type, sConfigMgr->GetOption<std::string>(
                                                   std::string("AiPlayerbot.BGTactics.") + key + ".Arms", "")).first;
             }
@@ -165,13 +168,15 @@ int TacticBit(std::string const& tactic)
          : tactic == "AVFixes" ? int(BGTactic::AVFixes)
          : tactic == "StockEscort" ? int(BGTactic::StockEscort)
          : tactic == "ICSiegeFix" ? int(BGTactic::ICSiegeFix)
-         : tactic == "EYRouteFix" ? int(BGTactic::EYRouteFix) : -1;
+         : tactic == "EYRouteFix" ? int(BGTactic::EYRouteFix)
+         : tactic == "SATactics" ? int(BGTactic::SATactics) : -1;
 }
 
 char const* BGName(BattlegroundTypeId type)
 {
     return type == BATTLEGROUND_WS ? "WSG" : type == BATTLEGROUND_AB ? "AB" : type == BATTLEGROUND_EY ? "EY"
-         : type == BATTLEGROUND_AV ? "AV" : type == BATTLEGROUND_IC ? "IC" : nullptr;
+         : type == BATTLEGROUND_AV ? "AV" : type == BATTLEGROUND_IC ? "IC"
+         : type == BATTLEGROUND_SA ? "SA" : nullptr;
 }
 
 // Baseline tactics of a BG type as a mask (both teams). Needs armsLock.

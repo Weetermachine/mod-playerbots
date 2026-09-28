@@ -3980,7 +3980,8 @@ bool PlayerbotAI::CastSpell(uint32 spellId, float x, float y, float z, Item* ite
 static bool SiegeShot(Player* bot, AiObjectContext* context, uint32 spellId)
 {
     Battleground* bg = bot->GetBattleground();
-    if (!bg || !bot->GetVehicle() || !BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::ICSiegeFix))
+    if (!bg || !bot->GetVehicle() || !(BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::ICSiegeFix) ||
+                                        BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SATactics)))
         return false;
     SpellInfo const* info = sSpellMgr->GetSpellInfo(spellId);
     PositionInfo siege = context->GetValue<PositionMap&>("position")->Get()["bg siege"];
