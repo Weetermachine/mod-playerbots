@@ -2000,6 +2000,13 @@ bool BGTactics::selectObjective(bool reset)
             AVBotStrategy strategy = (team == TEAM_ALLIANCE) ? strategyAlliance : strategyHorde;
             AVBotStrategy enemyStrategy = (team == TEAM_ALLIANCE) ? strategyHorde : strategyAlliance;
 
+            // Allocator tactic: the team plan decides (floaters keep the stock picks)
+            if (BGTacticArms::IsOn(bg, team, BGTactic::Allocator) && allocatorObjective(pos))
+            {
+                posMap["bg objective"] = pos;
+                return true;
+            }
+
             uint8 defendersProhab = 4;
             bool enableMineCapture = true;
             bool enableSnowfall = true;
@@ -3388,6 +3395,13 @@ bool BGTactics::selectObjective(bool reset)
             bool controlsVehicle = botAI->IsInVehicle(true);
             uint32 vehicleId = inVehicle ? bot->GetVehicleBase()->GetEntry() : 0;
 
+            // Allocator tactic: the team plan decides for bots on foot (vehicle crews and floaters keep the stock picks)
+            if (!inVehicle && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::Allocator) && allocatorObjective(pos))
+            {
+                posMap["bg objective"] = pos;
+                return true;
+            }
+
             // ICSiegeEscort: a bot on foot within 150 yd of one of our driven demolishers / siege engines that has
             // fewer than 5 of us within 15 yd walks 6 yd behind it (it fights whatever attacks there)
             if (!inVehicle && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::ICSiegeEscort))
@@ -4108,10 +4122,10 @@ bool AllocIsStation(uint32 key)
 
 std::mutex allocLock;
 std::unordered_map<uint32, AllocBg> allocPlans;  // by battleground instance id
-std::atomic<uint32> allocStats[3][4];            // [WS, AB, EY][plans, bot assignments, changes, emergency slots]
+std::atomic<uint32> allocStats[5][4];            // [WS, AB, EY, AV, IC][plans, bot assignments, changes, emergency slots]
 // why slots changed: died (dead now), slot gone, pulled to an emergency, to the stock picks, reshuffled
 enum AllocWhy : uint32 { AW_DIED, AW_GONE, AW_PULLED, AW_STOCK, AW_RESHUFFLE, AW_N };
-std::atomic<uint32> allocWhy[3][AW_N];
+std::atomic<uint32> allocWhy[5][AW_N];
 std::atomic<uint32> allocStatsLogMs{0};
 
 void AllocLogStats()
@@ -4125,7 +4139,7 @@ void AllocLogStats()
     }
     if (getMSTimeDiff(last, now) <= 5 * MINUTE * IN_MILLISECONDS || !allocStatsLogMs.compare_exchange_strong(last, now))
         return;
-    static char const* const names[3] = {"WS", "AB", "EY"};
+    static char const* const names[5] = {"WS", "AB", "EY", "AV", "IC"};
     for (uint32 b = 0; b < 3; ++b)
         if (uint32 const cp = comebackPlans[b].exchange(0))
             LOG_INFO("module", "Comeback {} (5 min): plans {}, behind {} ({:.0f}%)", names[b], cp,
@@ -4140,7 +4154,7 @@ void AllocLogStats()
         if (uint32 const r = eyRetakeUsed.exchange(0))
             LOG_INFO("module", "EYRetake (5 min): near-tower retake picks {}", r);
     }
-    for (uint32 b = 0; b < 3; ++b)
+    for (uint32 b = 0; b < 5; ++b)
     {
         uint32 v[4];
         for (uint32 k = 0; k < 4; ++k)
@@ -4199,8 +4213,8 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
             ourFC = p;
             continue;  // tier 1: the stock carrier code
         }
-        if (!GET_PLAYERBOT_AI(p))
-            continue;  // real players plan for themselves
+        if (!GET_PLAYERBOT_AI(p) || p->GetVehicle())
+            continue;  // real players plan for themselves; vehicle crews keep the stock vehicle code
         members.push_back({p, p->GetPositionX(), p->GetPositionY(), p->IsAlive(), PlayerbotAI::IsHeal(p), p->getClass()});
     }
     auto enemiesNear = [&](Position const& p, float r)
@@ -4212,7 +4226,8 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
         return n;
     };
 
-    uint32 const b = type == BATTLEGROUND_WS ? 0 : type == BATTLEGROUND_AB ? 1 : 2;
+    uint32 const b = type == BATTLEGROUND_WS ? 0 : type == BATTLEGROUND_AB ? 1 : type == BATTLEGROUND_EY ? 2
+                   : type == BATTLEGROUND_AV ? 3 : 4;
     std::vector<AllocSlot> slots;
     std::vector<std::pair<uint32, Position>> targets;  // attackable nodes: (index, position)
     bool const cap3 = type == BATTLEGROUND_AB && BGTacticArms::IsOn(bg, team, BGTactic::AB3Cap);
@@ -4546,6 +4561,88 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
             }
         }
     }
+    else if (type == BATTLEGROUND_AV)
+    {
+        // AV: a node of ours the enemy assaulted is retaken in force (their bots there + 2, 3-6); enemies at a node we
+        // hold (3+) raise a defense; a node we assaulted is held by 3 until it flips or burns (stock attackers drop it:
+        // 98/85/65 re-takes at Iceblood/Tower Point/Icewing in 121 games); 5+ enemies at our general bring up to 10
+        // back; two attack groups (10 and 8) on the attackable towers and graveyards (and Snowfall) nearest the team.
+        // The rest (captain, the enemy general, mines) keep the stock picks.
+        BattlegroundAV* av = static_cast<BattlegroundAV*>(bg);
+        targetEnemyRange = 50.0f;
+        std::vector<std::pair<uint8, uint32>> nodes = team == TEAM_HORDE ? AV_AttackObjectives_Horde : AV_AttackObjectives_Alliance;
+        auto const& defendList = team == TEAM_HORDE ? AV_DefendObjectives_Horde : AV_DefendObjectives_Alliance;
+        nodes.insert(nodes.end(), defendList.begin(), defendList.end());
+        nodes.push_back({BG_AV_NODES_SNOWFALL_GRAVE, BG_AV_OBJECT_FLAG_N_SNOWFALL_GRAVE});
+        for (auto const& [nodeId, goId] : nodes)
+        {
+            BG_AV_NodeInfo const& node = av->GetAVNodeInfo(nodeId);
+            GameObject* go = bg->GetBGObject(goId);
+            if (!go || node.State == POINT_DESTROYED)
+                continue;
+            Position const p = go->GetPosition();
+            uint32 const near = enemiesNear(p, 50.0f);
+            if (node.State == POINT_ASSAULTED && node.OwnerId == team)
+                slots.push_back({AllocKey(AK_HOLD, nodeId), 3, p, 3, 6.0f});  // ours soon: hold it
+            else if (node.State == POINT_ASSAULTED && node.TotalOwnerId == team)
+                slots.push_back({AllocKey(AK_RECOVER, nodeId), 2, p, uint8(std::clamp<uint32>(near + 2, 3, 6)), 6.0f});
+            else if (node.TotalOwnerId == team)
+            {
+                uint32 const dk = AllocKey(AK_DEFEND, nodeId);
+                if (near >= 3)
+                    plan.defendUntil[dk] = now + 20 * IN_MILLISECONDS;
+                if (near >= 3 || (plan.defendUntil.count(dk) && plan.defendUntil[dk] > now))
+                    slots.push_back({dk, 2, p, uint8(std::min<uint32>(std::max<uint32>(near, 1) + 1, 5)), 8.0f});
+            }
+            else
+                targets.push_back({nodeId, p});  // theirs, neutral, or their banner on a neutral node
+        }
+        if (Creature* general = bg->GetBGCreature(team == TEAM_ALLIANCE ? AV_CPLACE_A_BOSS : AV_CPLACE_H_BOSS))
+            if (general->IsAlive())
+                if (uint32 const near = enemiesNear(general->GetPosition(), 50.0f); near >= 5)
+                    slots.push_back({AllocKey(AK_DEFEND, 200), 2, general->GetPosition(),
+                                     uint8(std::min<uint32>(near + 2, 10)), 8.0f});
+    }
+    else if (type == BATTLEGROUND_IC)
+    {
+        // IoC: each base we hold keeps a guard (the Workshop 2); enemies at one (2+) raise a defense; our banner up
+        // is held by 3 until it caps; an enemy banner up is contested in force (their bots + 2, 3-6); two attack
+        // groups (10 and 8) on the bases we don't hold nearest the team. Vehicle crews and the rest keep the stock
+        // picks (siege, keep, gates).
+        BattlegroundIC* ic = static_cast<BattlegroundIC*>(bg);
+        targetEnemyRange = 50.0f;
+        static std::pair<uint32, uint32> const icNodes[] = {
+            {NODE_TYPE_REFINERY, BG_IC_GO_REFINERY_BANNER}, {NODE_TYPE_QUARRY, BG_IC_GO_QUARRY_BANNER},
+            {NODE_TYPE_DOCKS, BG_IC_GO_DOCKS_BANNER},       {NODE_TYPE_HANGAR, BG_IC_GO_HANGAR_BANNER},
+            {NODE_TYPE_WORKSHOP, BG_IC_GO_WORKSHOP_BANNER}};
+        uint32 const ours = team == TEAM_ALLIANCE ? NODE_STATE_CONTROLLED_A : NODE_STATE_CONTROLLED_H;
+        uint32 const ourBanner = team == TEAM_ALLIANCE ? NODE_STATE_CONFLICT_A : NODE_STATE_CONFLICT_H;
+        uint32 const theirBanner = team == TEAM_ALLIANCE ? NODE_STATE_CONFLICT_H : NODE_STATE_CONFLICT_A;
+        for (auto const& [nodeType, goId] : icNodes)
+        {
+            GameObject* go = bg->GetBGObject(goId);
+            if (!go)
+                continue;
+            Position const p = go->GetPosition();
+            uint32 const st = ic->GetICNodePoint(nodeType).nodeState;
+            uint32 const near = enemiesNear(p, 50.0f);
+            if (st == ours)
+            {
+                slots.push_back({AllocKey(AK_GUARD, nodeType), 3, p, uint8(nodeType == NODE_TYPE_WORKSHOP ? 2 : 1), 8.0f});
+                uint32 const dk = AllocKey(AK_DEFEND, nodeType);
+                if (near >= 2)
+                    plan.defendUntil[dk] = now + 20 * IN_MILLISECONDS;
+                if (near >= 2 || (plan.defendUntil.count(dk) && plan.defendUntil[dk] > now))
+                    slots.push_back({dk, 2, p, uint8(std::min<uint32>(std::max<uint32>(near, 1) + 1, 6)), 8.0f});
+            }
+            else if (st == ourBanner)
+                slots.push_back({AllocKey(AK_HOLD, nodeType), 3, p, 3, 6.0f});
+            else if (st == theirBanner)
+                slots.push_back({AllocKey(AK_RECOVER, nodeType), 2, p, uint8(std::clamp<uint32>(near + 2, 3, 6)), 6.0f});
+            else
+                targets.push_back({nodeType, p});
+        }
+    }
     else  // WSG
     {
         BattlegroundWS* ws = static_cast<BattlegroundWS*>(bg);
@@ -4668,8 +4765,9 @@ void AllocCompute(Battleground* bg, BattlegroundTypeId type, TeamId team, AllocT
             if ((s.key >> 8) == AK_GUARD)
                 ++heldEY;
         bool const oneGroup = type == BATTLEGROUND_AB && BGTacticArms::IsOn(bg, team, BGTactic::AllocOneGroup);
-        uint8 first = oneGroup ? 7 : 5;
-        uint8 second = oneGroup ? 0 : type == BATTLEGROUND_AB ? 4 : heldEY <= 1 ? 3 : 0;
+        bool const bigMap = type == BATTLEGROUND_AV || type == BATTLEGROUND_IC;
+        uint8 first = oneGroup ? 7 : bigMap ? 10 : 5;
+        uint8 second = oneGroup ? 0 : bigMap ? 8 : type == BATTLEGROUND_AB ? 4 : heldEY <= 1 ? 3 : 0;
         if (behind && type == BATTLEGROUND_AB)
         {
             first = 6;
@@ -4830,7 +4928,8 @@ bool BGTactics::allocatorObjective(PositionInfo& out)
     BattlegroundTypeId type = bg->GetBgTypeID();
     if (type == BATTLEGROUND_RB)
         type = bg->GetBgTypeID(true);
-    if (type != BATTLEGROUND_WS && type != BATTLEGROUND_AB && type != BATTLEGROUND_EY)
+    if (type != BATTLEGROUND_WS && type != BATTLEGROUND_AB && type != BATTLEGROUND_EY && type != BATTLEGROUND_AV &&
+        type != BATTLEGROUND_IC)
         return false;
     TeamId const team = bot->GetTeamId();
     if (team != TEAM_ALLIANCE && team != TEAM_HORDE)
