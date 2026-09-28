@@ -1801,9 +1801,12 @@ bool BGTactics::Execute(Event /*event*/)
             if (int const res = moveDirectRoute())
                 return res > 0;
 
-        if (!moveToObjective(false))
-            if (!selectObjectiveWp(*vPaths))
-                return moveToObjective(true);
+        if (!moveToObjective(false) && !selectObjectiveWp(*vPaths))
+            return moveToObjective(true);
+
+        // EYRouteFix: stock falls through and replaces this move with a random route at any endpoint within 25 yd
+        if (bgType == BATTLEGROUND_EY && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::EYRouteFix))
+            return true;
 
         // bot with flag should only move to objective
         if (bot->HasAura(BG_WS_SPELL_WARSONG_FLAG) || bot->HasAura(BG_WS_SPELL_SILVERWING_FLAG) ||
