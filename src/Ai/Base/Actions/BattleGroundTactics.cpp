@@ -1762,7 +1762,13 @@ bool BGTactics::Execute(Event /*event*/)
 
         // NOTE: can't use IsInCombat() when in vehicle as player is stuck in combat forever while in vehicle (ac bug?)
         bool inCombat = bot->GetVehicle() ? (bool)AI_VALUE(Unit*, "enemy player target") : bot->IsInCombat();
-        if (inCombat && !PlayerHasFlag::IsCapturingFlag(bot))
+        // ICSiegeFix: a vehicle driver with a siege position (the gate, or the spot to shell it from) keeps driving
+        // there with enemies around; its weapons still fire on the way (the vehicle attacks outrank this action).
+        // Stock stopped whenever an enemy player was in range, so siege engines rarely reached a contested gate.
+        bool const siegeDrive = bot->GetVehicle() && botAI->IsInVehicle(true) &&
+                                BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::ICSiegeFix) &&
+                                context->GetValue<PositionMap&>("position")->Get()["bg siege"].isSet();
+        if (inCombat && !siegeDrive && !PlayerHasFlag::IsCapturingFlag(bot))
         {
             // bot->GetMotionMaster()->MovementExpired();
             return false;
