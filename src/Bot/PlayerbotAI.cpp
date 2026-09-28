@@ -3983,7 +3983,7 @@ static bool SiegeShot(Player* bot, AiObjectContext* context, uint32 spellId)
     if (!bg || !bot->GetVehicle() || !BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::ICSiegeFix))
         return false;
     SpellInfo const* info = sSpellMgr->GetSpellInfo(spellId);
-    PositionInfo const siege = context->GetValue<PositionMap&>("position")->Get()["bg siege"];
+    PositionInfo siege = context->GetValue<PositionMap&>("position")->Get()["bg siege"];
     if (!info || !siege.isSet())
         return false;
     if (info->Targets & TARGET_FLAG_DEST_LOCATION)
