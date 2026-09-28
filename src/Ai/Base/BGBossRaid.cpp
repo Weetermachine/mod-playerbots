@@ -121,7 +121,10 @@ void Build(Battleground* bg, TeamId team, Raid& r, Creature* boss, Position cons
     switch (r.phase)
     {
         case GATHER:
-            if (gathered >= 20)
+            if (!r.phaseMs)
+                r.phaseMs = now;
+            // 12 at the wait point (20 was reached in only ~5% of stock games), or 5+ after 90 s of gathering
+            if (gathered >= 12 || (gathered >= 5 && getMSTimeDiff(r.phaseMs, now) > 90 * IN_MILLISECONDS))
             {
                 r.phase = tanks.empty() ? ENGAGE : PULL;  // no tank: all in together, at least as a group
                 r.phaseMs = now;

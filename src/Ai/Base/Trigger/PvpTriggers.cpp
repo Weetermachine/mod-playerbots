@@ -329,7 +329,20 @@ bool TeamFlagCarrierNear::IsActive()
     // ~30% of all carries end with the carrier dying there, more than while running the flag.
     bool const v2 = BGTacticArms::IsOn(bot->GetBattleground(), bot->GetBgTeamId(), BGTactic::FCEscort2);
     if (!v2 && !BGTacticArms::IsOn(bot->GetBattleground(), bot->GetBgTeamId(), BGTactic::FCEscort))
-        return false;
+    {
+        // StockEscort: the upstream rule for a team without an escort arm: every bot within 200 yd protects our
+        // carrier, except in WSG while both flags are away
+        if (!BGTacticArms::IsOn(bot->GetBattleground(), bot->GetBgTeamId(), BGTactic::StockEscort))
+            return false;
+        if (bot->GetBattlegroundTypeId() == BATTLEGROUND_WS)
+            if (BattlegroundWS* bg = dynamic_cast<BattlegroundWS*>(bot->GetBattleground()))
+                if (bg->GetFlagState(TEAM_ALLIANCE) != BG_WS_FLAG_STATE_ON_BASE &&
+                    bg->GetFlagState(TEAM_HORDE) != BG_WS_FLAG_STATE_ON_BASE)
+                    return false;
+        Unit* carrier = AI_VALUE(Unit*, "team flag carrier");
+        return carrier && ServerFacade::instance().IsDistanceLessOrEqualThan(
+                              ServerFacade::instance().GetDistance2d(bot, carrier), 200.f);
+    }
 
     uint32 role = AI_VALUE(uint32, "bg role");
     if (role < 6)

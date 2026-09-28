@@ -1958,6 +1958,19 @@ static float EYGroundZ(Player* bot, float x, float y, float z, bool fix)
     return h > INVALID_HEIGHT ? h : z;
 }
 
+// AVBossForce: the team has waited at the boss wait point for 90 s (since its first bot got there this push)
+static bool BossForceWaitedOut(Battleground* bg, TeamId team)
+{
+    static std::mutex lock;
+    static std::map<std::pair<uint32, uint32>, uint32> since;  // (instance, team) -> first wait this push
+    std::lock_guard<std::mutex> guard(lock);
+    uint32 const now = getMSTime();
+    uint32& t = since[{bg->GetInstanceID(), uint32(team)}];
+    if (!t || getMSTimeDiff(t, now) > 150 * IN_MILLISECONDS)  // a new push (the last one ended 60 s+ ago)
+        t = now;
+    return getMSTimeDiff(t, now) > 90 * IN_MILLISECONDS;
+}
+
 // GroundZFix: the stock objective code kept a failed height lookup (writing an invalid z) and dropped a good one
 static bool GroundOk(Battleground* bg, Player* bot, float groundZ)
 {
@@ -2341,14 +2354,16 @@ bool BGTactics::selectObjective(bool reset)
                             }
                             else
                             {
-                                // AVBossForce: the general only with 20+ of us near him or his last graveyard ours,
-                                // as the boss rule above; until then gather at the wait point (stock sends everyone
-                                // in a trickle: 1-4 attackers half the time, 36-51 deaths per game at the generals)
+                                // AVBossForce (v2): gather at the wait point until 12 of us are within 50 yd of it
+                                // (or his last graveyard is ours, or the team has waited 90 s). v1 counted 20 within
+                                // 200 yd of the general, which takes in his base's towers: the gate opened as soon as
+                                // the team pushed them (only 10 of 199 games ever had 20 at the wait point).
                                 uint8 const lastGY =
                                     (team == TEAM_HORDE) ? BG_AV_NODES_FIRSTAID_STATION : BG_AV_NODES_FROSTWOLF_HUT;
                                 if (BGTacticArms::IsOn(bg, team, BGTactic::AVBossForce) &&
                                     av->GetAVNodeInfo(lastGY).OwnerId != team &&
-                                    getPlayersInArea(team, boss->GetPosition(), 200.0f, false) < 20)
+                                    getPlayersInArea(team, waitPos, 50.0f, false) < 12 &&
+                                    !BossForceWaitedOut(bg, team))
                                     return true;  // the wait point set above
                                 BgObjective = boss;
                             }

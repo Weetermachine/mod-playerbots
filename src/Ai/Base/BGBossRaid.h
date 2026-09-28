@@ -16,7 +16,7 @@ struct Position;
 // Raid-boss treatment for the AV generals (arm BossRaid). Stock bots walk into the general whenever they have
 // nothing else to do and die in waves (median 13-22 deaths 1-2 s apart; one game fed him 354 in a row). With the
 // arm, a bot heading for the enemy general:
-//   gather  waits at the boss wait point until 20+ of its team are there (or near the general);
+//   gather  waits at the boss wait point until 12+ of its team are there (or 5+ after 90 s);
 //   pull    up to 2 tank-spec bots go in first (tank 1 on the general, tank 2 on his guards), the rest hold;
 //   engage  after 5 s, or once the general is hitting a tank: damage dealers kill the guards first, then the general;
 //           up to 3 healers are assigned to the tanks and stand 18 yd back.
