@@ -53,7 +53,36 @@
 std::atomic<uint32> comebackBehind[3], comebackPlans[3];
 // Batch 1 tactics, plans that used them (5 min): intercept, escort healer, standoff break, reinforce, retake
 std::atomic<uint32> batchUsed[5];
-std::atomic<uint32> eyRetakeUsed{0};  // EYRetake: objective picks sending a bot to retake a near tower
+std::atomic<uint32> eyRetakeUsed{0};
+// IoC guard step (the last "guard point that's not fully capped" fallback), per 5 min. Rows: Alliance stock, Alliance
+// with ICGuardFix, Horde. Columns: objective picks, reached the guard step, went to a node its team fully holds, to one
+// the enemy fully holds, to one being captured or neutral, no node (fell through to the vehicle guard spot).
+std::atomic<uint32> icGuard[3][6];
+std::atomic<uint32> icGuardLogMs{0};
+void IcGuardLog()
+{
+    uint32 const now = getMSTime();
+    uint32 last = icGuardLogMs.load();
+    if (!last)
+    {
+        icGuardLogMs.compare_exchange_strong(last, now);
+        return;
+    }
+    if (getMSTimeDiff(last, now) <= 5 * MINUTE * IN_MILLISECONDS || !icGuardLogMs.compare_exchange_strong(last, now))
+        return;
+    static char const* const rows[3] = {"Alliance stock", "Alliance fixed", "Horde"};
+    for (uint32 r = 0; r < 3; ++r)
+    {
+        uint32 v[6];
+        for (uint32 k = 0; k < 6; ++k)
+            v[k] = icGuard[r][k].exchange(0);
+        if (!v[0])
+            continue;
+        LOG_INFO("module", "IoC guard step {} (5 min): objective picks {}, reached the guard step {} ({:.1f}%): to a node "
+                 "we hold {}, to one they hold {}, to one being captured/neutral {}, none {}",
+                 rows[r], v[0], v[1], 100.0 * v[1] / v[0], v[2], v[3], v[4], v[5]);
+    }
+}  // EYRetake: objective picks sending a bot to retake a near tower
 namespace
 {
 void AllocLogStats();
@@ -3265,6 +3294,19 @@ bool BGTactics::selectObjective(bool reset)
         case BATTLEGROUND_IC:
         {
             BattlegroundIC* isleOfConquestBG = (BattlegroundIC*)bg;
+            uint32 const icRow = bot->GetTeamId() == TEAM_HORDE ? 2
+                               : BGTacticArms::IsOn(bg, TEAM_ALLIANCE, BGTactic::ICGuardFix) ? 1 : 0;
+            ++icGuard[icRow][0];
+            IcGuardLog();
+            // classify a guard-step pick by who holds the node
+            auto icGuardPick = [&](uint32 nodeType)
+            {
+                uint32 const st = isleOfConquestBG->GetICNodePoint(nodeType).nodeState;
+                bool const horde = bot->GetTeamId() == TEAM_HORDE;
+                uint32 const ours = horde ? NODE_STATE_CONTROLLED_H : NODE_STATE_CONTROLLED_A;
+                uint32 const theirs = horde ? NODE_STATE_CONTROLLED_A : NODE_STATE_CONTROLLED_H;
+                ++icGuard[icRow][st == ours ? 2 : st == theirs ? 3 : 4];
+            };
 
             uint32 role = context->GetValue<uint32>("bg role")->Get();
             bool inVehicle = botAI->IsInVehicle();
@@ -3394,6 +3436,7 @@ bool BGTactics::selectObjective(bool reset)
                 }
                 if (!BgObjective)  // Guard point that's not fully capped (also gets them in place to board vehicle)
                 {
+                    ++icGuard[icRow][1];
                     uint32 len = end(IC_AttackObjectives) - begin(IC_AttackObjectives);
                     for (uint32 i = 0; i < len; i++)
                     {
@@ -3405,11 +3448,14 @@ bool BGTactics::selectObjective(bool reset)
                             if (GameObject* pGO = bg->GetBGObject(objective.second))
                             {
                                 BgObjective = pGO;
+                                icGuardPick(objective.first);
                                 // LOG_INFO("playerbots", "bot={} guard point while it captures", bot->GetName());
                                 break;
                             }
                         }
                     }
+                    if (!BgObjective)
+                        ++icGuard[icRow][5];
                 }
                 if (!BgObjective)  // guard vehicles as they seige
                 {
@@ -3546,6 +3592,7 @@ bool BGTactics::selectObjective(bool reset)
                 }
                 if (!BgObjective)  // Guard point that's not fully capped (also gets them in place to board vehicle)
                 {
+                    ++icGuard[icRow][1];
                     uint32 len = end(IC_AttackObjectives) - begin(IC_AttackObjectives);
                     for (uint32 i = 0; i < len; i++)
                     {
@@ -3561,11 +3608,14 @@ bool BGTactics::selectObjective(bool reset)
                             if (GameObject* pGO = bg->GetBGObject(objective.second))
                             {
                                 BgObjective = pGO;
+                                icGuardPick(objective.first);
                                 // LOG_INFO("playerbots", "bot={} guard point while it captures", bot->GetName());
                                 break;
                             }
                         }
                     }
+                    if (!BgObjective)
+                        ++icGuard[icRow][5];
                 }
                 if (!BgObjective)  // guard vehicles as they seige
                 {
