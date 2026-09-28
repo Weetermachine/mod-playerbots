@@ -1789,7 +1789,8 @@ bool BGTactics::Execute(Event /*event*/)
         // 18% of pickups instead of 28%); they keep the waypoint paths.
         // DirectCarrier (with DirectPath): carriers on direct routes too, for the all-direct mirror
         if ((!carrier || BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::DirectCarrier)) &&
-            (bgType == BATTLEGROUND_EY || bgType == BATTLEGROUND_WS || bgType == BATTLEGROUND_AB) &&
+            (bgType == BATTLEGROUND_EY || bgType == BATTLEGROUND_WS || bgType == BATTLEGROUND_AB ||
+             ((bgType == BATTLEGROUND_AV || bgType == BATTLEGROUND_IC) && !bot->GetVehicle())) &&
             BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::DirectPath))
             if (int const res = moveDirectRoute())
                 return res > 0;
@@ -3822,7 +3823,7 @@ struct DirectRoute
 
 std::mutex directRouteLock;
 std::unordered_map<ObjectGuid, DirectRoute> directRoutes;
-std::atomic<uint32> directStats[3][3];  // [WS, AB, EY][complete, incomplete, stalled]
+std::atomic<uint32> directStats[5][3];  // [WS, AB, EY, AV, IC][complete, incomplete, stalled]
 std::atomic<uint32> directStatsLogMs{0};
 std::atomic<uint64> directSearchUs{0};   // route search time, total and max (for the cost on live, 1 map thread)
 std::atomic<uint32> directSearchMaxUs{0};
@@ -3830,9 +3831,12 @@ std::atomic<uint32> directSearchMaxUs{0};
 // objective still > 20 yd away, and a flip back to the objective before within 60 s), the objective moved a
 // little (< 30 yd), the 30 s refresh, knocked off the route, retry after no route / a stall.
 enum DirectRebuild : uint32 { RB_FIRST, RB_NEW, RB_ABANDON, RB_FLIPBACK, RB_NUDGE, RB_TIMER, RB_OFFROUTE, RB_RETRY, RB_N };
-std::atomic<uint32> directRebuilds[3][RB_N];
+std::atomic<uint32> directRebuilds[5][RB_N];
 
-uint32 DirectBgIdx(BattlegroundTypeId t) { return t == BATTLEGROUND_WS ? 0 : t == BATTLEGROUND_AB ? 1 : 2; }
+uint32 DirectBgIdx(BattlegroundTypeId t)
+{
+    return t == BATTLEGROUND_WS ? 0 : t == BATTLEGROUND_AB ? 1 : t == BATTLEGROUND_EY ? 2 : t == BATTLEGROUND_AV ? 3 : 4;
+}
 
 void DirectStat(BattlegroundTypeId t, uint32 kind)
 {
@@ -3846,19 +3850,22 @@ void DirectStat(BattlegroundTypeId t, uint32 kind)
     {
         uint64 const us = directSearchUs.exchange(0);
         uint32 const maxUs = directSearchMaxUs.exchange(0);
-        uint32 v[3][3];
-        for (uint32 b = 0; b < 3; ++b)
+        uint32 v[5][3];
+        for (uint32 b = 0; b < 5; ++b)
             for (uint32 k = 0; k < 3; ++k)
                 v[b][k] = directStats[b][k].exchange(0);
-        uint32 const searches = v[0][0] + v[0][1] + v[1][0] + v[1][1] + v[2][0] + v[2][1];
+        uint32 searches = 0;
+        for (uint32 b = 0; b < 5; ++b)
+            searches += v[b][0] + v[b][1];
         // "module" logs at info level with the default logger config; "playerbots" falls to root (errors only)
         LOG_INFO("module",
-                 "DirectPath routes (5 min, complete/incomplete/stalled): WS {}/{}/{} AB {}/{}/{} EY {}/{}/{}; "
-                 "search time total {} ms, avg {} us, max {} us",
-                 v[0][0], v[0][1], v[0][2], v[1][0], v[1][1], v[1][2], v[2][0], v[2][1], v[2][2], us / 1000,
+                 "DirectPath routes (5 min, complete/incomplete/stalled): WS {}/{}/{} AB {}/{}/{} EY {}/{}/{} AV {}/{}/{} "
+                 "IC {}/{}/{}; search time total {} ms, avg {} us, max {} us",
+                 v[0][0], v[0][1], v[0][2], v[1][0], v[1][1], v[1][2], v[2][0], v[2][1], v[2][2], v[3][0], v[3][1],
+                 v[3][2], v[4][0], v[4][1], v[4][2], us / 1000,
                  searches ? us / searches : 0, maxUs);
-        static char const* const names[3] = {"WS", "AB", "EY"};
-        for (uint32 b = 0; b < 3; ++b)
+        static char const* const names[5] = {"WS", "AB", "EY", "AV", "IC"};
+        for (uint32 b = 0; b < 5; ++b)
         {
             uint32 w[RB_N];
             for (uint32 k = 0; k < RB_N; ++k)
