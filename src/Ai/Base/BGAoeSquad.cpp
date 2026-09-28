@@ -16,6 +16,7 @@
 
 #include "BGTacticArms.h"
 #include "Battleground.h"
+#include "BattlegroundAV.h"
 #include "Log.h"
 #include "Map.h"
 #include "Player.h"
@@ -43,7 +44,8 @@ struct Squad
 };
 std::mutex squadLock;
 std::map<std::pair<uint32, uint32>, Squad> squads;  // (instance, team)
-std::atomic<uint32> statPlans[2][2], statHolds[2], statTargets[2], statCluster[2], statLogMs{0};
+constexpr int32 GENERAL = 100;  // Squad::choke while defending our AV general
+std::atomic<uint32> statPlans[2][2], statHolds[2], statTargets[2], statCluster[2], statGeneral{0}, statLogMs{0};
 
 bool AoeClass(Player* p)
 {
@@ -97,10 +99,16 @@ void MaybeLog()
         uint32 const plans = statPlans[m][0].exchange(0), active = statPlans[m][1].exchange(0);
         uint32 const holds = statHolds[m].exchange(0), targets = statTargets[m].exchange(0), cl = statCluster[m].exchange(0);
         if (plans)
-            LOG_INFO("module", "AoE squad {} (5 min): plans {}, active {} ({:.0f}%), hold picks {}, pack targets {} "
-                     "(avg {:.1f} enemies within 8 yd of the target, itself included)",
-                     names[m], plans, active, 100.0 * active / plans, holds, targets, targets ? double(cl) / targets : 0.0);
+            LOG_INFO("module", "AoE squad {} (5 min): plans {}, active {} ({:.0f}%; defending the general {}), hold picks {}, "
+                     "pack targets {} (avg {:.1f} enemies within 8 yd of the target, itself included)",
+                     names[m], plans, active, 100.0 * active / plans, m == 0 ? statGeneral.exchange(0) : 0, holds, targets,
+                     targets ? double(cl) / targets : 0.0);
     }
+}
+
+bool GeneralOn(Battleground* bg, TeamId team)
+{
+    return MapIndex(bg) == 0 && BGTacticArms::IsOn(bg, team, BGTactic::AoEGeneral);
 }
 
 // Rebuild the team's squad (every 3 s). Needs squadLock.
@@ -120,6 +128,59 @@ void Build(Battleground* bg, TeamId team, Squad& sq, uint32 now)
             enemies.push_back(p);
         else if (GET_PLAYERBOT_AI(p) && !p->GetVehicle() && AoeClass(p))
             aoe.push_back(p);
+    }
+    ++statPlans[m][0];
+
+    // General defense (AV, arm AoEGeneral): 5+ enemies within 50 yd of our general: every area-damage bot, wherever
+    // it is, goes to him (attackers die there in packs: median 13-22 deaths per wave, 1-2 s apart). Takes precedence
+    // over the chokes.
+    if (GeneralOn(bg, team))
+    {
+        Creature* general = bg->GetBGCreature(team == TEAM_ALLIANCE ? AV_CPLACE_A_BOSS : AV_CPLACE_H_BOSS);
+        if (general && general->IsAlive())
+        {
+            uint32 n = 0;
+            for (Player* e : enemies)
+                n += e->GetExactDist2d(general) < 50.0f;
+            if (n >= 5 || (sq.choke == GENERAL && now <= sq.activeUntilMs))
+            {
+                if (n >= 5)
+                    sq.activeUntilMs = now + 15 * IN_MILLISECONDS;
+                if (sq.choke != GENERAL)
+                {
+                    float dx = 0, dy = 0;
+                    if (ours)
+                    {
+                        dx = ours->GetPositionX() - general->GetPositionX();
+                        dy = ours->GetPositionY() - general->GetPositionY();
+                        float const d = std::max(1.0f, std::hypot(dx, dy));
+                        dx /= d;
+                        dy /= d;
+                    }
+                    sq.hx = general->GetPositionX() + dx * 10.0f;
+                    sq.hy = general->GetPositionY() + dy * 10.0f;
+                    sq.hz = general->GetPositionZ();
+                    float const h = bg->GetBgMap()->GetHeight(sq.hx, sq.hy, sq.hz + 5.0f);
+                    if (h > INVALID_HEIGHT && std::abs(h - sq.hz) < 8.0f)
+                        sq.hz = h;
+                }
+                sq.choke = GENERAL;
+                sq.members.clear();
+                for (Player* p : aoe)
+                    sq.members.insert(p->GetGUID());
+                ++statPlans[m][1];
+                ++statGeneral;
+                return;
+            }
+        }
+        if (sq.choke == GENERAL)
+            sq.choke = -1;
+    }
+    if (!SquadSize(bg, team))
+    {
+        sq.choke = -1;
+        sq.members.clear();
+        return;
     }
     // the busiest of our chokes (on our half: not farther from our start than 150 yd beyond theirs)
     int32 best = -1;
@@ -185,7 +246,6 @@ void Build(Battleground* bg, TeamId team, Squad& sq, uint32 now)
                 sq.members.insert(p->GetGUID());
         }
     }
-    ++statPlans[m][0];
     if (sq.choke >= 0)
         ++statPlans[m][1];
 }
@@ -196,7 +256,7 @@ bool Member(Player* bot, Battleground* bg, Squad* out)
     if (m < 0 || bg->GetStatus() != STATUS_IN_PROGRESS || !bot->IsAlive() || bot->GetVehicle())
         return false;
     TeamId const team = bot->GetTeamId();
-    if (!SquadSize(bg, team))
+    if (!SquadSize(bg, team) && !GeneralOn(bg, team))
         return false;
     uint32 const now = getMSTime();
     std::lock_guard<std::mutex> guard(squadLock);

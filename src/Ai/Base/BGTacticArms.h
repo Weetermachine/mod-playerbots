@@ -69,6 +69,7 @@ enum class BGTactic : uint8
     AoESquad2 = 49,      // AV/IoC: 2 area-damage bots hold behind a busy choke and hit the densest pack (BGAoeSquad)
     AoESquad5 = 50,      // AV/IoC: the same with 5
     AoESquadAll = 51,    // AV/IoC: the same with every area-damage bot
+    AoEGeneral = 52,     // AV: 5+ enemies at our general: every area-damage bot goes to him and hits the packs
 };
 
 // Per-game A/B arms. With AiPlayerbot.BGTactics.<BG>.Arms set (e.g.

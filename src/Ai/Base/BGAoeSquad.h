@@ -17,6 +17,7 @@ class Unit;
 // area-damage bots nearest to it (2, 5 or all: mages, warlocks, hunters, elemental shamans, balance druids) hold a
 // point 22 yd behind it on their side, and target the enemy with the most other enemies around it, so their AoE
 // spells land on the pack. The squad stands down 15 s after the choke is quiet.
+// AoEGeneral (AV): when 5+ enemies are within 50 yd of our general, every area-damage bot goes to him instead.
 namespace BGAoeSquad
 {
     // A squad member's hold point while its squad is active; false otherwise (the stock objective).
