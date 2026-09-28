@@ -2061,17 +2061,20 @@ bool BGTactics::selectObjective(bool reset)
             // --- Mine Capture (rarely works, needs some improvement) ---
             // AVMines: roles 0-4 (5 bots) instead of role 0 alone, which rarely beats the mine boss and his mobs
             // AVNoMines: nobody goes (the guides' advice: mines don't win AV)
-            if (!BgObjective && enableMineCapture && !BGTacticArms::IsOn(bg, team, BGTactic::AVNoMines) &&
-                (role == 0 || (role < 5 && BGTacticArms::IsOn(bg, team, BGTactic::AVMines))))
+            // AVBothMines: roles 0-4 for our side's mine, 5-9 for the enemy side's
+            bool const bothMines = BGTacticArms::IsOn(bg, team, BGTactic::AVBothMines);
+            if (!BgObjective && (enableMineCapture || bothMines) && !BGTacticArms::IsOn(bg, team, BGTactic::AVNoMines) &&
+                (role == 0 || (role < 5 && BGTacticArms::IsOn(bg, team, BGTactic::AVMines)) || (bothMines && role < 10)))
             {
-                BG_AV_OTHER_VALUES mineType = (team == TEAM_HORDE) ? AV_SOUTH_MINE : AV_NORTH_MINE;
+                bool const south = (team == TEAM_HORDE) != (bothMines && role >= 5);  // our side's mine unless 5-9
+                BG_AV_OTHER_VALUES mineType = south ? AV_SOUTH_MINE : AV_NORTH_MINE;
                 if (av->GetMineOwner(mineType) != team)
                 {
-                    uint32 bossEntry = (team == TEAM_HORDE) ? AV_CPLACE_MINE_S_3 : AV_CPLACE_MINE_N_3;
+                    uint32 bossEntry = south ? AV_CPLACE_MINE_S_3 : AV_CPLACE_MINE_N_3;
                     Creature* mBossNeutral = bg->GetBGCreature(bossEntry);
-                    const Position* minePositions[] = {(team == TEAM_HORDE) ? &AV_MINE_SOUTH_1 : &AV_MINE_NORTH_1,
-                                                       (team == TEAM_HORDE) ? &AV_MINE_SOUTH_2 : &AV_MINE_NORTH_2,
-                                                       (team == TEAM_HORDE) ? &AV_MINE_SOUTH_3 : &AV_MINE_NORTH_3};
+                    const Position* minePositions[] = {south ? &AV_MINE_SOUTH_1 : &AV_MINE_NORTH_1,
+                                                       south ? &AV_MINE_SOUTH_2 : &AV_MINE_NORTH_2,
+                                                       south ? &AV_MINE_SOUTH_3 : &AV_MINE_NORTH_3};
 
                     const Position* chosen = minePositions[urand(0, 2)];
                     pos.Set(chosen->GetPositionX(), chosen->GetPositionY(), chosen->GetPositionZ(), bot->GetMapId());
@@ -2171,12 +2174,18 @@ bool BGTactics::selectObjective(bool reset)
             // --- Enemy Boss ---
             if (!BgObjective)
             {
-                uint32 towersDown = 0;
+                uint32 towersDown = 0, towers = 0;
                 for (auto const& [nodeId, _] : attackObjectives)
+                {
+                    towers += nodeId >= BG_AV_NODES_DUNBALDAR_SOUTH;
                     if (av->GetAVNodeInfo(nodeId).State == POINT_DESTROYED)
                         towersDown++;
+                }
+                // AVBurnFirst: every enemy tower down first (each destroyed tower removes one of the general's
+                // bodyguards); stock goes at 2, or at once on the offensive strategy
+                bool const burnFirst = BGTacticArms::IsOn(bg, team, BGTactic::AVBurnFirst);
 
-                if ((towersDown >= 2) || (strategy == AV_STRATEGY_OFFENSIVE))
+                if (burnFirst ? towersDown >= towers : ((towersDown >= 2) || (strategy == AV_STRATEGY_OFFENSIVE)))
                 {
                     uint8 lastGY = (team == TEAM_HORDE) ? BG_AV_NODES_FIRSTAID_STATION : BG_AV_NODES_FROSTWOLF_HUT;
                     bool ownsFinalGY = av->GetAVNodeInfo(lastGY).OwnerId == team;
@@ -2272,6 +2281,21 @@ bool BGTactics::selectObjective(bool reset)
                     BgObjective = gyPick;
                 else if (!candidates.empty())
                     BgObjective = candidates[urand(0, candidates.size() - 1)];
+                else if (BGTacticArms::IsOn(bg, team, BGTactic::AVBurnFirst) &&
+                         std::any_of(attackObjectives.begin(), attackObjectives.end(), [&](auto const& o)
+                                     { return o.first >= BG_AV_NODES_DUNBALDAR_SOUTH &&
+                                              av->GetAVNodeInfo(o.first).State != POINT_DESTROYED; }))
+                {
+                    // AVBurnFirst: nothing left to attack but a tower still stands (burning): hold the nearest one
+                    GameObject* hold = nullptr;
+                    for (auto const& [nodeId, goId] : attackObjectives)
+                        if (nodeId >= BG_AV_NODES_DUNBALDAR_SOUTH && av->GetAVNodeInfo(nodeId).State != POINT_DESTROYED)
+                            if (GameObject* go = bg->GetBGObject(goId);
+                                go && (!hold || bot->GetDistance(go) < bot->GetDistance(hold)))
+                                hold = go;
+                    if (hold)
+                        BgObjective = hold;
+                }
                 else
                 {
                     // Fallback: move to boss wait position

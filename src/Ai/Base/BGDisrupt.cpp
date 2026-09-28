@@ -125,10 +125,17 @@ void Build(Battleground* bg, TeamId team, Site& s, uint32 now)
     ++statActive;
     if (npc == general)
         ++statGeneral;
-    // melee damage dealers first, then the others; nearest first
+    // melee damage dealers first (DisruptTank: rogues before them), then the others; nearest first
+    bool const rogues = BGTacticArms::IsOn(bg, team, BGTactic::DisruptTank);
     std::sort(ours.begin(), ours.end(),
               [&](Player* a, Player* b)
               {
+                  if (rogues)
+                  {
+                      bool const ra = a->getClass() == CLASS_ROGUE, rb = b->getClass() == CLASS_ROGUE;
+                      if (ra != rb)
+                          return ra;
+                  }
                   bool const ma = MeleeDps(a), mb = MeleeDps(b);
                   if (ma != mb)
                       return ma;
@@ -148,7 +155,7 @@ Creature* SiteNpc(Player* bot, Battleground* bg)
     if (!IsAV(bg) || bg->GetStatus() != STATUS_IN_PROGRESS || !bot->IsAlive() || bot->GetVehicle())
         return nullptr;
     TeamId const team = bot->GetTeamId();
-    if (!BGTacticArms::IsOn(bg, team, BGTactic::Disrupt))
+    if (!BGTacticArms::IsOn(bg, team, BGTactic::Disrupt) && !BGTacticArms::IsOn(bg, team, BGTactic::DisruptTank))
         return nullptr;
     uint32 const now = getMSTime();
     std::lock_guard<std::mutex> guard(siteLock);
@@ -208,9 +215,11 @@ Unit* BGDisrupt::Target(PlayerbotAI* botAI)
         if (!low || p->GetHealthPct() < low->GetHealthPct())
             low = p;
     }
-    Unit* pick = healer ? healer : victimP ? victimP : low;
+    // DisruptTank: their tank first (with it dead the NPC tears through the rest), then healers
+    bool const tankFirst = BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::DisruptTank);
+    Unit* pick = tankFirst ? (victimP ? victimP : healer ? healer : low) : (healer ? healer : victimP ? victimP : low);
     if (pick)
-        ++statTargets[healer ? 0 : victimP ? 1 : 2];
+        ++statTargets[pick == healer ? 0 : pick == victimP ? 1 : 2];
     MaybeLog();
     return pick;
 }
