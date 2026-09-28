@@ -53,6 +53,7 @@ void WarsongStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 
 void AlteracStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
+    triggers.push_back(new TriggerNode("raid tank needs heal", { NextAction("bg heal tank", ACTION_MEDIUM_HEAL + 5.0f)}));
     triggers.push_back(new TriggerNode("focus target differs", { NextAction("focus fire", ACTION_RAID + 0.2f)}));  // AoE squad packs
     triggers.push_back(new TriggerNode("alliance no snowfall gy", { NextAction("bg move to objective", ACTION_EMERGENCY)}));
     triggers.push_back(new TriggerNode("timer bg", { NextAction("bg reset objective force", ACTION_EMERGENCY)}));

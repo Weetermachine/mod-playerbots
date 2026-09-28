@@ -6,6 +6,7 @@
 
 #include "BattleGroundTactics.h"
 #include "BGAoeSquad.h"
+#include "BGBossRaid.h"
 #include "BGTacticArms.h"
 
 #include <algorithm>
@@ -1710,6 +1711,9 @@ bool BGTactics::Execute(Event /*event*/)
     if (getName() == "heal fc")
         return healFC();
 
+    if (getName() == "heal tank")
+        return healUnit(BGBossRaid::HealTarget(botAI));
+
     if (getName() == "protect fc")
     {
         if (protectFC())
@@ -2162,7 +2166,20 @@ bool BGTactics::selectObjective(bool reset)
                     uint32 bossId = (team == TEAM_HORDE) ? AV_CREATURE_A_BOSS : AV_CREATURE_H_BOSS;
                     if (Creature* boss = bg->GetBGCreature(bossId))
                     {
-                        if (boss->IsAlive())
+                        if (boss->IsAlive() && BGTacticArms::IsOn(bg, team, BGTactic::BossRaid))
+                        {
+                            // raid boss (BossRaid): gather at the wait point, tanks pull, healers stand back
+                            Position const& waitPos = (team == TEAM_HORDE) ? AV_BOSS_WAIT_H : AV_BOSS_WAIT_A;
+                            Position spot;
+                            if (BGBossRaid::Plan(botAI, bg, boss, waitPos, spot) == 2)
+                            {
+                                pos.Set(spot.GetPositionX(), spot.GetPositionY(), spot.GetPositionZ(), bot->GetMapId());
+                                posMap["bg objective"] = pos;
+                                return true;
+                            }
+                            BgObjective = boss;
+                        }
+                        else if (boss->IsAlive())
                         {
                             uint32 nearbyCount = getPlayersInArea(team, boss->GetPosition(), 200.0f, false);
                             if (ownsFinalGY || nearbyCount >= 20)
@@ -2242,15 +2259,30 @@ bool BGTactics::selectObjective(bool reset)
                     if (Creature* boss = bg->GetBGCreature(bossId))
                         if (boss->IsAlive())
                         {
-                            // AVBossForce: the general only with 20+ of us near him or his last graveyard ours, as
-                            // the boss rule above; until then gather at the wait point (stock sends everyone in a
-                            // trickle: 1-4 attackers half the time, 36-51 deaths per game at the generals)
-                            uint8 const lastGY = (team == TEAM_HORDE) ? BG_AV_NODES_FIRSTAID_STATION : BG_AV_NODES_FROSTWOLF_HUT;
-                            if (BGTacticArms::IsOn(bg, team, BGTactic::AVBossForce) &&
-                                av->GetAVNodeInfo(lastGY).OwnerId != team &&
-                                getPlayersInArea(team, boss->GetPosition(), 200.0f, false) < 20)
-                                return true;  // the wait point set above
-                            BgObjective = boss;
+                            if (BGTacticArms::IsOn(bg, team, BGTactic::BossRaid))
+                            {
+                                Position spot;
+                                if (BGBossRaid::Plan(botAI, bg, boss, waitPos, spot) == 2)
+                                {
+                                    pos.Set(spot.GetPositionX(), spot.GetPositionY(), spot.GetPositionZ(), bot->GetMapId());
+                                    posMap["bg objective"] = pos;
+                                    return true;
+                                }
+                                BgObjective = boss;
+                            }
+                            else
+                            {
+                                // AVBossForce: the general only with 20+ of us near him or his last graveyard ours,
+                                // as the boss rule above; until then gather at the wait point (stock sends everyone
+                                // in a trickle: 1-4 attackers half the time, 36-51 deaths per game at the generals)
+                                uint8 const lastGY =
+                                    (team == TEAM_HORDE) ? BG_AV_NODES_FIRSTAID_STATION : BG_AV_NODES_FROSTWOLF_HUT;
+                                if (BGTacticArms::IsOn(bg, team, BGTactic::AVBossForce) &&
+                                    av->GetAVNodeInfo(lastGY).OwnerId != team &&
+                                    getPlayersInArea(team, boss->GetPosition(), 200.0f, false) < 20)
+                                    return true;  // the wait point set above
+                                BgObjective = boss;
+                            }
                         }
                 }
             }
@@ -6827,9 +6859,12 @@ static std::vector<char const*> const FC_HEALS_LOW = {"holy shock", "flash of li
                                                       "regrowth", "lesser healing wave", "riptide", "swiftmend",
                                                       "healing wave", "greater heal", "holy light", "healing touch"};
 
-bool BGTactics::healFC()
+bool BGTactics::healFC() { return healUnit(AI_VALUE(Unit*, "team flag carrier")); }
+
+// Heal a chosen teammate (our flag carrier, a raid tank): freedom when slowed (paladins), big heals under 60%,
+// else top-ups not already on it.
+bool BGTactics::healUnit(Unit* fc)
 {
-    Unit* fc = AI_VALUE(Unit*, "team flag carrier");
     if (!fc || fc == bot || !fc->IsAlive())
         return false;
 

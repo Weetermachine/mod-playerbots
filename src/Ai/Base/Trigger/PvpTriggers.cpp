@@ -5,6 +5,8 @@
  */
 
 #include "PvpTriggers.h"
+
+#include "BGBossRaid.h"
 #include "BGTacticArms.h"
 #include "ChooseTargetActions.h"
 
@@ -350,6 +352,13 @@ bool TeamFlagCarrierNear::IsActive()
     // 60 yd: close enough to rejoin the FC; bots further away keep their own objective
     Unit* carrier = AI_VALUE(Unit*, "team flag carrier");
     return carrier && ServerFacade::instance().IsDistanceLessOrEqualThan(ServerFacade::instance().GetDistance2d(bot, carrier), 60.f);
+}
+
+bool RaidTankNeedsHeal::IsActive()
+{
+    Unit* tank = BGBossRaid::HealTarget(botAI);
+    return tank && tank != bot && tank->GetHealthPct() < 95.0f && bot->IsWithinDistInMap(tank, 40.0f) &&
+           bot->IsWithinLOSInMap(tank);
 }
 
 bool TeamFlagCarrierNeedsHeal::IsActive()

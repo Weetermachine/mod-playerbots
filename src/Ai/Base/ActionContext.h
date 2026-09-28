@@ -227,6 +227,7 @@ public:
         creators["bg back off"] = &ActionContext::bg_back_off;
         creators["bg catch fc"] = &ActionContext::bg_catch_fc;
         creators["bg heal fc"] = &ActionContext::bg_heal_fc;
+        creators["bg heal tank"] = &ActionContext::bg_heal_tank;
         creators["attack fc attacker"] = &ActionContext::attack_fc_attacker;
         creators["attack banner capper"] = &ActionContext::attack_banner_capper;
         creators["focus fire"] = &ActionContext::focus_fire;
@@ -441,6 +442,7 @@ private:
     static Action* bg_back_off(PlayerbotAI* botAI) { return new BGTactics(botAI, "back off"); }
     static Action* bg_catch_fc(PlayerbotAI* botAI) { return new BGTactics(botAI, "catch fc"); }
     static Action* bg_heal_fc(PlayerbotAI* botAI) { return new BGTactics(botAI, "heal fc"); }
+    static Action* bg_heal_tank(PlayerbotAI* botAI) { return new BGTactics(botAI, "heal tank"); }
     static Action* attack_fc_attacker(PlayerbotAI* botAI) { return new AttackFCAttackerAction(botAI); }
     static Action* attack_banner_capper(PlayerbotAI* botAI) { return new AttackBannerCapperAction(botAI); }
     static Action* focus_fire(PlayerbotAI* botAI) { return new FocusFireAction(botAI); }

@@ -70,6 +70,7 @@ enum class BGTactic : uint8
     AoESquad5 = 50,      // AV/IoC: the same with 5
     AoESquadAll = 51,    // AV/IoC: the same with every area-damage bot
     AoEGeneral = 52,     // AV: 5+ enemies at our general: every area-damage bot goes to him and hits the packs
+    BossRaid = 53,       // AV: the enemy general as a raid boss: gather, tanks pull, guards first, healers on tanks
 };
 
 // Per-game A/B arms. With AiPlayerbot.BGTactics.<BG>.Arms set (e.g.

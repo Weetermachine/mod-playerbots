@@ -194,6 +194,7 @@ public:
         creators["enemy fc healer"] = &TriggerContext::enemy_fc_healer;
         creators["bg outnumbered"] = &TriggerContext::bg_outnumbered;
         creators["team flagcarrier needs heal"] = &TriggerContext::team_flagcarrier_needs_heal;
+        creators["raid tank needs heal"] = &TriggerContext::raid_tank_needs_heal;
         creators["enemy capping banner"] = &TriggerContext::enemy_capping_banner;
         creators["in Battleground"] = &TriggerContext::player_is_in_BATTLEGROUND;
         creators["in Battleground without flag"] = &TriggerContext::player_is_in_BATTLEGROUND_no_flag;
@@ -419,6 +420,7 @@ private:
     static Trigger* team_flagcarrier_near(PlayerbotAI* botAI) { return new TeamFlagCarrierNear(botAI); }
     static Trigger* escort_falling_behind(PlayerbotAI* botAI) { return new EscortFallingBehind(botAI); }
     static Trigger* focus_target_differs(PlayerbotAI* botAI) { return new FocusTargetDiffers(botAI); }
+    static Trigger* raid_tank_needs_heal(PlayerbotAI* botAI) { return new RaidTankNeedsHeal(botAI); }
     static Trigger* enemy_fc_healer(PlayerbotAI* botAI) { return new EnemyCarrierHealer(botAI); }
     static Trigger* bg_outnumbered(PlayerbotAI* botAI) { return new BgOutnumberedTrigger(botAI); }
     static Trigger* team_flagcarrier_needs_heal(PlayerbotAI* botAI) { return new TeamFlagCarrierNeedsHeal(botAI); }

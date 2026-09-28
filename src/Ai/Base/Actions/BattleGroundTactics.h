@@ -155,6 +155,7 @@ private:
     bool staggeredSlow(Unit* fc);
     bool chaseV3Control(Unit* fc);
     bool healFC();
+    bool healUnit(Unit* target);
     bool useBuff();
     uint32 getPlayersInArea(TeamId teamId, Position point, float range, bool combat = true);
     bool IsLockedInsideKeep();

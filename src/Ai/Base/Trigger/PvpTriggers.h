@@ -92,6 +92,15 @@ public:
 };
 
 // WSG escort v2: a healer near our flag carrier while he is hurt
+// Raid boss (BossRaid): a healer assigned to a raid tank, the tank under 95% and in reach.
+class RaidTankNeedsHeal : public Trigger
+{
+public:
+    RaidTankNeedsHeal(PlayerbotAI* botAI) : Trigger(botAI, "raid tank needs heal") {}
+
+    bool IsActive() override;
+};
+
 class TeamFlagCarrierNeedsHeal : public Trigger
 {
 public:
