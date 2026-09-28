@@ -61,6 +61,7 @@ void AlteracStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 
 void ArathiStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
 {
+    triggers.push_back(new TriggerNode("bg outnumbered", { NextAction("bg back off", ACTION_RAID + 2.0f)}));
     // node guards v2: stop enemy banner captures (a capture is a 10 s channel; any hit or interrupt ends it)
     triggers.push_back(new TriggerNode("enemy capping banner", { NextAction("attack banner capper", ACTION_RAID + 0.3f)}));
     triggers.push_back(new TriggerNode("focus target differs", { NextAction("focus fire", ACTION_RAID + 0.2f)}));

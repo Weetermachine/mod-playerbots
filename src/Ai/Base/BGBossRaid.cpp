@@ -160,8 +160,11 @@ Raid* Get(Battleground* bg, Player* bot, Creature* boss, Position const* waitPos
     if (!BGTacticArms::IsOn(bg, team, BGTactic::BossRaid))
         return nullptr;
     std::pair<uint32, uint32> const key{bg->GetInstanceID(), uint32(team)};
-    if (raids.size() > 64 && !raids.count(key))
-        raids.clear();  // ended games
+    if (raids.size() > 64)  // ended games: drop entries idle for 10 minutes (live games rebuild every few s)
+        for (auto it = raids.begin(); it != raids.end();)
+            it = it->second.builtMs && getMSTimeDiff(it->second.builtMs, getMSTime()) > 10 * MINUTE * IN_MILLISECONDS
+                     ? raids.erase(it)
+                     : std::next(it);
     auto it = raids.find(key);
     if (!boss || !waitPos)  // lookups from targeting/healing: only an existing raid
         return it == raids.end() ? nullptr : &it->second;

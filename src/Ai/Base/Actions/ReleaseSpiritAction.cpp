@@ -4,6 +4,9 @@
  */
 
 #include "ReleaseSpiritAction.h"
+
+#include "BGTacticArms.h"
+#include "Battleground.h"
 #include "ServerFacade.h"
 #include "Event.h"
 #include "GameGraveyard.h"
@@ -135,13 +138,21 @@ bool AutoReleaseSpiritAction::HandleBattlegroundSpiritHealer()
     GuidVector npcs = NearestNpcsValue(botAI, bgRange);
     Unit* spiritHealer = nullptr;
 
+    // SpiritNearest (BG arm): the nearest spirit healer (the list is not sorted: stock took the first found)
+    Battleground* spiritBg = bot->GetBattleground();
+    bool const nearest = spiritBg && BGTacticArms::IsOn(spiritBg, bot->GetTeamId(), BGTactic::SpiritNearest);
     for (auto const& guid : npcs)
     {
         Unit* unit = botAI->GetUnit(guid);
         if (unit && unit->IsFriendlyTo(bot) && unit->IsSpiritService())
         {
-            spiritHealer = unit;
-            break;
+            if (!nearest)
+            {
+                spiritHealer = unit;
+                break;
+            }
+            if (!spiritHealer || bot->GetDistance(unit) < bot->GetDistance(spiritHealer))
+                spiritHealer = unit;
         }
     }
 

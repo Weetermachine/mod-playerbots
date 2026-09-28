@@ -160,8 +160,11 @@ Creature* SiteNpc(Player* bot, Battleground* bg)
     uint32 const now = getMSTime();
     std::lock_guard<std::mutex> guard(siteLock);
     std::pair<uint32, uint32> const key{bg->GetInstanceID(), uint32(team)};
-    if (sites.size() > 64 && !sites.count(key))
-        sites.clear();  // ended games
+    if (sites.size() > 64)  // ended games: drop entries idle for 10 minutes (live games rebuild every few s)
+        for (auto it = sites.begin(); it != sites.end();)
+            it = it->second.builtMs && getMSTimeDiff(it->second.builtMs, getMSTime()) > 10 * MINUTE * IN_MILLISECONDS
+                     ? sites.erase(it)
+                     : std::next(it);
     Site& s = sites[key];
     if (!s.builtMs || getMSTimeDiff(s.builtMs, now) > 3 * IN_MILLISECONDS)
     {

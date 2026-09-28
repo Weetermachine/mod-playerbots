@@ -17,6 +17,14 @@
 #include "ServerFacade.h"
 #include "Vehicle.h"
 
+// StealthFix: the stock checks asked whether the ENEMY can see the bot (so a stealthed bot dropped every target); the
+// bot's own view of the enemy is what matters
+static bool StealthFixOn(Player* bot)
+{
+    Battleground* bg = bot->GetBattleground();
+    return bg && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::StealthFix);
+}
+
 bool NearestEnemyPlayersValue::AcceptUnit(Unit* unit)
 {
     // Apply parent's filtering first (includes level difference checks)
@@ -29,7 +37,7 @@ bool NearestEnemyPlayersValue::AcceptUnit(Unit* unit)
         !sPlayerbotAIConfig.IsPvpProhibited(enemy->GetZoneId(), enemy->GetAreaId()) &&
         !enemy->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NON_ATTACKABLE_2) &&
         ((inCannon || !enemy->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE))) &&
-        /*!enemy->HasStealthAura() && !enemy->HasInvisibilityAura()*/ enemy->CanSeeOrDetect(bot) &&
+        /*!enemy->HasStealthAura() && !enemy->HasInvisibilityAura()*/ (StealthFixOn(bot) || enemy->CanSeeOrDetect(bot)) &&
         !(enemy->HasSpiritOfRedemptionAura()))
     {
         // If with master, only attack if master is PvP flagged
@@ -133,7 +141,8 @@ Unit* EnemyPlayerValue::Calculate()
     for (auto const& [guid, combatRef] : bot->GetCombatManager().GetPvPCombatRefs())
     {
         Unit* pTarget = combatRef->GetOther(bot);
-        if (!pTarget || pTarget == pVictim || !pTarget->IsPlayer() || !pTarget->CanSeeOrDetect(bot) ||
+        if (!pTarget || pTarget == pVictim || !pTarget->IsPlayer() ||
+            (StealthFixOn(bot) ? !bot->CanSeeOrDetect(pTarget) : !pTarget->CanSeeOrDetect(bot)) ||
             !bot->IsWithinDist(pTarget, VISIBILITY_DISTANCE_NORMAL))
             continue;
 
@@ -211,7 +220,8 @@ Unit* EnemyPlayerValue::Calculate()
 
                 if (Unit* pAttacker = pMember->getAttackerForHelper())
                     if (pAttacker->IsPlayer() && bot->IsWithinDist(pAttacker, maxAggroDistance * 2.0f) &&
-                        bot->IsWithinLOSInMap(pAttacker) && pAttacker != pVictim && pAttacker->CanSeeOrDetect(bot))
+                        bot->IsWithinLOSInMap(pAttacker) && pAttacker != pVictim &&
+                        (StealthFixOn(bot) ? bot->CanSeeOrDetect(pAttacker) : pAttacker->CanSeeOrDetect(bot)))
                         return pAttacker;
             }
         }

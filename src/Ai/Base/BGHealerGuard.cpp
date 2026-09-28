@@ -13,6 +13,8 @@
 
 #include "BGTacticArms.h"
 #include "Battleground.h"
+#include "BattlegroundEY.h"
+#include "BattlegroundWS.h"
 #include "Log.h"
 #include "Map.h"
 #include "ObjectAccessor.h"
@@ -60,8 +62,10 @@ void Build(Battleground* bg, TeamId team, Guards& g)
     for (auto const& ref : bg->GetBgMap()->GetPlayers())
     {
         Player* p = ref.GetSource();
-        if (!p || !p->IsInWorld() || !p->IsAlive() || p->GetTeamId() != team || !GET_PLAYERBOT_AI(p) || p->GetVehicle())
-            continue;
+        if (!p || !p->IsInWorld() || !p->IsAlive() || p->GetTeamId() != team || !GET_PLAYERBOT_AI(p) || p->GetVehicle() ||
+            p->HasAura(BG_WS_SPELL_WARSONG_FLAG) || p->HasAura(BG_WS_SPELL_SILVERWING_FLAG) ||
+            p->HasAura(BG_EY_NETHERSTORM_FLAG_SPELL))
+            continue;  // flag carriers neither guard nor get guarded
         if (PlayerbotAI::IsHeal(p, true))
             healers.push_back(p);
         else if (MeleeDps(p))
@@ -104,13 +108,20 @@ void Build(Battleground* bg, TeamId team, Guards& g)
 Player* HealerFor(Player* bot, Battleground* bg)
 {
     if (bg->GetStatus() != STATUS_IN_PROGRESS || !bot->IsAlive() || bot->GetVehicle() ||
-        !BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::HealerGuard))
+        !BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::HealerGuard) ||
+        BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::Allocator))  // the team plan owns positions there
+        return nullptr;
+    if (bot->HasAura(BG_WS_SPELL_WARSONG_FLAG) || bot->HasAura(BG_WS_SPELL_SILVERWING_FLAG) ||
+        bot->HasAura(BG_EY_NETHERSTORM_FLAG_SPELL))
         return nullptr;
     uint32 const now = getMSTime();
     std::lock_guard<std::mutex> guard(guardLock);
     std::pair<uint32, uint32> const key{bg->GetInstanceID(), uint32(bot->GetTeamId())};
-    if (teams.size() > 64 && !teams.count(key))
-        teams.clear();  // ended games
+    if (teams.size() > 64)  // ended games: drop entries idle for 10 minutes (live games rebuild every few s)
+        for (auto it = teams.begin(); it != teams.end();)
+            it = it->second.builtMs && getMSTimeDiff(it->second.builtMs, getMSTime()) > 10 * MINUTE * IN_MILLISECONDS
+                     ? teams.erase(it)
+                     : std::next(it);
     Guards& g = teams[key];
     if (!g.builtMs || getMSTimeDiff(g.builtMs, now) > 3 * IN_MILLISECONDS)
     {

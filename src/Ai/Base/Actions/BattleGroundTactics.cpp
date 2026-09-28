@@ -1958,6 +1958,13 @@ static float EYGroundZ(Player* bot, float x, float y, float z, bool fix)
     return h > INVALID_HEIGHT ? h : z;
 }
 
+// GroundZFix: the stock objective code kept a failed height lookup (writing an invalid z) and dropped a good one
+static bool GroundOk(Battleground* bg, Player* bot, float groundZ)
+{
+    return BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::GroundZFix) ? groundZ > INVALID_HEIGHT
+                                                                          : groundZ == VMAP_INVALID_HEIGHT_VALUE;
+}
+
 bool BGTactics::selectObjective(bool reset)
 {
     Battleground* bg = bot->GetBattleground();
@@ -2062,12 +2069,14 @@ bool BGTactics::selectObjective(bool reset)
             // --- Mine Capture (rarely works, needs some improvement) ---
             // AVMines: roles 0-4 (5 bots) instead of role 0 alone, which rarely beats the mine boss and his mobs
             // AVNoMines: nobody goes (the guides' advice: mines don't win AV)
-            // AVBothMines: roles 0-4 for our side's mine, 5-9 for the enemy side's
+            // "bg role" is urand(0, 9) per bot, so stock's role 0 is ~10% of the team (~4 of 40 in AV), not one bot.
+            // AVBothMines: role 0 for our side's mine as stock, role 1 (another ~4) for the enemy side's.
+            // AVMines: roles 0-1 (~8) for our side's mine.
             bool const bothMines = BGTacticArms::IsOn(bg, team, BGTactic::AVBothMines);
             if (!BgObjective && (enableMineCapture || bothMines) && !BGTacticArms::IsOn(bg, team, BGTactic::AVNoMines) &&
-                (role == 0 || (role < 5 && BGTacticArms::IsOn(bg, team, BGTactic::AVMines)) || (bothMines && role < 10)))
+                (role == 0 || (role == 1 && (bothMines || BGTacticArms::IsOn(bg, team, BGTactic::AVMines)))))
             {
-                bool const south = (team == TEAM_HORDE) != (bothMines && role >= 5);  // our side's mine unless 5-9
+                bool const south = (team == TEAM_HORDE) != (bothMines && role == 1);  // our side's mine unless role 1
                 BG_AV_OTHER_VALUES mineType = south ? AV_SOUTH_MINE : AV_NORTH_MINE;
                 if (av->GetMineOwner(mineType) != team)
                 {
@@ -2114,7 +2123,7 @@ bool BGTactics::selectObjective(bool reset)
                         if (Map* map = bot->GetMap())
                         {
                             float groundZ = map->GetHeight(rx, ry, rz);
-                            if (groundZ == VMAP_INVALID_HEIGHT_VALUE)
+                            if (GroundOk(bg, bot, groundZ))
                                 rz = groundZ;
                         }
 
@@ -2308,7 +2317,7 @@ bool BGTactics::selectObjective(bool reset)
                     if (Map* map = bot->GetMap())
                     {
                         float groundZ = map->GetHeight(rx, ry, rz);
-                        if (groundZ == VMAP_INVALID_HEIGHT_VALUE)
+                        if (GroundOk(bg, bot, groundZ))
                             rz = groundZ;
                     }
 
@@ -2376,7 +2385,7 @@ bool BGTactics::selectObjective(bool reset)
                 if (Map* map = bot->GetMap())
                 {
                     float groundZ = map->GetHeight(rx, ry, rz);
-                    if (groundZ == VMAP_INVALID_HEIGHT_VALUE)
+                    if (GroundOk(bg, bot, groundZ))
                         rz = groundZ;
                 }
 
@@ -2391,6 +2400,7 @@ bool BGTactics::selectObjective(bool reset)
         {
             Position target;
             TeamId team = bot->GetTeamId();
+            bool const wsgFixes = BGTacticArms::IsOn(bg, team, BGTactic::WSGFixes);
 
             // Utility to safely relocate a position with optional random radius
             auto SetSafePos = [&](Position const& origin, float radius = 0.0f) -> void
@@ -2399,7 +2409,9 @@ bool BGTactics::selectObjective(bool reset)
                 if (radius > 0.0f)
                 {
                     bot->GetRandomPoint(origin, radius, rx, ry, rz);
-                    if (rz == VMAP_INVALID_HEIGHT_VALUE)
+                    // WSGFixes: GetRandomPoint keeps z on a failed lookup, so this was never true and the spread
+                    // never applied (every defender stacked on the exact spot)
+                    if (wsgFixes ? rz != VMAP_INVALID_HEIGHT_VALUE : rz == VMAP_INVALID_HEIGHT_VALUE)
                         target.Relocate(rx, ry, rz);
                     else
                         target.Relocate(origin);
@@ -2422,6 +2434,11 @@ bool BGTactics::selectObjective(bool reset)
 
             uint8 defendersProhab = 3;  // Default balanced
 
+            // WSGFixes: the strategy is rolled as its enum (balanced/offensive/defensive), but the switch below reads
+            // it as 0-9 buckets, so every team played balanced (3 defenders)
+            if (wsgFixes)
+                defendersProhab = strategy == WS_STRATEGY_OFFENSIVE ? 1 : strategy == WS_STRATEGY_DEFENSIVE ? 6 : 3;
+            else
             switch (static_cast<uint8>(strategy))
             {
                 case 0:
@@ -2519,8 +2536,9 @@ bool BGTactics::selectObjective(bool reset)
                     }
                     else if (teamFC)
                     {
-                        // 70% chance to support own FC
-                        if (urand(0, 99) < 70)
+                        // 70% chance to support own FC (WSGFixes: always; failing the roll left the objective at
+                        // (0,0,0), which sent defenders toward the Horde flag room)
+                        if (wsgFixes || urand(0, 99) < 70)
                         {
                             target.Relocate(teamFC->GetPositionX(), teamFC->GetPositionY(), teamFC->GetPositionZ());
                             if (ServerFacade::instance().GetDistance2d(bot, teamFC) < 33.0f)
@@ -2754,7 +2772,7 @@ bool BGTactics::selectObjective(bool reset)
                 if (Map* map = bot->GetMap())
                 {
                     float groundZ = map->GetHeight(rx, ry, rz);
-                    if (groundZ == VMAP_INVALID_HEIGHT_VALUE)
+                    if (GroundOk(bg, bot, groundZ))
                         rz = groundZ;
                 }
                 pos.Set(rx, ry, rz, bot->GetMapId());
@@ -2808,9 +2826,13 @@ bool BGTactics::selectObjective(bool reset)
                         bool isNeutral = state == BG_AB_NODE_STATE_NEUTRAL;
                         bool isEnemyOccupied = (team == TEAM_ALLIANCE && state == BG_AB_NODE_STATE_HORDE_OCCUPIED) ||
                                                (team == TEAM_HORDE && state == BG_AB_NODE_STATE_ALLY_OCCUPIED);
+                        // ABStealBack: an enemy banner (their assault) can be clicked back; our own assault can't
+                        bool const stealBack = BGTacticArms::IsOn(bg, team, BGTactic::ABStealBack);
                         bool isFriendlyContested =
-                            (team == TEAM_ALLIANCE && state == BG_AB_NODE_STATE_ALLY_CONTESTED) ||
-                            (team == TEAM_HORDE && state == BG_AB_NODE_STATE_HORDE_CONTESTED);
+                            stealBack ? ((team == TEAM_ALLIANCE && state == BG_AB_NODE_STATE_HORDE_CONTESTED) ||
+                                         (team == TEAM_HORDE && state == BG_AB_NODE_STATE_ALLY_CONTESTED))
+                                      : ((team == TEAM_ALLIANCE && state == BG_AB_NODE_STATE_ALLY_CONTESTED) ||
+                                         (team == TEAM_HORDE && state == BG_AB_NODE_STATE_HORDE_CONTESTED));
 
                         if (!(isNeutral || isEnemyOccupied || isFriendlyContested))
                             continue;
@@ -2845,7 +2867,7 @@ bool BGTactics::selectObjective(bool reset)
                 if (Map* map = bot->GetMap())
                 {
                     float groundZ = map->GetHeight(rx, ry, rz);
-                    if (groundZ == VMAP_INVALID_HEIGHT_VALUE)
+                    if (GroundOk(bg, bot, groundZ))
                         rz = groundZ;
                 }
 
@@ -2956,7 +2978,9 @@ bool BGTactics::selectObjective(bool reset)
                     }
                 }
 
-                if (bestNodeId != 0 && EY_NodePositions.contains(bestNodeId))
+                // EYFelReaverFix: Fel Reaver is point 0, so "bestNodeId != 0" dropped it as "no tower"
+                if ((bestNodeId != 0 || (bestTrigger != 0 && BGTacticArms::IsOn(bg, team, BGTactic::EYFelReaverFix))) &&
+                    EY_NodePositions.contains(bestNodeId))
                 {
                     const Position& targetPos = EY_NodePositions[bestNodeId];
                     float rx, ry, rz;
@@ -2965,7 +2989,7 @@ bool BGTactics::selectObjective(bool reset)
                     if (Map* map = bot->GetMap())
                     {
                         float groundZ = map->GetHeight(rx, ry, rz);
-                        if (eyPath ? groundZ > INVALID_HEIGHT : groundZ == VMAP_INVALID_HEIGHT_VALUE)
+                        if (eyPath ? groundZ > INVALID_HEIGHT : GroundOk(bg, bot, groundZ))
                             rz = groundZ;
                     }
 
@@ -2993,7 +3017,7 @@ bool BGTactics::selectObjective(bool reset)
                     if (Map* map = bot->GetMap())
                     {
                         float groundZ = map->GetHeight(rx, ry, rz);
-                        if (eyPath ? groundZ > INVALID_HEIGHT : groundZ == VMAP_INVALID_HEIGHT_VALUE)
+                        if (eyPath ? groundZ > INVALID_HEIGHT : GroundOk(bg, bot, groundZ))
                             rz = groundZ;
                     }
 
@@ -3114,7 +3138,7 @@ bool BGTactics::selectObjective(bool reset)
                     if (Map* map = bot->GetMap())
                     {
                         float const groundZ = map->GetHeight(rx, ry, rz);
-                        if (eyPath ? groundZ > INVALID_HEIGHT : groundZ == VMAP_INVALID_HEIGHT_VALUE)
+                        if (eyPath ? groundZ > INVALID_HEIGHT : GroundOk(bg, bot, groundZ))
                             rz = groundZ;
                     }
                     pos.Set(rx, ry, rz, bot->GetMapId());
@@ -5234,8 +5258,8 @@ namespace
 {
 struct ReviveState
 {
-    bool dead = false;
-    uint32 reviveMs = 0;
+    uint32 reviveMs = 0;     // the revive being waited on
+    uint32 releasedFor = 0;  // the revive after which the bot already left
 };
 std::mutex waveLock;
 std::unordered_map<ObjectGuid, ReviveState> waveStates;
@@ -5247,23 +5271,26 @@ bool BGTactics::gyWaveHold()
     Battleground* bg = bot->GetBattleground();
     if (!bg || !BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::GYWave))
         return false;
+    if (!bot->IsAlive())
+        return false;
+    // the revive time comes from the resurrect hook (BGEventLog): this action never runs while the bot is dead, so
+    // watching for a dead-to-alive change here never saw one (the first version never held anyone)
     uint32 const now = getMSTime();
-    uint32 reviveMs;
+    uint32 const revive = BGTacticArms::LastReviveMs(bot->GetGUID());
+    if (!revive || getMSTimeDiff(revive, now) > 20 * IN_MILLISECONDS)
+        return false;
+    uint32 reviveMs = 0;
     {
         std::lock_guard<std::mutex> guard(waveLock);
         ReviveState& st = waveStates[bot->GetGUID()];
-        if (!bot->IsAlive())
+        if (st.releasedFor == revive)
+            return false;  // already left the graveyard after this revive
+        if (st.reviveMs != revive)
         {
-            st.dead = true;
-            return false;
-        }
-        if (st.dead)
-        {
-            st.dead = false;
-            st.reviveMs = now;
+            st.reviveMs = revive;
             ++waveHolds;
         }
-        reviveMs = st.reviveMs;
+        reviveMs = revive;
     }
     if (!reviveMs || bot->HasAura(BG_WS_SPELL_WARSONG_FLAG) || bot->HasAura(BG_WS_SPELL_SILVERWING_FLAG) ||
         bot->HasAura(BG_EY_NETHERSTORM_FLAG_SPELL))
@@ -5286,7 +5313,7 @@ bool BGTactics::gyWaveHold()
     {
         ++(near >= needNear ? waveByGroup : waveByTimeout);
         std::lock_guard<std::mutex> guard(waveLock);
-        waveStates[bot->GetGUID()].reviveMs = 0;
+        waveStates[bot->GetGUID()].releasedFor = reviveMs;
         uint32 last = waveLogMs.load();
         if (!last)
             waveLogMs = now;
@@ -6157,6 +6184,8 @@ bool BGTactics::resetObjective()
     // Adjust role-change chance based on battleground type
     uint32 oddsToChangeRole = 1;  // default low
     BattlegroundTypeId bgType = bg->GetBgTypeID();
+    if (bgType == BATTLEGROUND_RB && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::AVFixes))
+        bgType = bg->GetBgTypeID(true);  // AVFixes: random BG unwrapped like everywhere else
 
     if (bgType == BATTLEGROUND_WS)
         oddsToChangeRole = 2;

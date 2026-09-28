@@ -261,8 +261,11 @@ bool Member(Player* bot, Battleground* bg, Squad* out)
     uint32 const now = getMSTime();
     std::lock_guard<std::mutex> guard(squadLock);
     std::pair<uint32, uint32> const key{bg->GetInstanceID(), uint32(team)};
-    if (squads.size() > 64 && !squads.count(key))
-        squads.clear();  // ended games; live ones rebuild within 3 s
+    if (squads.size() > 64)  // ended games: drop entries idle for 10 minutes (live games rebuild every few s)
+        for (auto it = squads.begin(); it != squads.end();)
+            it = it->second.builtMs && getMSTimeDiff(it->second.builtMs, getMSTime()) > 10 * MINUTE * IN_MILLISECONDS
+                     ? squads.erase(it)
+                     : std::next(it);
     Squad& sq = squads[key];
     if (!sq.builtMs || getMSTimeDiff(sq.builtMs, now) > 3 * IN_MILLISECONDS)
     {

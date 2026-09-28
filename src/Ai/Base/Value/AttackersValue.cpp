@@ -6,6 +6,11 @@
 
 #include "AttackersValue.h"
 
+#include <algorithm>
+
+#include "BGTacticArms.h"
+#include "Battleground.h"
+
 #include "CellImpl.h"
 #include "GridNotifiers.h"
 #include "GridNotifiersImpl.h"
@@ -49,6 +54,22 @@ GuidVector AttackersValue::Calculate()
 
     if (bot->duel && bot->duel->Opponent)
         result.push_back(bot->duel->Opponent->GetGUID());
+
+    // PvPAttackers (BG arm): threat lists hold only NPCs, so enemy players never became "attackers" and every rule
+    // built on them (enemy healer interrupts, snares, CC, multi-DoT, dps/tank assist) was dead in battlegrounds.
+    // With the arm, valid enemy players among the possible targets join, as in arenas.
+    if (Battleground* bg = bot->GetBattleground())
+        if (bg->GetStatus() == STATUS_IN_PROGRESS && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::PvPAttackers))
+        {
+            GuidVector possibleTargets = AI_VALUE(GuidVector, "possible targets");
+            for (ObjectGuid const guid : possibleTargets)
+            {
+                Unit* unit = botAI->GetUnit(guid);
+                if (unit && unit->IsPlayer() && IsValidTarget(unit, bot) &&
+                    std::find(result.begin(), result.end(), guid) == result.end())
+                    result.push_back(guid);
+            }
+        }
 
     // workaround for bots of same faction not fighting in arena
     if (bot->InArena())

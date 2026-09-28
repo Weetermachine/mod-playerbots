@@ -112,7 +112,7 @@ bool PlayerIsInBattlegroundWithoutFlag::IsActive()
                 return true;
 
             if (bot->GetGUID() == bg->GetFlagPickerGUID(TEAM_ALLIANCE) ||
-                bot->GetGUID() == bg->GetFlagPickerGUID(TEAM_ALLIANCE))
+                bot->GetGUID() == bg->GetFlagPickerGUID(TEAM_HORDE))
             {
                 return false;
             }
@@ -409,6 +409,11 @@ bool AllianceNoSnowfallGY::IsActive()
 {
     if (!bot || bot->GetTeamId() != TEAM_ALLIANCE)
         return false;
+    // AVFixes: this Alliance-only trigger re-issues the objective move at emergency priority (above eating, drinking,
+    // buffs) all game once the Horde holds Snowfall; the Horde has no counterpart
+    if (Battleground* bg = bot->GetBattleground())
+        if (BGTacticArms::IsOn(bg, TEAM_ALLIANCE, BGTactic::AVFixes))
+            return false;
 
     Battleground* bg = bot->GetBattleground();
     if (bg && BGTactics::GetBotStrategyForTeam(bg, TEAM_ALLIANCE) != AV_STRATEGY_BALANCED)

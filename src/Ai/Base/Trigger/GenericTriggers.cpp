@@ -111,7 +111,20 @@ bool TargetWithComboPointsLowerHealTrigger::IsActive()
            (target->GetHealth() / AI_VALUE(float, "estimated group dps")) <= lifeTime;
 }
 
-bool LoseAggroTrigger::IsActive() { return !AI_VALUE2(bool, "has aggro", "current target"); }
+// PvPThreatFix: players have no threat, so threat-based rules against them only burn GCDs and cooldowns
+static bool PvPThreatFixOn(Player* bot)
+{
+    Battleground* bg = bot->GetBattleground();
+    return bg && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::PvPThreatFix);
+}
+
+bool LoseAggroTrigger::IsActive()
+{
+    if (PvPThreatFixOn(bot))
+        if (Unit* target = AI_VALUE(Unit*, "current target"); target && target->IsPlayer())
+            return false;  // no taunts at players
+    return !AI_VALUE2(bool, "has aggro", "current target");
+}
 
 bool HasAggroTrigger::IsActive() { return AI_VALUE2(bool, "has aggro", "current target"); }
 
@@ -218,6 +231,8 @@ bool MyAttackerCountTrigger::IsActive()
 
 bool MediumThreatTrigger::IsActive()
 {
+    if (PvPThreatFixOn(bot))
+        return false;  // no Fade / Soulshatter / Cower / Vanish against players
     if (!AI_VALUE(Unit*, "main tank"))
         return false;
 
@@ -226,6 +241,9 @@ bool MediumThreatTrigger::IsActive()
 
 bool LowTankThreatTrigger::IsActive()
 {
+    if (PvPThreatFixOn(bot))
+        if (Unit* target = AI_VALUE(Unit*, "current target"); target && target->IsPlayer())
+            return false;  // no Tricks of the Trade / Misdirection for threat on players
     Unit* mainTank = AI_VALUE(Unit*, "main tank");
     if (!mainTank)
         return false;
