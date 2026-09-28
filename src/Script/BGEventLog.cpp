@@ -249,7 +249,7 @@ private:
                             break;
                         }
         }
-        uint32 attackers[2] = {0, 0}, defenders[2] = {0, 0};
+        uint32 attackers[2] = {0, 0}, defenders[2] = {0, 0}, tanks[2] = {0, 0};  // tanks: tank-spec attackers in range
         for (auto const& [guid, player] : bg->GetPlayers())
         {
             if (!player || !player->IsAlive() || player->GetMapId() != bg->GetMapId())
@@ -257,7 +257,11 @@ private:
             TeamId team = player->GetBgTeamId();
             for (int side = 0; side < 2; ++side)
                 if (gen[side] && gen[side]->IsAlive() && player->IsWithinDist(gen[side], GENERAL_RANGE))
+                {
                     (team == TeamId(side) ? defenders : attackers)[side]++;
+                    if (team != TeamId(side) && PlayerbotAI::IsTank(player, true))
+                        tanks[side]++;
+                }
         }
         std::ostringstream s;
         for (int side = 0; side < 2; ++side)
@@ -265,7 +269,13 @@ private:
             char const* k = side == 0 ? "a" : "h";
             uint32 hp = gen[side] && gen[side]->IsAlive() ? uint32(gen[side]->GetHealthPct() + 0.5f) : 0;
             s << " gen_" << k << "_hp=" << hp << " gen_" << k << "_combat=" << (gen[side] && gen[side]->IsInCombat() ? 1 : 0)
-              << " gen_" << k << "_attackers=" << attackers[side] << " gen_" << k << "_defenders=" << defenders[side];
+              << " gen_" << k << "_attackers=" << attackers[side] << " gen_" << k << "_defenders=" << defenders[side]
+              << " gen_" << k << "_tanks=" << tanks[side];
+            // who the general is hitting: class id and 1 if a tank spec (0 class = nobody)
+            Unit* v = gen[side] && gen[side]->IsAlive() && gen[side]->IsInCombat() ? gen[side]->GetVictim() : nullptr;
+            Player* vp = v ? v->ToPlayer() : nullptr;
+            s << " gen_" << k << "_victim_class=" << (vp ? uint32(vp->getClass()) : 0) << " gen_" << k
+              << "_victim_tank=" << (vp && PlayerbotAI::IsTank(vp, true) ? 1 : 0);
         }
         return s.str();
     }
