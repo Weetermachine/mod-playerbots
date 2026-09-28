@@ -98,8 +98,8 @@ enum class BGTactic : uint8
     ICSiegeFix = 75,     // IoC: vehicles at their siege spot fire at the gate (without a target too); Horde spot at 65 yd
     EYRouteFix = 76,     // EotS: keep the objective move instead of falling through to a random route at endpoints
     SATactics = 77,      // Strand of the Ancients: gate push, demolishers, graveyards, relic; defenders hold the next gate
-    SABoatRide = 79,     // Strand of the Ancients: attackers ride the boats in (off: teleport to the beach at the start)
     EYJunctionDirect = 78,  // EotS: at a route junction, straight to the objective instead of a random route
+    SABoatRide = 79,     // Strand of the Ancients: attackers ride the boats in (off: teleport to the beach at the start)
     TacticCount          // one past the last value; must stay at or below the mask width (128)
 };
 static_assert(uint32(BGTactic::TacticCount) <= 128, "BGTactic values must fit the 128-bit masks in BGTacticArms.cpp");
