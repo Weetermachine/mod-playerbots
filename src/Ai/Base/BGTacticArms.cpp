@@ -170,7 +170,8 @@ int TacticBit(std::string const& tactic)
          : tactic == "ICSiegeFix" ? int(BGTactic::ICSiegeFix)
          : tactic == "EYRouteFix" ? int(BGTactic::EYRouteFix)
          : tactic == "SATactics" ? int(BGTactic::SATactics)
-         : tactic == "EYJunctionDirect" ? int(BGTactic::EYJunctionDirect) : -1;
+         : tactic == "EYJunctionDirect" ? int(BGTactic::EYJunctionDirect)
+         : tactic == "SABoatRide" ? int(BGTactic::SABoatRide) : -1;
 }
 
 char const* BGName(BattlegroundTypeId type)
@@ -336,6 +337,7 @@ bool GlobalSwitch(BGTactic tactic, TeamId team, BattlegroundTypeId type)
         case BGTactic::EYRouteFix:
         case BGTactic::SATactics:
         case BGTactic::EYJunctionDirect:
+        case BGTactic::SABoatRide:
         case BGTactic::TacticCount:
             return false;  // arms only
     }

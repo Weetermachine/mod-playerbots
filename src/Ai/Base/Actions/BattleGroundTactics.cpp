@@ -1858,7 +1858,7 @@ bool BGTactics::strandMove()
     Battleground* bg = bot->GetBattleground();
     if (bg->GetStatus() != STATUS_IN_PROGRESS || bot->IsNonMeleeSpellCast(false))
         return false;
-    if (BGStrand::GoAshore(bot, bg))
+    if (BGStrand::Ride(bot, bg) || BGStrand::GoAshore(bot, bg))
         return true;
 
     BGStrand::Order order;
@@ -1915,6 +1915,10 @@ bool BGTactics::moveToStart(bool force)
     BattlegroundTypeId bgType = bg->GetBgTypeID();
     if (bgType == BATTLEGROUND_RB)
         bgType = bg->GetBgTypeID(true);
+
+    if (bgType == BATTLEGROUND_SA)
+        return bot->GetTransport() || (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SABoatRide) &&
+                                       BGStrand::Board(bot, bg));
 
     if (bgType == BATTLEGROUND_WS)
     {

@@ -31,6 +31,10 @@ namespace BGStrand
     bool Objective(Player* bot, Battleground* bg, Order& out);
     // Bots never ride the boats and stay at sea: attackers go to the beach, where the core puts late joiners.
     bool GoAshore(Player* bot, Battleground* bg);
+    // SABoatRide: during the warmup an attacker at sea boards the nearest boat as a passenger.
+    bool Board(Player* bot, Battleground* bg);
+    // SABoatRide: a passenger jumps ashore once its boat waits at the dock; true while it still rides.
+    bool Ride(Player* bot, Battleground* bg);
 }
 
 #endif

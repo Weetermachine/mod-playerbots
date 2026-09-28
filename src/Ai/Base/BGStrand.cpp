@@ -10,8 +10,11 @@
 
 #include "BattlegroundSA.h"
 #include "GameObject.h"
+#include "Log.h"
 #include "Map.h"
+#include "MotionMaster.h"
 #include "Player.h"
+#include "Transport.h"
 
 namespace
 {
@@ -135,8 +138,73 @@ bool GoAshore(Player* bot, Battleground* bg)
 {
     if (bot->GetPositionX() < 1700.0f || !bot->IsAlive() || bot->GetTeamId() != Attackers(bg))
         return false;
+    if (Transport* boat = bot->GetTransport())
+    {
+        boat->RemovePassenger(bot, true);
+        LOG_INFO("module", "SA boat: {} still at sea after the start, teleported (bg {})", bot->GetName(),
+                 bg->GetInstanceID());
+    }
     uint32 const n = bot->GetGUID().GetCounter();
     return bot->TeleportTo(bg->GetMapId(), BEACH_X + float(n * 37 % 9) - 4.0f, BEACH_Y + float(n * 53 % 9) - 4.0f,
                            BEACH_Z, 3.78f);
+}
+bool Board(Player* bot, Battleground* bg)
+{
+    if (bot->GetTransport() || bot->GetPositionX() < 1700.0f || !bot->IsAlive() || bot->GetTeamId() != Attackers(bg))
+        return false;
+    StaticTransport* boat = nullptr;
+    for (uint32 i : {BG_SA_BOAT_ONE, BG_SA_BOAT_TWO})
+        if (GameObject* go = bg->GetBGObject(i))
+            if (StaticTransport* t = go->ToStaticTransport(); t && bot->GetExactDist2d(t) < 60.0f &&
+                                                              (!boat || bot->GetExactDist2d(t) < bot->GetExactDist2d(boat)))
+                boat = t;
+    if (!boat)
+        return false;
+
+    bot->StopMoving();
+    bot->GetMotionMaster()->Clear();
+    boat->AddPassenger(bot, true);
+    // the core drops attackers above the deck with slow fall; set them down on it (the deck is the boat's model)
+    float const deck = boat->GetMap()->GetHeight(boat->GetPhaseMask(), bot->GetPositionX(), bot->GetPositionY(),
+                                                 bot->GetPositionZ() + 5.0f, true, 30.0f);
+    if (deck > boat->GetPositionZ() && deck < bot->GetPositionZ())
+        bot->m_movementInfo.transport.pos.m_positionZ -= bot->GetPositionZ() - deck;
+    LOG_INFO("module", "SA boat: {} boarded {} (deck {:.1f}, bg {})", bot->GetName(), boat->GetEntry(), deck,
+             bg->GetInstanceID());
+    return true;
+}
+
+bool Ride(Player* bot, Battleground* bg)
+{
+    Transport* t = bot->GetTransport();
+    StaticTransport* boat = t ? t->ToStaticTransport() : nullptr;
+    if (!boat)
+        return false;
+    if (boat->GetPauseTime() && (boat->GetGoState() != GO_STATE_ACTIVE || boat->GetPathProgress() != boat->GetPauseTime()))
+        return true;  // sailing: the dock is the pause point of its path
+
+    boat->RemovePassenger(bot, true);
+    // land is toward lower x: the first dry ground 15-45 yd off the side
+    Map* map = bot->GetMap();
+    for (float d = 15.0f; d <= 45.0f; d += 10.0f)
+    {
+        float const x = bot->GetPositionX() - d;
+        float const y = bot->GetPositionY();
+        float const z = map->GetHeight(x, y, bot->GetPositionZ() + 20.0f);
+        if (z > INVALID_HEIGHT && !map->IsInWater(bot->GetPhaseMask(), x, y, z, bot->GetCollisionHeight()))
+        {
+            bot->GetMotionMaster()->MoveJump(x, y, z, 15.0f, 8.0f);
+            LOG_INFO("module", "SA boat: {} jumped ashore from {} at {:.0f} {:.0f} to {:.0f} {:.0f} {:.1f} (bg {})",
+                     bot->GetName(), boat->GetEntry(), bot->GetPositionX(), bot->GetPositionY(), x, y, z,
+                     bg->GetInstanceID());
+            return true;
+        }
+    }
+    LOG_INFO("module", "SA boat: {} found no ground off {} at {:.0f} {:.0f}, teleported (bg {})", bot->GetName(),
+             boat->GetEntry(), bot->GetPositionX(), bot->GetPositionY(), bg->GetInstanceID());
+    uint32 const n = bot->GetGUID().GetCounter();
+    bot->TeleportTo(bg->GetMapId(), BEACH_X + float(n * 37 % 9) - 4.0f, BEACH_Y + float(n * 53 % 9) - 4.0f, BEACH_Z,
+                    3.78f);
+    return true;
 }
 }  // namespace BGStrand
