@@ -148,7 +148,8 @@ int TacticBit(std::string const& tactic)
          : tactic == "AVNoMines" ? int(BGTactic::AVNoMines)
          : tactic == "AVBurnFirst" ? int(BGTactic::AVBurnFirst)
          : tactic == "DisruptTank" ? int(BGTactic::DisruptTank)
-         : tactic == "AVBothMines" ? int(BGTactic::AVBothMines) : -1;
+         : tactic == "AVBothMines" ? int(BGTactic::AVBothMines)
+         : tactic == "PvPAoE" ? int(BGTactic::PvPAoE) : -1;
 }
 
 char const* BGName(BattlegroundTypeId type)
@@ -298,6 +299,7 @@ bool GlobalSwitch(BGTactic tactic, TeamId team, BattlegroundTypeId type)
         case BGTactic::AVBurnFirst:
         case BGTactic::DisruptTank:
         case BGTactic::AVBothMines:
+        case BGTactic::PvPAoE:
             return false;  // arms only
     }
     return false;

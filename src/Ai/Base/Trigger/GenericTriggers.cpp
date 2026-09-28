@@ -7,6 +7,8 @@
 #include "GenericTriggers.h"
 
 #include "BGCastLog.h"
+#include "BGTacticArms.h"
+#include "Battleground.h"
 
 #include <string>
 
@@ -255,6 +257,19 @@ bool AoeTrigger::IsActive()
         if (unit->GetDistance(current_target->GetPosition()) <= range)
             attackers_count++;
     }
+    // PvPAoE (battleground arm): "attackers" come from threat lists, which only NPCs keep, so enemy players never
+    // counted and area spells never fired at player packs. With the arm, living enemy players within range of the
+    // target (the target included) count too.
+    if (attackers_count < amount)
+        if (Battleground* bg = bot->GetBattleground())
+            if (bg->GetStatus() == STATUS_IN_PROGRESS && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::PvPAoE))
+                for (auto const& ref : bg->GetBgMap()->GetPlayers())
+                {
+                    Player* p = ref.GetSource();
+                    if (p && p->IsInWorld() && p->IsAlive() && p->GetTeamId() != bot->GetTeamId() &&
+                        p->GetDistance(current_target->GetPosition()) <= range)
+                        attackers_count++;
+                }
     bool const active = attackers_count >= amount;
     BGCastLog::AoeCheck(bot, amount, active);
     return active;

@@ -79,6 +79,7 @@ enum class BGTactic : uint8
     AVNoMines = 60,      // AV: nobody goes for the mines (the stock mine bot takes a normal job)
     AVBurnFirst = 61,    // AV: the enemy general only once all enemy towers are down (each kills a bodyguard)
     DisruptTank = 62,    // AV: Disrupt with rogues first, on the tank the general is hitting first
+    PvPAoE = 64,         // all BGs: enemy players count for the AoE triggers (stock counts only NPCs with threat)
     AVBothMines = 63,    // AV: 5 bots for our side's mine and 5 for the enemy side's
     EYSafeTower = 59,    // EotS: the carrier runs to the owned tower with the fewest enemies, not the nearest
 };
