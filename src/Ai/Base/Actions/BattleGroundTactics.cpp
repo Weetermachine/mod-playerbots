@@ -1875,8 +1875,22 @@ bool BGTactics::strandMove()
     pos.Set(order.move.GetPositionX(), order.move.GetPositionY(), order.move.GetPositionZ(), bot->GetMapId());
     posMap["bg objective"] = pos;
 
-    if (order.use && bot->IsWithinDistInMap(order.use, INTERACTION_DISTANCE))
+    // the relic is clicked on foot: a demolisher driver gets out
+    if (order.use && bot->GetVehicle())
     {
+        WorldPacket exit;
+        bot->GetSession()->HandleRequestVehicleExit(exit);
+        return true;
+    }
+
+    if (order.use && order.use->IsAtInteractDistance(bot))
+    {
+        // the relic's lock (type 10) doesn't open with the banner spell (type 17): use it as a client click does
+        if (order.use->GetGoType() == GAMEOBJECT_TYPE_GOOBER)
+        {
+            order.use->Use(bot);
+            return true;
+        }
         if (bot->IsMounted())
             bot->RemoveAurasByType(SPELL_AURA_MOUNTED);
         if (bot->IsInDisallowedMountForm())

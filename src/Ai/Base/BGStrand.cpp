@@ -100,7 +100,10 @@ bool Objective(Player* bot, Battleground* bg, Order& out)
 
     if (target == BG_SA_TITAN_RELIC)
     {
-        out.move = go->GetPosition();
+        // the relic floats over its dais: routes go to the floor under it (a route to the relic itself never completes)
+        float const z = go->GetMap()->GetHeight(go->GetPhaseMask(), go->GetPositionX(), go->GetPositionY(),
+                                                go->GetPositionZ(), true, 30.0f);
+        out.move = Position(go->GetPositionX(), go->GetPositionY(), z > INVALID_HEIGHT ? z : go->GetPositionZ());
         out.use = go;
         return true;
     }
