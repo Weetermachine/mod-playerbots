@@ -225,7 +225,12 @@ bool AttackersValue::IsPossibleTarget(Unit* attacker, Player* bot, float /*range
 
     // Creature-specific checks
     Creature* c = attacker->ToCreature();
-    if (c)
+    // SAHunt / ICHunt: enemy siege vehicles are fair game (the tap rule below, for world mobs, dropped every one of
+    // them: a driven vehicle always has one of our players as its victim)
+    bool const huntVehicle = c && c->IsVehicle() && bot->InBattleground() && bot->GetBattleground() &&
+                             (BGTacticArms::IsOn(bot->GetBattleground(), bot->GetBgTeamId(), BGTactic::SAHunt) ||
+                              BGTacticArms::IsOn(bot->GetBattleground(), bot->GetBgTeamId(), BGTactic::ICHunt));
+    if (c && !huntVehicle)
     {
         if (c->IsInEvadeMode())
             return false;
