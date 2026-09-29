@@ -548,7 +548,8 @@ void HuntCount(Unit* target, bool attacked)
         return;
     ++huntPicks;
     huntAttacks += attacked ? 1 : 0;
-    uint32 const now = getMSTime(), last = huntLogMs.load();
+    uint32 const now = getMSTime();
+    uint32 last = huntLogMs.load();
     if (!last)
         huntLogMs = now;
     else if (getMSTimeDiff(last, now) > 5 * MINUTE * IN_MILLISECONDS && huntLogMs.compare_exchange_strong(last, now))
