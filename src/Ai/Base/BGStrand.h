@@ -30,6 +30,8 @@ namespace BGStrand
         GameObject* pickup = nullptr;  // SACharges: the bomb pile to take a charge from
         GameObject* plantAt = nullptr; // SACharges: the gate to plant the carried charge at
         GameObject* portal = nullptr;  // SAPortals: the Defender's Portal to take
+        Position jump;                 // SASortie: jump off the wall to this point outside (set with hasJump)
+        bool hasJump = false;
     };
 
     // The Titan Relic carries the attackers' faction; TEAM_NEUTRAL while objects respawn.

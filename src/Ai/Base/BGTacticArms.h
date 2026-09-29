@@ -115,6 +115,8 @@ enum class BGTactic : uint8
     SAGateFocus = 92,    // SotA: attackers commit to one random lane per round (no switching) until its gate falls
     SAChargesOnWay = 93, // SotA: charge carriers only take a pile that adds at most 30 yd to their way to the gate
     SAChargesPush = 94,  // SotA: a charge carrier moves to its gate like a flag carrier (above combat, picks no fights)
+    SADefendLane = 95,   // SotA: defenders hold the lane with more attackers near its gate (not a fixed half each)
+    SASortie = 96,       // SotA: half the non-healer defenders jump off the wall to fight the demolishers outside
     TacticCount          // one past the last value; must stay at or below the mask width (128)
 };
 static_assert(uint32(BGTactic::TacticCount) <= 128, "BGTactic values must fit the 128-bit masks in BGTacticArms.cpp");

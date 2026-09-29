@@ -1875,6 +1875,21 @@ void ChargeCount(uint32 kind, bool done)
 }
 }
 
+// SASortie diagnostics (Server.log, per 5 min): jumps off the wall
+namespace
+{
+std::atomic<uint32> sortieJumps{0}, sortieLogMs{0};
+void SortieCount()
+{
+    ++sortieJumps;
+    uint32 now = getMSTime(), last = sortieLogMs.load();
+    if (!last)
+        sortieLogMs = now;
+    else if (getMSTimeDiff(last, now) > 5 * MINUTE * IN_MILLISECONDS && sortieLogMs.compare_exchange_strong(last, now))
+        LOG_INFO("module", "Sortie (5 min): jumps off the wall {}", sortieJumps.exchange(0));
+}
+}
+
 bool BGTactics::useItemSpell(uint32 itemEntry, uint32 spellId)
 {
     Item* item = bot->GetItemByEntry(itemEntry);
@@ -2004,6 +2019,13 @@ bool BGTactics::strandMove()
                 ChargeCount(0, bot->HasItemCount(39213, 1));
             return true;
         }
+    // SASortie: at the wall above the gate, jump down outside
+    if (order.hasJump)
+    {
+        bot->GetMotionMaster()->MoveJump(order.jump, 18.0f, 8.0f);
+        SortieCount();
+        return true;
+    }
     // SACharges: at the gate, use the charge (the item, so it is consumed) to plant it at our feet
     if (order.plantAt && bot->GetExactDist2d(order.plantAt) < 10.0f && useItemSpell(39213, 52410))  // Place Seaforium Charge
     {

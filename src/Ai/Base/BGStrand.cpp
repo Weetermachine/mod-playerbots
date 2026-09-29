@@ -148,14 +148,59 @@ uint32 FocusLane(Battleground* bg, TeamId attackers)
 }
 
 // SAHunt: an enemy-driven demolisher within 50 yd of the gate.
-bool SiegeAtGate(Battleground* bg, GameObject* gate)
+bool SiegeAtGate(Battleground* bg, GameObject* gate, float dist = 50.0f)
 {
     for (uint32 i = BG_SA_DEMOLISHER_1; i <= BG_SA_DEMOLISHER_8; ++i)
         if (Creature* d = bg->GetBGCreature(i); d && d->IsAlive() && d->GetVehicleKit() &&
-                                                d->GetVehicleKit()->IsVehicleInUse() && d->GetExactDist2d(gate) < 50.0f)
+                                                d->GetVehicleKit()->IsVehicleInUse() && d->GetExactDist2d(gate) < dist)
             return true;
     return false;
 }
+
+// SADefendLane: the lane whose gate has more living attackers within 60 yd; switched for 3+ more, at most every 15 s.
+std::unordered_map<uint32, LaneChoice> defendLanes;  // by BG instance id
+
+uint32 DefendLane(Battleground* bg, TeamId attackers)
+{
+    bool const green = Destroyed(bg, BG_SA_GREEN_GATE), blue = Destroyed(bg, BG_SA_BLUE_GATE);
+    if (green != blue)
+        return green ? 0 : 1;  // one outer gate open: only the gate behind it can be reached
+    uint32 cand[2] = {BG_SA_GREEN_GATE, BG_SA_BLUE_GATE};
+    if (green && blue)
+    {
+        cand[0] = BG_SA_PURPLE_GATE;
+        cand[1] = BG_SA_RED_GATE;
+    }
+    uint32 const now = getMSTime();
+    std::lock_guard<std::mutex> guard(laneLock);
+    LaneChoice& c = defendLanes[bg->GetInstanceID()];
+    if (c.attackers != attackers)
+        c = LaneChoice{attackers, 0, 0};
+    if (c.ms && getMSTimeDiff(c.ms, now) < 15000)
+        return c.lane;
+    uint32 att[2];
+    for (uint32 l = 0; l < 2; ++l)
+    {
+        GameObject* g = bg->GetBGObject(cand[l]);
+        att[l] = g ? TeamNear(bg, attackers, g->GetPosition(), 60.0f) : 0;
+    }
+    uint32 const other = 1 - c.lane;
+    if (!c.ms ? att[other] > att[c.lane] : att[other] >= att[c.lane] + 3)
+        c.lane = other;
+    c.ms = now;
+    return c.lane;
+}
+
+// SASortie: half the non-healer defenders.
+bool SortieRole(Player* bot) { return !PlayerbotAI::IsHeal(bot) && (bot->GetGUID().GetCounter() / 3) % 2 == 0; }
+
+// Outside a gate: nearer the beach than the gate.
+bool Outside(Player* bot, GameObject* gate)
+{
+    return bot->GetExactDist2d(BEACH_X, BEACH_Y) + 4.0f < gate->GetExactDist2d(BEACH_X, BEACH_Y);
+}
+
+uint32 DefenderLane(Player* bot, Battleground* bg);
 
 // SACannons: the anti-personnel cannons within 45 yd of a gate.
 std::vector<Creature*> GunsAt(Battleground* bg, GameObject* gate)
@@ -177,7 +222,8 @@ Creature* GunFor(Player* bot, Battleground* bg, GameObject* gate, uint32 lane)
     std::vector<uint32> crew;
     for (auto const& ref : bg->GetBgMap()->GetPlayers())
         if (Player* p = ref.GetSource(); p && p->IsAlive() && p->GetTeamId() == bot->GetTeamId() &&
-                                         p->GetGUID().GetCounter() % 2 == lane && !PlayerbotAI::IsHeal(p))
+                                         DefenderLane(p, bg) == lane && !PlayerbotAI::IsHeal(p) &&
+                                         !(BGTacticArms::IsOn(bg, p->GetTeamId(), BGTactic::SASortie) && SortieRole(p)))
             crew.push_back(p->GetGUID().GetCounter());
     std::sort(crew.begin(), crew.end());
     auto const it = std::find(crew.begin(), crew.end(), bot->GetGUID().GetCounter());
@@ -249,6 +295,21 @@ TeamId Attackers(Battleground* bg)
         return TEAM_NEUTRAL;
     return relic->GetUInt32Value(GAMEOBJECT_FACTION) == BG_SA_Factions[TEAM_ALLIANCE] ? TEAM_ALLIANCE : TEAM_HORDE;
 }
+}  // namespace BGStrand
+
+namespace
+{
+uint32 DefenderLane(Player* bot, Battleground* bg)
+{
+    if (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SADefendLane))
+        if (TeamId const attackers = BGStrand::Attackers(bg); attackers != TEAM_NEUTRAL && bot->GetTeamId() != attackers)
+            return DefendLane(bg, attackers);
+    return bot->GetGUID().GetCounter() % 2;
+}
+}  // namespace
+
+namespace BGStrand
+{
 
 bool Objective(Player* bot, Battleground* bg, Order& out)
 {
@@ -261,6 +322,8 @@ bool Objective(Player* bot, Battleground* bg, Order& out)
         lane = AttackLane(bg, attackers);
     if (attacking && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAGateFocus))
         lane = FocusLane(bg, attackers);
+    if (!attacking)
+        lane = DefenderLane(bot, bg);
     uint32 const target = NextGate(bg, lane);
     GameObject* go = bg->GetBGObject(target);
     if (!go)
@@ -291,6 +354,33 @@ bool Objective(Player* bot, Battleground* bg, Order& out)
             }
         }
         out.move = Near(go, -10.0f, bot);
+        // SASortie: while enemy siege nears the gate, go up the wall above it and jump down outside; outside, fight there
+        if (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SASortie) && SortieRole(bot) && target <= BG_SA_PURPLE_GATE &&
+            SiegeAtGate(bg, go, 70.0f))
+        {
+            if (Outside(bot, go))
+                out.move = Near(go, 8.0f, bot);
+            else
+            {
+                float const* wall = SOTADefPortalDest[target];
+                Position const top(wall[0], wall[1], wall[2]);
+                if (bot->GetExactDist2d(&top) < 4.0f && std::fabs(bot->GetPositionZ() - wall[2]) < 5.0f)
+                {
+                    float const a = go->GetAngle(BEACH_X, BEACH_Y);
+                    float const x = wall[0] + 14.0f * std::cos(a), y = wall[1] + 14.0f * std::sin(a);
+                    float const z = go->GetMap()->GetHeight(go->GetPhaseMask(), x, y, wall[2]);
+                    out.jump = Position(x, y, z > INVALID_HEIGHT ? z : go->GetPositionZ());
+                    out.hasJump = true;
+                }
+                out.move = top;
+                if (GameObject* portal = PortalToward(bot, bg, top))
+                {
+                    out.move = portal->GetPosition();
+                    out.portal = portal;
+                }
+            }
+            return true;
+        }
         // SAHunt: while enemy siege is at the gate, hunters step outside it (no line of sight from inside or the wall)
         if (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAHunt) && !PlayerbotAI::IsHeal(bot) &&
             SiegeAtGate(bg, go))
@@ -379,12 +469,13 @@ Unit* HuntTarget(PlayerbotAI* botAI)
     if (!bg || !bot->IsAlive() || bot->GetVehicle() || PlayerbotAI::IsHeal(bot))
         return nullptr;
     bool const bombs = BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SABombHunt);
-    if (!bombs && !BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAHunt))
+    bool const sortie = BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SASortie) && SortieRole(bot);
+    if (!bombs && !sortie && !BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAHunt))
         return nullptr;
     TeamId const attackers = Attackers(bg);
     if (attackers == TEAM_NEUTRAL || bot->GetTeamId() == attackers)
         return nullptr;
-    GameObject* gate = bg->GetBGObject(NextGate(bg, bot->GetGUID().GetCounter() % 2));
+    GameObject* gate = bg->GetBGObject(NextGate(bg, DefenderLane(bot, bg)));
     if (!gate)
         return nullptr;
     // SABombHunt: an enemy carrying a charge near our gate is about to plant it
@@ -407,7 +498,7 @@ Unit* HuntTarget(PlayerbotAI* botAI)
         if (carrier)
             return carrier;
     }
-    if (!BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAHunt))
+    if (!BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAHunt) && !(sortie && Outside(bot, gate)))
         return nullptr;
     Unit* best = nullptr;
     float bestDist = 60.0f;
@@ -502,28 +593,26 @@ Unit* GunnerTarget(Player* bot, Battleground* bg)
     Unit* gun = bot->GetVehicleBase();
     if (!gun || gun->GetEntry() != NPC_ANTI_PERSONNAL_CANNON)
         return nullptr;
-    // enemy demolishers first: they are what takes the gate
-    Unit* best = nullptr;
-    float bestDist = 70.0f;
-    for (uint32 i = BG_SA_DEMOLISHER_1; i <= BG_SA_DEMOLISHER_8; ++i)
-        if (Creature* d = bg->GetBGCreature(i); d && d->IsAlive() && d->IsVisible() && d->GetVehicleKit() &&
-                                                d->GetVehicleKit()->IsVehicleInUse() && gun->IsWithinLOSInMap(d))
-            if (float const dist = gun->GetExactDist2d(d); dist < bestDist)
-            {
-                bestDist = dist;
-                best = d;
-            }
-    if (best)
-        return best;
+    // Rocket Blast hits every unit within 8 yd for 4000 (10-70 yd, not buildings; demolishers have ~15x health): the enemy
+    // on foot with the most enemies around, a charge carrier counting 3
+    std::vector<Player*> foes;
     for (auto const& ref : bg->GetBgMap()->GetPlayers())
+        if (Player* p = ref.GetSource(); p && p->IsAlive() && p->GetTeamId() != bot->GetTeamId() && !p->GetVehicle())
+            foes.push_back(p);
+    Unit* best = nullptr;
+    uint32 bestScore = 0;
+    for (Player* p : foes)
     {
-        Player* p = ref.GetSource();
-        if (!p || !p->IsAlive() || p->GetTeamId() == bot->GetTeamId() || !gun->IsWithinLOSInMap(p) ||
-            !bot->CanSeeOrDetect(p))
+        float const dist = gun->GetExactDist2d(p);
+        if (dist < 10.0f || dist > 70.0f || !gun->IsWithinLOSInMap(p) || !bot->CanSeeOrDetect(p))
             continue;
-        if (float const dist = gun->GetExactDist2d(p); dist < bestDist)
+        uint32 score = 0;
+        for (Player* q : foes)
+            if (q->GetExactDist2d(p) < 8.0f)
+                score += q->HasItemCount(ITEM_MASSIVE_SEAFORIUM_CHARGE, 1) ? 3 : 1;
+        if (score > bestScore)
         {
-            bestDist = dist;
+            bestScore = score;
             best = p;
         }
     }
