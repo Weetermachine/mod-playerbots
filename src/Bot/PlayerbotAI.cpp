@@ -3988,7 +3988,15 @@ static bool SiegeShot(Player* bot, AiObjectContext* context, uint32 spellId)
     if (!info || !siege.isSet())
         return false;
     if (info->Targets & TARGET_FLAG_DEST_LOCATION)
-        return true;  // Hurl Boulder, Glaive Throw: aimed at the gate
+    {
+        // a gate shot launches a missile that damages buildings (Boulder, Glaive, Cannon; not Napalm or rockets)
+        for (SpellEffectInfo const& effect : info->GetEffects())
+            if (effect.Effect == SPELL_EFFECT_TRIGGER_MISSILE)
+                if (SpellInfo const* missile = sSpellMgr->GetSpellInfo(effect.TriggerSpell))
+                    if (missile->HasEffect(SPELL_EFFECT_GAMEOBJECT_DAMAGE))
+                        return true;
+        return false;
+    }
     // Ram: no explicit target, it damages buildings just in front of the vehicle; cast at the gate (within 15 yd)
     Unit* base = bot->GetVehicleBase();
     return !info->Targets && info->HasEffect(SPELL_EFFECT_GAMEOBJECT_DAMAGE) && base &&

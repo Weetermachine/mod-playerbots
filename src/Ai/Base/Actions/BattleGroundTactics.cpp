@@ -3597,6 +3597,13 @@ bool BGTactics::selectObjective(bool reset)
             if (inVehicle && !controlsVehicle)
                 return false;
 
+            if (!inVehicle)
+            {
+                PositionInfo siegePos = posMap["bg siege"];
+                siegePos.Reset();
+                posMap["bg siege"] = siegePos;  // a siege position is only for the vehicle it was set for
+            }
+
             /* TACTICS */
             if (bot->GetTeamId() == TEAM_HORDE)  // HORDE
             {
