@@ -103,6 +103,7 @@ enum class BGTactic : uint8
     SAHunt = 80,         // SotA defenders: focus the enemy demolishers near the gate they defend
     SACannons = 81,      // SotA defenders: up to 2 man the anti-personnel cannons at the gate under attack
     SALane = 82,         // SotA attackers: all push the lane with fewer defenders instead of splitting over both
+    ICHunt = 83,         // IoC: bots focus enemy siege vehicles near their keep's gates
     TacticCount          // one past the last value; must stay at or below the mask width (128)
 };
 static_assert(uint32(BGTactic::TacticCount) <= 128, "BGTactic values must fit the 128-bit masks in BGTacticArms.cpp");

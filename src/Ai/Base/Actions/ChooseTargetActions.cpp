@@ -15,6 +15,7 @@
 #include "BGDisrupt.h"
 #include "BGHealerGuard.h"
 #include "BGStrand.h"
+#include "BattlegroundIC.h"
 #include "BGTacticArms.h"
 #include "BattleGroundTactics.h"
 
@@ -410,12 +411,58 @@ Unit* FindFinishTarget(PlayerbotAI* botAI, Battleground* bg)
     return best;
 }
 
+// ICHunt (IoC): the nearest enemy demolisher, siege engine or glaive thrower within 60 yd of this bot and 70 yd of
+// one of its keep's gates (the siege spots are 59-65 yd out); healers keep healing
+static Unit* FindICSiegeTarget(PlayerbotAI* botAI)
+{
+    Player* bot = botAI->GetBot();
+    Battleground* bg = bot->GetBattleground();
+    if (!bg || !bot->IsAlive() || bot->GetVehicle() || PlayerbotAI::IsHeal(bot) ||
+        !BGTacticArms::IsOn(bg, bot->GetBgTeamId(), BGTactic::ICHunt))
+        return nullptr;
+    uint32 const firstGate = bot->GetBgTeamId() == TEAM_ALLIANCE ? BG_IC_GO_ALLIANCE_GATE_1 : BG_IC_GO_HORDE_GATE_1;
+    GameObject* gates[3];
+    for (uint32 g = 0; g < 3; ++g)
+        gates[g] = bg->GetBGObject(firstGate + g);
+    Unit* best = nullptr;
+    float bestDist = 60.0f;
+    for (auto const& ref : bg->GetBgMap()->GetPlayers())
+    {
+        Player* p = ref.GetSource();
+        Unit* veh = p && p->IsAlive() && p->GetBgTeamId() != bot->GetBgTeamId() ? p->GetVehicleBase() : nullptr;
+        if (!veh || !veh->IsAlive() || !bot->IsValidAttackTarget(veh))
+            continue;
+        switch (veh->GetEntry())
+        {
+            case NPC_DEMOLISHER: case 35415:                           // Demolisher (1)
+            case NPC_SIEGE_ENGINE_A: case NPC_SIEGE_ENGINE_H: case 35431: case 35433:  // Siege Engine (1)
+            case NPC_GLAIVE_THROWER_A: case NPC_GLAIVE_THROWER_H: case 35419:  // Glaive Thrower (1)
+                break;
+            default:
+                continue;
+        }
+        bool nearGate = false;
+        for (GameObject* g : gates)
+            nearGate = nearGate || (g && veh->GetExactDist2d(g) < 70.0f);
+        if (!nearGate)
+            continue;
+        if (float const dist = bot->GetExactDist2d(veh); dist < bestDist)
+        {
+            bestDist = dist;
+            best = veh;
+        }
+    }
+    return best;
+}
+
 Unit* FindFocusTarget(PlayerbotAI* botAI)
 {
     Player* bot = botAI->GetBot();
     Battleground* bg = bot->GetBattleground();
     if (Unit* demolisher = BGStrand::HuntTarget(botAI))  // SotA defenders: the enemy demolishers at their gate
         return demolisher;
+    if (Unit* siege = FindICSiegeTarget(botAI))  // IoC: enemy siege vehicles at our keep
+        return siege;
     if (Unit* raid = BGBossRaid::Target(botAI))  // raid boss (AV): tanks on the general/guards, then guards, general
         return raid;
     if (Unit* hit = BGDisrupt::Target(botAI))  // disruption (AV): the enemies fighting our general or captain
