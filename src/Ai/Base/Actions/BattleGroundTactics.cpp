@@ -1858,6 +1858,23 @@ bool BGTactics::Execute(Event /*event*/)
 }
 
 // Uses an item as a client does (CMSG_USE_ITEM), so its charge is consumed: Seaforium charges and bombs.
+// SACharges diagnostics (Server.log, per 5 min): pile uses that gave a charge, plant attempts that used it
+namespace
+{
+std::atomic<uint32> chargeTries[2]{0, 0}, chargeDone[2]{0, 0}, chargeLogMs{0};
+void ChargeCount(uint32 kind, bool done)
+{
+    ++chargeTries[kind];
+    chargeDone[kind] += done ? 1 : 0;
+    uint32 now = getMSTime(), last = chargeLogMs.load();
+    if (!last)
+        chargeLogMs = now;
+    else if (getMSTimeDiff(last, now) > 5 * MINUTE * IN_MILLISECONDS && chargeLogMs.compare_exchange_strong(last, now))
+        LOG_INFO("module", "Charges (5 min): pile uses {} (got a charge {}), plant attempts {} (charge used {})",
+                 chargeTries[0].exchange(0), chargeDone[0].exchange(0), chargeTries[1].exchange(0), chargeDone[1].exchange(0));
+}
+}
+
 bool BGTactics::useItemSpell(uint32 itemEntry, uint32 spellId)
 {
     Item* item = bot->GetItemByEntry(itemEntry);
@@ -1982,11 +1999,16 @@ bool BGTactics::strandMove()
             if (bot->IsMounted())
                 bot->RemoveAurasByType(SPELL_AURA_MOUNTED);
             go->Use(bot);
+            if (go == order.pickup)
+                ChargeCount(0, bot->HasItemCount(39213, 1));
             return true;
         }
     // SACharges: at the gate, use the charge (the item, so it is consumed) to plant it at our feet
     if (order.plantAt && bot->GetExactDist2d(order.plantAt) < 10.0f && useItemSpell(39213, 52410))  // Place Seaforium Charge
+    {
+        ChargeCount(1, !bot->HasItemCount(39213, 1));
         return true;
+    }
 
     // the relic is clicked on foot: a demolisher driver gets out
     if (order.use && bot->GetVehicle())
