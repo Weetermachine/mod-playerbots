@@ -22,6 +22,7 @@
 #include "Player.h"
 #include "PlayerbotAI.h"
 #include "Transport.h"
+#include "Vehicle.h"
 
 namespace
 {
