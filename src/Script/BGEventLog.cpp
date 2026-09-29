@@ -20,13 +20,16 @@
 #include "BattlegroundAV.h"
 #include "BattlegroundEY.h"
 #include "BattlegroundIC.h"
+#include "BattlegroundSA.h"
 #include "BattlegroundWS.h"
+#include "BGStrand.h"
 #include "BGTacticArms.h"
 #include "Config.h"
 #include "Creature.h"
 #include "Map.h"
 #include "Log.h"
 #include "Player.h"
+#include "Transport.h"
 #include "PlayerScript.h"
 #include "Playerbots.h"
 #include "RandomPlayerbotMgr.h"
@@ -142,7 +145,9 @@ public:
     // carrier changes, plus a score heartbeat every 30 s. Only compares a few fields per tick.
     void OnBattlegroundUpdate(Battleground* bg, uint32 /*diff*/) override
     {
-        if (bg->GetStatus() != STATUS_IN_PROGRESS || !BGEventLogEnabled())
+        // SotA: its warmups (boats sailing) are logged too
+        bool const saWarmup = bg->GetBgTypeID() == BATTLEGROUND_SA && bg->GetStatus() == STATUS_WAIT_JOIN;
+        if ((bg->GetStatus() != STATUS_IN_PROGRESS && !saWarmup) || !BGEventLogEnabled())
             return;
         if (bg->GetBgTypeID() != BATTLEGROUND_WS)
         {
@@ -321,6 +326,32 @@ private:
         return s.str();
     }
 
+    // SotA: the attacking team, gate health (Green, Yellow, Blue, Red, Purple, Chamber) and each boat's path progress /
+    // pause time / GO state, to see whether gates take damage and when the boats reach the dock
+    static std::string SampleSA(Battleground* bg)
+    {
+        std::ostringstream s;
+        TeamId const att = BGStrand::Attackers(bg);
+        s << " attackers=" << (att == TEAM_ALLIANCE ? 'A' : att == TEAM_HORDE ? 'H' : 'N') << " gates=";
+        for (uint32 g = BG_SA_GREEN_GATE; g <= BG_SA_ANCIENT_GATE; ++g)
+        {
+            GameObject* go = bg->GetBGObject(g);
+            s << (g != BG_SA_GREEN_GATE ? "," : "") << (go ? go->GetGOValue()->Building.Health : 0);
+        }
+        for (uint32 b : {BG_SA_BOAT_ONE, BG_SA_BOAT_TWO})
+        {
+            GameObject* go = bg->GetBGObject(b);
+            StaticTransport* t = go ? go->ToStaticTransport() : nullptr;
+            s << " boat" << (b - BG_SA_BOAT_ONE + 1) << '=';
+            if (t)
+                s << t->GetPathProgress() << '/' << t->GetPauseTime() << '/' << uint32(t->GetGoState()) << '@'
+                  << int32(t->GetPositionX()) << ',' << int32(t->GetPositionY()) << 'p' << t->GetPassengers().size();
+            else
+                s << '-';
+        }
+        return s.str();
+    }
+
     // Position snapshot (AV/IoC), every POS_MS: one line per game, every player as guid,team,x,y,state
     // (state: a alive, d dead, v driving/riding a vehicle), to see where bots spend their time (e.g. idle guards at a
     // base nobody attacks, which never show up in death positions).
@@ -328,7 +359,7 @@ private:
     void LogPositions(Battleground* bg)
     {
         BattlegroundTypeId const type = bg->GetBgTypeID();
-        if (type != BATTLEGROUND_AV && type != BATTLEGROUND_IC)
+        if (type != BATTLEGROUND_AV && type != BATTLEGROUND_IC && type != BATTLEGROUND_SA)
             return;
         uint32 const now = getMSTime();
         {
@@ -345,7 +376,7 @@ private:
             Player* p = ref.GetSource();
             if (!p || !p->IsInWorld())
                 continue;
-            char const state = !p->IsAlive() ? 'd' : p->GetVehicle() ? 'v' : 'a';
+            char const state = !p->IsAlive() ? 'd' : p->GetVehicle() ? 'v' : p->GetTransport() ? 'b' : 'a';
             pts << (first ? "" : ";") << p->GetGUID().GetCounter() << ',' << (p->GetTeamId() == TEAM_HORDE ? 'H' : 'A')
                 << ',' << int32(p->GetPositionX()) << ',' << int32(p->GetPositionY()) << ',' << state;
             first = false;
@@ -363,6 +394,8 @@ private:
             event = "avgen";
         else if (type == BATTLEGROUND_IC)
             event = "veh";
+        else if (type == BATTLEGROUND_SA)
+            event = "sa";
         else
             return;
 
@@ -373,7 +406,8 @@ private:
             if (st.lastSampleMs && getMSTimeDiff(st.lastSampleMs, now) < SAMPLE_MS)
                 return;
             st.lastSampleMs = now;
-            sample = type == BATTLEGROUND_AV ? SampleAVGenerals(bg, st) : SampleICVehicles(bg);
+            sample = type == BATTLEGROUND_AV ? SampleAVGenerals(bg, st)
+                   : type == BATTLEGROUND_IC ? SampleICVehicles(bg) : SampleSA(bg);
             if (sample.empty())
                 return;
             bool changed = sample != st.lastSample;
