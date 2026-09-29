@@ -262,7 +262,18 @@ bool Objective(Player* bot, Battleground* bg, Order& out)
             }
         }
         out.move = Near(go, -10.0f, bot);
-        if (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAPortals))
+        // SAHunt: hunters post on the wall above their gate (its Defender's Portal lands there; gates and portal
+        // destinations share the green, yellow, blue, red, purple order): from inside the gate there is no line of sight
+        // to the demolishers parked outside it
+        bool const hunter = BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAHunt) && !PlayerbotAI::IsHeal(bot) &&
+                            target <= BG_SA_PURPLE_GATE;
+        if (hunter)
+        {
+            float const* wall = SOTADefPortalDest[target];
+            uint32 const n = bot->GetGUID().GetCounter();
+            out.move = Position(wall[0] + float(n * 37 % 7) - 3.0f, wall[1] + float(n * 53 % 7) - 3.0f, wall[2]);
+        }
+        if (hunter || BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAPortals))
             if (GameObject* portal = PortalToward(bot, bg, out.move))
             {
                 out.move = portal->GetPosition();
@@ -398,8 +409,19 @@ Unit* GunnerTarget(Player* bot, Battleground* bg)
     Unit* gun = bot->GetVehicleBase();
     if (!gun || gun->GetEntry() != NPC_ANTI_PERSONNAL_CANNON)
         return nullptr;
+    // enemy demolishers first: they are what takes the gate
     Unit* best = nullptr;
     float bestDist = 70.0f;
+    for (uint32 i = BG_SA_DEMOLISHER_1; i <= BG_SA_DEMOLISHER_8; ++i)
+        if (Creature* d = bg->GetBGCreature(i); d && d->IsAlive() && d->IsVisible() && d->GetVehicleKit() &&
+                                                d->GetVehicleKit()->IsVehicleInUse() && gun->IsWithinLOSInMap(d))
+            if (float const dist = gun->GetExactDist2d(d); dist < bestDist)
+            {
+                bestDist = dist;
+                best = d;
+            }
+    if (best)
+        return best;
     for (auto const& ref : bg->GetBgMap()->GetPlayers())
     {
         Player* p = ref.GetSource();
