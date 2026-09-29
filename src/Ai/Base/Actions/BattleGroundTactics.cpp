@@ -1875,6 +1875,25 @@ bool BGTactics::strandMove()
     pos.Set(order.move.GetPositionX(), order.move.GetPositionY(), order.move.GetPositionZ(), bot->GetMapId());
     posMap["bg objective"] = pos;
 
+    // SACannons: in a cannon, shoot the nearest enemy player (the vehicle attacks fire at the current target)
+    if (order.leave || (order.use && bot->GetVehicle()))
+    {
+        WorldPacket exit;
+        bot->GetSession()->HandleRequestVehicleExit(exit);
+        return true;
+    }
+    if (bot->GetVehicleBase() && bot->GetVehicleBase()->GetEntry() == NPC_ANTI_PERSONNAL_CANNON)
+    {
+        if (Unit* t = BGStrand::GunnerTarget(bot, bg))
+            context->GetValue<Unit*>("current target")->Set(t);
+        return true;
+    }
+    if (order.board && bot->IsWithinDistInMap(order.board, INTERACTION_DISTANCE))
+    {
+        order.board->HandleSpellClick(bot);
+        return true;
+    }
+
     // the relic is clicked on foot: a demolisher driver gets out
     if (order.use && bot->GetVehicle())
     {

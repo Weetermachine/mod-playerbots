@@ -100,6 +100,9 @@ enum class BGTactic : uint8
     SATactics = 77,      // Strand of the Ancients: gate push, demolishers, graveyards, relic; defenders hold the next gate
     EYJunctionDirect = 78,  // EotS: at a route junction, straight to the objective instead of a random route
     SABoatRide = 79,     // Strand of the Ancients: attackers ride the boats in (off: teleport to the beach at the start)
+    SAHunt = 80,         // SotA defenders: focus the enemy demolishers near the gate they defend
+    SACannons = 81,      // SotA defenders: up to 2 man the anti-personnel cannons at the gate under attack
+    SALane = 82,         // SotA attackers: all push the lane with fewer defenders instead of splitting over both
     TacticCount          // one past the last value; must stay at or below the mask width (128)
 };
 static_assert(uint32(BGTactic::TacticCount) <= 128, "BGTactic values must fit the 128-bit masks in BGTacticArms.cpp");

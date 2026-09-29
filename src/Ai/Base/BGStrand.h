@@ -13,6 +13,8 @@
 class Battleground;
 class GameObject;
 class Player;
+class PlayerbotAI;
+class Unit;
 
 // Strand of the Ancients (SATactics): attackers push the gates in order, defenders hold the gate under attack.
 namespace BGStrand
@@ -23,6 +25,8 @@ namespace BGStrand
         Position siege;  // the gate a driver shells (set with hasSiege)
         bool hasSiege = false;
         GameObject* use = nullptr;  // banner or relic to click at the move point
+        Unit* board = nullptr;      // SACannons: the cannon to board at the move point
+        bool leave = false;         // SACannons: get out of this cannon (its gate fell or it is not ours to man)
     };
 
     // The Titan Relic carries the attackers' faction; TEAM_NEUTRAL while objects respawn.
@@ -35,6 +39,10 @@ namespace BGStrand
     bool Board(Player* bot, Battleground* bg);
     // SABoatRide: a passenger jumps ashore once its boat waits at the dock; true while it still rides.
     bool Ride(Player* bot, Battleground* bg);
+    // SAHunt: the enemy demolisher for this defender to attack (near the gate it defends); nullptr otherwise.
+    Unit* HuntTarget(PlayerbotAI* botAI);
+    // SACannons: the enemy player a cannon gunner shoots at; nullptr otherwise.
+    Unit* GunnerTarget(Player* bot, Battleground* bg);
 }
 
 #endif

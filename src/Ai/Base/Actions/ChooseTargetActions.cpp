@@ -14,6 +14,7 @@
 #include "BGBossRaid.h"
 #include "BGDisrupt.h"
 #include "BGHealerGuard.h"
+#include "BGStrand.h"
 #include "BGTacticArms.h"
 #include "BattleGroundTactics.h"
 
@@ -413,6 +414,8 @@ Unit* FindFocusTarget(PlayerbotAI* botAI)
 {
     Player* bot = botAI->GetBot();
     Battleground* bg = bot->GetBattleground();
+    if (Unit* demolisher = BGStrand::HuntTarget(botAI))  // SotA defenders: the enemy demolishers at their gate
+        return demolisher;
     if (Unit* raid = BGBossRaid::Target(botAI))  // raid boss (AV): tanks on the general/guards, then guards, general
         return raid;
     if (Unit* hit = BGDisrupt::Target(botAI))  // disruption (AV): the enemies fighting our general or captain
