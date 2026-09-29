@@ -3204,9 +3204,9 @@ bool BGTactics::selectObjective(bool reset)
 
                     pos.Set(rx, ry, rz, bot->GetMapId());
 
-                    // EYFlagHold: under 3 towers a capture is worth 75-85; hold the flag at our tower (the enemy
-                    // can't score it) until we hold 3, the carrier drops below 40%, enemies outnumber us within 30 yd,
-                    // or 90 s pass
+                    // EYFlagHold: under 3 towers a capture is worth 75-85, and without the middle the enemy takes the
+                    // respawned flag; hold it at our tower until we hold 3 towers or the middle, the carrier drops below
+                    // 40%, enemies outnumber us within 30 yd (their army is on us: capture while it is committed), or 90 s
                     bool hold = false;
                     if (BGTacticArms::IsOn(bg, team, BGTactic::EYFlagHold))
                     {
@@ -3224,7 +3224,11 @@ bool BGTactics::selectObjective(bool reset)
                             last = now;
                             since = start;
                         }
-                        hold = owned < 3 && bot->GetHealthPct() > 40.0f && getMSTimeDiff(since, now) < 90000 &&
+                        GameObject* flagStand = bg->GetBGObject(BG_EY_OBJECT_FLAG_NETHERSTORM);
+                        Position const center = flagStand ? flagStand->GetPosition() : Position(2174.78f, 1569.05f, 1160.0f);
+                        uint32 const oursMid = getPlayersInArea(team, center, 40.0f, false);
+                        bool const middle = oursMid >= 2 && oursMid > getPlayersInArea(enemy, center, 40.0f, false);
+                        hold = owned < 3 && !middle && bot->GetHealthPct() > 40.0f && getMSTimeDiff(since, now) < 90000 &&
                                getPlayersInArea(enemy, bot->GetPosition(), 30.0f, false) <=
                                    getPlayersInArea(team, bot->GetPosition(), 30.0f, false);
                     }
