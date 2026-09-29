@@ -6,6 +6,7 @@
 
 #include "BattleGroundTactics.h"
 #include "BGAoeSquad.h"
+#include "BGIsle.h"
 #include "BGStrand.h"
 #include "BGBossRaid.h"
 #include "BGDisrupt.h"
@@ -1742,6 +1743,9 @@ bool BGTactics::Execute(Event /*event*/)
     if (getName() == "move to objective" && bgType == BATTLEGROUND_SA)
         return strandMove();
 
+    if (getName() == "move to objective" && bgType == BATTLEGROUND_IC && isleMove())
+        return true;
+
     if (getName() == "move to objective")
     {
         tripSample();
@@ -1853,6 +1857,61 @@ bool BGTactics::Execute(Event /*event*/)
     return false;
 }
 
+// Uses an item as a client does (CMSG_USE_ITEM), so its charge is consumed: Seaforium charges and bombs.
+bool BGTactics::useItemSpell(uint32 itemEntry, uint32 spellId)
+{
+    Item* item = bot->GetItemByEntry(itemEntry);
+    if (!item)
+        return false;
+    if (bot->IsMounted())
+        bot->RemoveAurasByType(SPELL_AURA_MOUNTED);
+    uint8 bag = item->GetBagSlot(), slot = item->GetSlot(), castCount = 1, castFlags = 0;
+    uint32 const glyphIndex = 0;
+    WorldPacket packet(CMSG_USE_ITEM);
+    packet << bag << slot << castCount << spellId << item->GetGUID() << glyphIndex << castFlags;
+    packet << uint32(TARGET_FLAG_NONE) << bot->GetPackGUID();
+    bot->GetSession()->HandleUseItemOpcode(packet);
+    return true;
+}
+
+// IoC bombs and gunship errands (BGIsle); false: the stock objective move.
+bool BGTactics::isleMove()
+{
+    Battleground* bg = bot->GetBattleground();
+    if (bg->GetStatus() != STATUS_IN_PROGRESS || bot->GetVehicle() || bot->IsNonMeleeSpellCast(false))
+        return false;
+    if (BGIsle::Drop(bot, bg))
+        return true;
+    BGIsle::Order order;
+    if (!BGIsle::Objective(bot, bg, order))
+        return false;
+    PositionMap& posMap = context->GetValue<PositionMap&>("position")->Get();
+    PositionInfo pos = posMap["bg objective"];
+    pos.Set(order.move.GetPositionX(), order.move.GetPositionY(), order.move.GetPositionZ(), bot->GetMapId());
+    posMap["bg objective"] = pos;
+
+    if (order.use && order.use->IsAtInteractDistance(bot))
+    {
+        if (bot->IsMounted())
+            bot->RemoveAurasByType(SPELL_AURA_MOUNTED);
+        order.use->Use(bot);
+        return true;
+    }
+    if (order.plantAt && bot->GetExactDist2d(order.plantAt) < 12.0f && useItemSpell(order.item, order.spell))
+    {
+        LOG_INFO("module", "IC bombs: {} planted {} at gate {} ({} hp, bg {})", bot->GetName(), order.item,
+                 order.plantAt->GetEntry(), order.plantAt->GetGOValue()->Building.Health, bg->GetInstanceID());
+        return true;
+    }
+    if (bot->IsInCombat())
+        return false;
+    if (bot->isMoving() || bot->GetDistance(order.move) < 4.0f)
+        return true;
+    if (int const res = moveDirectRoute())
+        return res > 0;
+    return MoveNear(bot->GetMapId(), order.move.GetPositionX(), order.move.GetPositionY(), order.move.GetPositionZ(), 1.5f);
+}
+
 bool BGTactics::strandMove()
 {
     Battleground* bg = bot->GetBattleground();
@@ -1903,19 +1962,8 @@ bool BGTactics::strandMove()
             return true;
         }
     // SACharges: at the gate, use the charge (the item, so it is consumed) to plant it at our feet
-    if (order.plantAt && bot->GetExactDist2d(order.plantAt) < 10.0f)
-        if (Item* charge = bot->GetItemByEntry(39213))
-        {
-            if (bot->IsMounted())
-                bot->RemoveAurasByType(SPELL_AURA_MOUNTED);
-            uint8 bag = charge->GetBagSlot(), slot = charge->GetSlot(), castCount = 1, castFlags = 0;
-            uint32 const spellId = 52410, glyphIndex = 0;  // Place Seaforium Charge
-            WorldPacket packet(CMSG_USE_ITEM);
-            packet << bag << slot << castCount << spellId << charge->GetGUID() << glyphIndex << castFlags;
-            packet << uint32(TARGET_FLAG_NONE) << bot->GetPackGUID();
-            bot->GetSession()->HandleUseItemOpcode(packet);
-            return true;
-        }
+    if (order.plantAt && bot->GetExactDist2d(order.plantAt) < 10.0f && useItemSpell(39213, 52410))  // Place Seaforium Charge
+        return true;
 
     // the relic is clicked on foot: a demolisher driver gets out
     if (order.use && bot->GetVehicle())
@@ -2113,6 +2161,13 @@ static bool GroundOk(Battleground* bg, Player* bot, float groundZ)
 {
     return BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::GroundZFix) ? groundZ > INVALID_HEIGHT
                                                                           : groundZ == VMAP_INVALID_HEIGHT_VALUE;
+}
+
+// EYFlagHold: when each carrier started holding (reset after 10 s without a hold check: a new carry)
+namespace
+{
+std::mutex flagHoldLock;
+std::unordered_map<ObjectGuid, std::pair<uint32, uint32>> flagHoldSince;  // guid -> (hold start, last check)
 }
 
 bool BGTactics::selectObjective(bool reset)
@@ -3149,8 +3204,33 @@ bool BGTactics::selectObjective(bool reset)
 
                     pos.Set(rx, ry, rz, bot->GetMapId());
 
+                    // EYFlagHold: under 3 towers a capture is worth 75-85; hold the flag at our tower (the enemy
+                    // can't score it) until we hold 3, the carrier drops below 40%, enemies outnumber us within 30 yd,
+                    // or 90 s pass
+                    bool hold = false;
+                    if (BGTacticArms::IsOn(bg, team, BGTactic::EYFlagHold))
+                    {
+                        uint32 owned = 0;
+                        for (auto const& [nodeId, _, trigger] : EY_AttackObjectives)
+                            owned += IsOwned(nodeId) ? 1 : 0;
+                        TeamId const enemy = team == TEAM_ALLIANCE ? TEAM_HORDE : TEAM_ALLIANCE;
+                        uint32 const now = getMSTime();
+                        uint32 since;
+                        {
+                            std::lock_guard<std::mutex> guard(flagHoldLock);
+                            auto& [start, last] = flagHoldSince[bot->GetGUID()];
+                            if (!last || getMSTimeDiff(last, now) > 10000)
+                                start = now;
+                            last = now;
+                            since = start;
+                        }
+                        hold = owned < 3 && bot->GetHealthPct() > 40.0f && getMSTimeDiff(since, now) < 90000 &&
+                               getPlayersInArea(enemy, bot->GetPosition(), 30.0f, false) <=
+                                   getPlayersInArea(team, bot->GetPosition(), 30.0f, false);
+                    }
+
                     // Check AreaTrigger activation range
-                    if (bestTrigger && bot->IsWithinDist3d(pos.x, pos.y, pos.z, INTERACTION_DISTANCE))
+                    if (bestTrigger && !hold && bot->IsWithinDist3d(pos.x, pos.y, pos.z, INTERACTION_DISTANCE))
                     {
                         WorldPacket data(CMSG_AREATRIGGER);
                         data << uint32(bestTrigger);

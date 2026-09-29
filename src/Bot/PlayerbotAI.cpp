@@ -378,9 +378,9 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
     else
         nextTransportCheck = 0;
 
-    // Strand of the Ancients boats: riders are boarded and landed by the SotA tactics (BGStrand); on a moving boat
-    // this collision check stops finding the deck and dropped them at sea
-    if (!nextTransportCheck && bot->GetTransport() && bot->GetMapId() == 607)
+    // SotA boats and IoC gunships: riders board and leave through the BG tactics (BGStrand, BGIsle); on a moving
+    // transport this collision check stops finding the deck and dropped them
+    if (!nextTransportCheck && bot->GetTransport() && (bot->GetMapId() == 607 || bot->GetMapId() == 628))
         nextTransportCheck = 1000;
 
     if (!nextTransportCheck)
