@@ -131,6 +131,31 @@ uint32 AttackLane(Battleground* bg, TeamId attackers)
     return c.lane;
 }
 
+// SAGateFocus: one random lane per round for every attacker, kept until its gate falls (then NextGate moves on).
+std::unordered_map<uint32, std::pair<TeamId, uint32>> focusLanes;  // by BG instance id: round's attackers, lane
+
+uint32 FocusLane(Battleground* bg, TeamId attackers)
+{
+    bool const green = Destroyed(bg, BG_SA_GREEN_GATE), blue = Destroyed(bg, BG_SA_BLUE_GATE);
+    if (green != blue)
+        return green ? 0 : 1;  // one outer gate open: its lane (the gate behind it is the only one reachable)
+    std::lock_guard<std::mutex> guard(laneLock);
+    auto& f = focusLanes[bg->GetInstanceID()];
+    if (f.first != attackers)
+        f = {attackers, urand(0, 1)};
+    return f.second;
+}
+
+// SAHunt: an enemy-driven demolisher within 50 yd of the gate.
+bool SiegeAtGate(Battleground* bg, GameObject* gate)
+{
+    for (uint32 i = BG_SA_DEMOLISHER_1; i <= BG_SA_DEMOLISHER_8; ++i)
+        if (Creature* d = bg->GetBGCreature(i); d && d->IsAlive() && d->GetVehicleKit() &&
+                                                d->GetVehicleKit()->IsVehicleInUse() && d->GetExactDist2d(gate) < 50.0f)
+            return true;
+    return false;
+}
+
 // SACannons: the anti-personnel cannons within 45 yd of a gate.
 std::vector<Creature*> GunsAt(Battleground* bg, GameObject* gate)
 {
@@ -232,6 +257,8 @@ bool Objective(Player* bot, Battleground* bg, Order& out)
     uint32 lane = bot->GetGUID().GetCounter() % 2;
     if (attacking && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SALane))
         lane = AttackLane(bg, attackers);
+    if (attacking && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAGateFocus))
+        lane = FocusLane(bg, attackers);
     uint32 const target = NextGate(bg, lane);
     GameObject* go = bg->GetBGObject(target);
     if (!go)
@@ -262,18 +289,11 @@ bool Objective(Player* bot, Battleground* bg, Order& out)
             }
         }
         out.move = Near(go, -10.0f, bot);
-        // SAHunt: hunters post on the wall above their gate (its Defender's Portal lands there; gates and portal
-        // destinations share the green, yellow, blue, red, purple order): from inside the gate there is no line of sight
-        // to the demolishers parked outside it
-        bool const hunter = BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAHunt) && !PlayerbotAI::IsHeal(bot) &&
-                            target <= BG_SA_PURPLE_GATE;
-        if (hunter)
-        {
-            float const* wall = SOTADefPortalDest[target];
-            uint32 const n = bot->GetGUID().GetCounter();
-            out.move = Position(wall[0] + float(n * 37 % 7) - 3.0f, wall[1] + float(n * 53 % 7) - 3.0f, wall[2]);
-        }
-        if (hunter || BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAPortals))
+        // SAHunt: while enemy siege is at the gate, hunters step outside it (no line of sight from inside or the wall)
+        if (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAHunt) && !PlayerbotAI::IsHeal(bot) &&
+            SiegeAtGate(bg, go))
+            out.move = Near(go, 6.0f, bot);
+        if (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAPortals))
             if (GameObject* portal = PortalToward(bot, bg, out.move))
             {
                 out.move = portal->GetPosition();
@@ -393,7 +413,7 @@ Unit* HuntTarget(PlayerbotAI* botAI)
     {
         Creature* d = bg->GetBGCreature(i);
         if (!d || !d->IsAlive() || !d->IsVisible() || d->HasUnitFlag(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE) ||
-            d->GetExactDist2d(gate) > 50.0f || !bot->IsValidAttackTarget(d))
+            d->GetExactDist2d(gate) > 50.0f || !bot->IsValidAttackTarget(d) || !bot->IsWithinLOSInMap(d))
             continue;
         if (float const dist = bot->GetExactDist2d(d); dist < bestDist)
         {
