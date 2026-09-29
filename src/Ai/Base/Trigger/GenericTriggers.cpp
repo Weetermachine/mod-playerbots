@@ -232,7 +232,8 @@ bool MyAttackerCountTrigger::IsActive()
 bool MediumThreatTrigger::IsActive()
 {
     if (PvPThreatFixOn(bot))
-        return false;  // no Fade / Soulshatter / Cower / Vanish against players
+        if (Unit* target = AI_VALUE(Unit*, "current target"); target && target->IsPlayer())
+            return false;  // no Fade / Soulshatter / Cower / Vanish against players
     if (!AI_VALUE(Unit*, "main tank"))
         return false;
 

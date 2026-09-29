@@ -37,7 +37,7 @@ bool NearestEnemyPlayersValue::AcceptUnit(Unit* unit)
         !sPlayerbotAIConfig.IsPvpProhibited(enemy->GetZoneId(), enemy->GetAreaId()) &&
         !enemy->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NON_ATTACKABLE_2) &&
         ((inCannon || !enemy->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE))) &&
-        /*!enemy->HasStealthAura() && !enemy->HasInvisibilityAura()*/ (StealthFixOn(bot) || enemy->CanSeeOrDetect(bot)) &&
+        /*!enemy->HasStealthAura() && !enemy->HasInvisibilityAura()*/ (StealthFixOn(bot) ? bot->CanSeeOrDetect(enemy) : enemy->CanSeeOrDetect(bot)) &&
         !(enemy->HasSpiritOfRedemptionAura()))
     {
         // If with master, only attack if master is PvP flagged
