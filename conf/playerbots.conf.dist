@@ -1279,6 +1279,11 @@ AiPlayerbot.RandomBotJoinBG = 1
 # Default: 0 (disabled)
 AiPlayerbot.BGEventLog = 0
 
+# Battleground callouts: when enemies close in on a node a team holds (Arathi Basin bases, Eye of the Storm towers),
+# the team's bot nearest it says "4 inc BS" in battleground chat (at most once per node and team every 45 s).
+# Default: 0 (off)
+AiPlayerbot.BGCallouts = 0
+
 # Warsong Gulch flag-carrier tactics, per faction (so one side can run the new behavior and the
 # other the old one in the same games, for A/B comparison).
 #   FCEscort: escorts (about 40% of the team, never flag-room defenders) within 60 yd of our flag
