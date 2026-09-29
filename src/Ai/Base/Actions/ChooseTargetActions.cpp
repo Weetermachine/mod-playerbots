@@ -7,7 +7,9 @@
 #include "ChooseTargetActions.h"
 
 #include <atomic>
+#include <map>
 #include <mutex>
+#include <sstream>
 #include <unordered_map>
 
 #include "BGAoeSquad.h"
@@ -558,11 +560,48 @@ void HuntCount(Unit* target, bool attacked)
 }
 }
 
+// Hunt diagnostics: why a vehicle focus pick was refused (Attack's checks, in its order), logged with the counter
+namespace
+{
+std::mutex refusalLock;
+std::map<std::string, uint32> refusals;
+uint32 refusalLogMs = 0;
+void HuntRefusal(PlayerbotAI* botAI, Player* bot, Unit* target)
+{
+    std::string why = !target->IsInWorld() ? "not in world"
+        : bot->IsFriendlyTo(target) ? "friendly"
+        : target->isDead() ? "dead"
+        : !bot->IsWithinLOSInMap(target) ? "no LOS"
+        : botAI->IsInVehicle() ? "bot in vehicle"
+        : bot->GetVictim() == target ? "already attacking"
+        : !bot->IsValidAttackTarget(target) ? "invalid target"
+        : "other";
+    float const dist = bot->GetExactDist(target);
+    why += std::string(botAI->IsMelee(bot) ? " melee" : " ranged") + (dist < 10 ? " <10yd" : dist < 30 ? " 10-30yd" : dist < 45 ? " 30-45yd" : " 45+yd");
+    std::lock_guard<std::mutex> guard(refusalLock);
+    ++refusals[why];
+    uint32 const now = getMSTime();
+    if (!refusalLogMs)
+        refusalLogMs = now;
+    else if (getMSTimeDiff(refusalLogMs, now) > 5 * MINUTE * IN_MILLISECONDS)
+    {
+        std::ostringstream out;
+        for (auto const& [k, n] : refusals)
+            out << " [" << k << "]=" << n;
+        LOG_INFO("module", "Hunt refusals (5 min):{}", out.str());
+        refusals.clear();
+        refusalLogMs = now;
+    }
+}
+}
+
 bool FocusFireAction::Execute(Event /*event*/)
 {
     Unit* target = FindFocusTarget(botAI);
     bool const attacked = target && Attack(target);
     HuntCount(target, attacked);
+    if (target && target->IsVehicle() && !attacked)
+        HuntRefusal(botAI, bot, target);
     if (!attacked)
         return false;
     uint32 const now = getMSTime();
