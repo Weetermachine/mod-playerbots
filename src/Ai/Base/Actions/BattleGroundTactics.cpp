@@ -1893,6 +1893,29 @@ bool BGTactics::strandMove()
         order.board->HandleSpellClick(bot);
         return true;
     }
+    // SAPortals / SACharges: portals and bomb piles are used like a client click (they cast their spell on the user)
+    for (GameObject* go : {order.portal, order.pickup})
+        if (go && go->IsAtInteractDistance(bot))
+        {
+            if (bot->IsMounted())
+                bot->RemoveAurasByType(SPELL_AURA_MOUNTED);
+            go->Use(bot);
+            return true;
+        }
+    // SACharges: at the gate, use the charge (the item, so it is consumed) to plant it at our feet
+    if (order.plantAt && bot->GetExactDist2d(order.plantAt) < 10.0f)
+        if (Item* charge = bot->GetItemByEntry(39213))
+        {
+            if (bot->IsMounted())
+                bot->RemoveAurasByType(SPELL_AURA_MOUNTED);
+            uint8 bag = charge->GetBagSlot(), slot = charge->GetSlot(), castCount = 1, castFlags = 0;
+            uint32 const spellId = 52410, glyphIndex = 0;  // Place Seaforium Charge
+            WorldPacket packet(CMSG_USE_ITEM);
+            packet << bag << slot << castCount << spellId << charge->GetGUID() << glyphIndex << castFlags;
+            packet << uint32(TARGET_FLAG_NONE) << bot->GetPackGUID();
+            bot->GetSession()->HandleUseItemOpcode(packet);
+            return true;
+        }
 
     // the relic is clicked on foot: a demolisher driver gets out
     if (order.use && bot->GetVehicle())

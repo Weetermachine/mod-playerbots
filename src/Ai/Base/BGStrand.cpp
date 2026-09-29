@@ -162,6 +162,47 @@ Creature* GunFor(Player* bot, Battleground* bg, GameObject* gate, uint32 lane)
     return guns[idx];
 }
 
+constexpr uint32 ITEM_MASSIVE_SEAFORIUM_CHARGE = 39213;
+
+// SACharges: the nearest bomb pile (spawned) within 150 yd.
+GameObject* NearestBombPile(Player* bot, Battleground* bg)
+{
+    GameObject* best = nullptr;
+    float bestDist = 150.0f;
+    for (uint32 i = BG_SA_BOMB; i < BG_SA_MAXOBJ; ++i)
+        if (GameObject* go = bg->GetBGObject(i); go && go->isSpawned())
+            if (float const d = bot->GetExactDist2d(go); d < bestDist)
+            {
+                bestDist = d;
+                best = go;
+            }
+    return best;
+}
+
+// SAPortals: the Defender's Portal whose destination saves this bot 40+ yd on its way to dest (straight lines), if any.
+// Portal order in BG_SA_Objects: blue, green, yellow, purple, red; SOTADefPortalDest: green, yellow, blue, red, purple.
+GameObject* PortalToward(Player* bot, Battleground* bg, Position const& dest)
+{
+    static uint32 const destOf[5] = {2, 0, 1, 4, 3};
+    float const direct = bot->GetExactDist2d(&dest);
+    GameObject* best = nullptr;
+    float bestSaving = 40.0f;
+    for (uint32 i = 0; i < 5; ++i)
+    {
+        GameObject* portal = bg->GetBGObject(BG_SA_PORTAL_DEFFENDER_BLUE + i);
+        if (!portal)
+            continue;
+        float const* d = SOTADefPortalDest[destOf[i]];
+        float const via = bot->GetExactDist2d(portal) + std::hypot(d[0] - dest.GetPositionX(), d[1] - dest.GetPositionY());
+        if (direct - via > bestSaving)
+        {
+            bestSaving = direct - via;
+            best = portal;
+        }
+    }
+    return best;
+}
+
 // The graveyard banner if the enemy holds it (Alliance banners have even entries).
 GameObject* EnemyBanner(Battleground* bg, uint32 flag, TeamId team)
 {
@@ -221,6 +262,12 @@ bool Objective(Player* bot, Battleground* bg, Order& out)
             }
         }
         out.move = Near(go, -10.0f, bot);
+        if (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAPortals))
+            if (GameObject* portal = PortalToward(bot, bg, out.move))
+            {
+                out.move = portal->GetPosition();
+                out.portal = portal;
+            }
         return true;
     }
 
@@ -237,6 +284,24 @@ bool Objective(Player* bot, Battleground* bg, Order& out)
         out.siege = go->GetPosition();
         out.hasSiege = true;
         return true;
+    }
+
+    // SACharges: a third of the attackers on foot (not healers) carry charges from the piles to the gate
+    if (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SACharges) && bot->GetGUID().GetCounter() % 3 == 0 &&
+        !PlayerbotAI::IsHeal(bot))
+    {
+        if (bot->HasItemCount(ITEM_MASSIVE_SEAFORIUM_CHARGE, 1))
+        {
+            out.move = Near(go, 2.0f, bot);
+            out.plantAt = go;
+            return true;
+        }
+        if (GameObject* pile = NearestBombPile(bot, bg))
+        {
+            out.move = pile->GetPosition();
+            out.pickup = pile;
+            return true;
+        }
     }
 
     // take the graveyards behind the open outer gates, then the central one behind Purple/Red
@@ -278,14 +343,38 @@ Unit* HuntTarget(PlayerbotAI* botAI)
 {
     Player* bot = botAI->GetBot();
     Battleground* bg = bot->GetBattleground();
-    if (!bg || !bot->IsAlive() || bot->GetVehicle() || PlayerbotAI::IsHeal(bot) ||
-        !BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAHunt))
+    if (!bg || !bot->IsAlive() || bot->GetVehicle() || PlayerbotAI::IsHeal(bot))
+        return nullptr;
+    bool const bombs = BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SABombHunt);
+    if (!bombs && !BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAHunt))
         return nullptr;
     TeamId const attackers = Attackers(bg);
     if (attackers == TEAM_NEUTRAL || bot->GetTeamId() == attackers)
         return nullptr;
     GameObject* gate = bg->GetBGObject(NextGate(bg, bot->GetGUID().GetCounter() % 2));
     if (!gate)
+        return nullptr;
+    // SABombHunt: an enemy carrying a charge near our gate is about to plant it
+    if (bombs)
+    {
+        Unit* carrier = nullptr;
+        float carrierDist = 60.0f;
+        for (auto const& ref : bg->GetBgMap()->GetPlayers())
+        {
+            Player* p = ref.GetSource();
+            if (!p || !p->IsAlive() || p->GetTeamId() != attackers || !p->HasItemCount(ITEM_MASSIVE_SEAFORIUM_CHARGE, 1) ||
+                p->GetExactDist2d(gate) > 45.0f || !bot->IsValidAttackTarget(p) || !bot->CanSeeOrDetect(p))
+                continue;
+            if (float const dist = bot->GetExactDist2d(p); dist < carrierDist)
+            {
+                carrierDist = dist;
+                carrier = p;
+            }
+        }
+        if (carrier)
+            return carrier;
+    }
+    if (!BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAHunt))
         return nullptr;
     Unit* best = nullptr;
     float bestDist = 60.0f;

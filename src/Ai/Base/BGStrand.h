@@ -27,6 +27,9 @@ namespace BGStrand
         GameObject* use = nullptr;  // banner or relic to click at the move point
         Unit* board = nullptr;      // SACannons: the cannon to board at the move point
         bool leave = false;         // SACannons: get out of this cannon (its gate fell or it is not ours to man)
+        GameObject* pickup = nullptr;  // SACharges: the bomb pile to take a charge from
+        GameObject* plantAt = nullptr; // SACharges: the gate to plant the carried charge at
+        GameObject* portal = nullptr;  // SAPortals: the Defender's Portal to take
     };
 
     // The Titan Relic carries the attackers' faction; TEAM_NEUTRAL while objects respawn.
