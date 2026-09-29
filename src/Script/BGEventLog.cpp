@@ -30,6 +30,7 @@
 #include "Log.h"
 #include "Player.h"
 #include "Transport.h"
+#include "Vehicle.h"
 #include "PlayerScript.h"
 #include "Playerbots.h"
 #include "RandomPlayerbotMgr.h"
@@ -290,6 +291,7 @@ private:
     {
         std::map<uint32, uint32> byEntry[2];
         uint32 riding[2] = {0, 0};
+        std::string hp[2];  // health % of each driven vehicle
         for (auto const& [guid, player] : bg->GetPlayers())
         {
             if (!player || player->GetMapId() != bg->GetMapId())
@@ -299,6 +301,9 @@ private:
                 int side = player->GetBgTeamId() == TEAM_ALLIANCE ? 0 : 1;
                 riding[side]++;
                 byEntry[side][base->GetEntry()]++;
+                if (Vehicle* kit = base->GetVehicleKit(); kit && kit->GetSeatForPassenger(player) &&
+                                                          kit->GetSeatForPassenger(player)->CanControl())
+                    hp[side] += (hp[side].empty() ? "" : ",") + std::to_string(uint32(base->GetHealthPct()));
             }
         }
         std::ostringstream s;
@@ -313,6 +318,7 @@ private:
                 GameObject* go = bg->GetBGObject(idx);
                 s << (g ? "," : "") << (go ? go->GetGOValue()->Building.Health : 0);
             }
+            s << ' ' << k << "_vhp=" << (hp[side].empty() ? "-" : hp[side]);
             s << ' ' << k << "_riding=" << riding[side] << ' ' << k << "_vehicles=";
             if (byEntry[side].empty())
                 s << '-';
@@ -338,6 +344,11 @@ private:
             GameObject* go = bg->GetBGObject(g);
             s << (g != BG_SA_GREEN_GATE ? "," : "") << (go ? go->GetGOValue()->Building.Health : 0);
         }
+        std::string demo;
+        for (uint32 i = BG_SA_DEMOLISHER_1; i <= BG_SA_DEMOLISHER_8; ++i)
+            if (Creature* d = bg->GetBGCreature(i); d && d->IsAlive() && d->IsVisible())
+                demo += (demo.empty() ? "" : ",") + std::to_string(uint32(d->GetHealthPct()));
+        s << " demo=" << (demo.empty() ? "-" : demo);
         for (uint32 b : {BG_SA_BOAT_ONE, BG_SA_BOAT_TWO})
         {
             GameObject* go = bg->GetBGObject(b);

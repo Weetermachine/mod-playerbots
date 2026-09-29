@@ -538,10 +538,31 @@ bool FocusFireAction::isUseful()
     return target && target != AI_VALUE(Unit*, "current target");
 }
 
+// SAHunt / ICHunt diagnostics: vehicle focus picks and attacks that went through, per 5 minutes (Server.log)
+namespace
+{
+std::atomic<uint32> huntPicks{0}, huntAttacks{0}, huntLogMs{0};
+void HuntCount(Unit* target, bool attacked)
+{
+    if (!target || !target->IsVehicle())
+        return;
+    ++huntPicks;
+    huntAttacks += attacked ? 1 : 0;
+    uint32 const now = getMSTime(), last = huntLogMs.load();
+    if (!last)
+        huntLogMs = now;
+    else if (getMSTimeDiff(last, now) > 5 * MINUTE * IN_MILLISECONDS && huntLogMs.compare_exchange_strong(last, now))
+        LOG_INFO("module", "Hunt (5 min): vehicle focus picks {}, attacks started {}", huntPicks.exchange(0),
+                 huntAttacks.exchange(0));
+}
+}
+
 bool FocusFireAction::Execute(Event /*event*/)
 {
     Unit* target = FindFocusTarget(botAI);
-    if (!target || !Attack(target))
+    bool const attacked = target && Attack(target);
+    HuntCount(target, attacked);
+    if (!attacked)
         return false;
     uint32 const now = getMSTime();
     uint32 const m = BGTacticArms::IsOn(bot->GetBattleground(), bot->GetBgTeamId(), BGTactic::FocusPartial) ? 1 : 0;
