@@ -8,12 +8,14 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 #include <mutex>
 #include <unordered_map>
 #include <vector>
 
 #include "BGTacticArms.h"
 #include "BattlegroundSA.h"
+#include "BattlegroundScore.h"
 #include "Creature.h"
 #include "GameObject.h"
 #include "Log.h"
@@ -189,14 +191,15 @@ Creature* GunFor(Player* bot, Battleground* bg, GameObject* gate, uint32 lane)
 
 constexpr uint32 ITEM_MASSIVE_SEAFORIUM_CHARGE = 39213;
 
-// SACharges: the nearest bomb pile (spawned) within 150 yd.
-GameObject* NearestBombPile(Player* bot, Battleground* bg)
+// SACharges: the nearest bomb pile (spawned) within 150 yd; SAChargesOnWay: only one that adds at most 30 yd to the way to the gate.
+GameObject* NearestBombPile(Player* bot, Battleground* bg, GameObject* gate, bool onWay)
 {
     GameObject* best = nullptr;
     float bestDist = 150.0f;
+    float const direct = bot->GetExactDist2d(gate);
     for (uint32 i = BG_SA_BOMB; i < BG_SA_MAXOBJ; ++i)
         if (GameObject* go = bg->GetBGObject(i); go && go->isSpawned())
-            if (float const d = bot->GetExactDist2d(go); d < bestDist)
+            if (float const d = bot->GetExactDist2d(go); d < bestDist && (!onWay || d + go->GetExactDist2d(gate) <= direct + 30.0f))
             {
                 bestDist = d;
                 best = go;
@@ -327,7 +330,7 @@ bool Objective(Player* bot, Battleground* bg, Order& out)
             out.plantAt = go;
             return true;
         }
-        if (GameObject* pile = NearestBombPile(bot, bg))
+        if (GameObject* pile = NearestBombPile(bot, bg, go, BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAChargesOnWay)))
         {
             out.move = pile->GetPosition();
             out.pickup = pile;
@@ -422,6 +425,76 @@ Unit* HuntTarget(PlayerbotAI* botAI)
         }
     }
     return best;
+}
+
+namespace
+{
+struct Carry
+{
+    uint32 ms;
+    uint32 deaths;
+    TeamId attackers;
+};
+std::mutex carryLock;
+std::unordered_map<ObjectGuid::LowType, Carry> carries;
+uint32 carryOut[5] = {}, carryPlantMs = 0, carryLogMs = 0;  // picked up, planted, died carrying, round ended, lost otherwise
+
+uint32 Deaths(Player* bot, Battleground* bg)
+{
+    auto const* scores = bg->GetPlayerScores();
+    auto it = scores->find(bot->GetGUID().GetCounter());
+    return it != scores->end() ? it->second->GetDeaths() : 0;
+}
+}
+
+void CarryTrack(Player* bot, Battleground* bg)
+{
+    uint32 const now = getMSTime();
+    bool const has = bot->HasItemCount(ITEM_MASSIVE_SEAFORIUM_CHARGE, 1);
+    std::lock_guard<std::mutex> guard(carryLock);
+    auto it = carries.find(bot->GetGUID().GetCounter());
+    if (it == carries.end())
+    {
+        if (has)
+        {
+            carries[bot->GetGUID().GetCounter()] = {now, Deaths(bot, bg), Attackers(bg)};
+            ++carryOut[0];
+        }
+    }
+    else if (it->second.attackers != Attackers(bg))
+    {
+        ++carryOut[3];
+        carries.erase(it);
+    }
+    else if (!has)
+    {
+        ++carryOut[Deaths(bot, bg) > it->second.deaths ? 2 : 4];
+        carries.erase(it);
+    }
+    if (!carryLogMs)
+        carryLogMs = now;
+    else if (getMSTimeDiff(carryLogMs, now) > 5 * MINUTE * IN_MILLISECONDS)
+    {
+        LOG_INFO("module", "Charge carries (5 min): picked up {}, planted {} (avg {} s after pickup), died carrying {}, round ended carrying {}, lost otherwise {}, carrying now {}",
+                 carryOut[0], carryOut[1], carryOut[1] ? carryPlantMs / carryOut[1] / 1000 : 0, carryOut[2], carryOut[3], carryOut[4],
+                 carries.size());
+        std::fill(std::begin(carryOut), std::end(carryOut), 0);
+        carryPlantMs = 0;
+        carryLogMs = now;
+        for (auto c = carries.begin(); c != carries.end();)  // games that ended
+            c = getMSTimeDiff(c->second.ms, now) > 20 * MINUTE * IN_MILLISECONDS ? carries.erase(c) : std::next(c);
+    }
+}
+
+void CarryPlanted(Player* bot)
+{
+    std::lock_guard<std::mutex> guard(carryLock);
+    auto it = carries.find(bot->GetGUID().GetCounter());
+    if (it == carries.end())
+        return;
+    ++carryOut[1];
+    carryPlantMs += getMSTimeDiff(it->second.ms, getMSTime());
+    carries.erase(it);
 }
 
 Unit* GunnerTarget(Player* bot, Battleground* bg)

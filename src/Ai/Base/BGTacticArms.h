@@ -113,6 +113,7 @@ enum class BGTactic : uint8
     VehicleTargetFix = 90,  // BG bug fix: enemy vehicles skip the world-mob tap rule (bots dropped every siege vehicle they targeted)
     ICCannons = 91,      // IoC: while enemy siege is near our keep, a few defenders man its cannons and shoot siege first
     SAGateFocus = 92,    // SotA: attackers commit to one random lane per round (no switching) until its gate falls
+    SAChargesOnWay = 93, // SotA: charge carriers only take a pile that adds at most 30 yd to their way to the gate
     TacticCount          // one past the last value; must stay at or below the mask width (128)
 };
 static_assert(uint32(BGTactic::TacticCount) <= 128, "BGTactic values must fit the 128-bit masks in BGTacticArms.cpp");

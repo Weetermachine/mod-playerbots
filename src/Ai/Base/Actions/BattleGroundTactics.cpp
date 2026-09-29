@@ -1960,6 +1960,7 @@ bool BGTactics::strandMove()
     if (BGStrand::Ride(bot, bg) || BGStrand::GoAshore(bot, bg))
         return true;
 
+    BGStrand::CarryTrack(bot, bg);
     BGStrand::Order order;
     if (!BGStrand::Objective(bot, bg, order))
         return false;
@@ -2007,6 +2008,7 @@ bool BGTactics::strandMove()
     if (order.plantAt && bot->GetExactDist2d(order.plantAt) < 10.0f && useItemSpell(39213, 52410))  // Place Seaforium Charge
     {
         ChargeCount(1, !bot->HasItemCount(39213, 1));
+        BGStrand::CarryPlanted(bot);
         return true;
     }
 

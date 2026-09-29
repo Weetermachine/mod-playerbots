@@ -46,6 +46,9 @@ namespace BGStrand
     Unit* HuntTarget(PlayerbotAI* botAI);
     // SACannons: the enemy player a cannon gunner shoots at; nullptr otherwise.
     Unit* GunnerTarget(Player* bot, Battleground* bg);
+    // SACharges diagnostics: follows each picked-up charge to its outcome (call every move); Planted when one is placed.
+    void CarryTrack(Player* bot, Battleground* bg);
+    void CarryPlanted(Player* bot);
 }
 
 #endif
