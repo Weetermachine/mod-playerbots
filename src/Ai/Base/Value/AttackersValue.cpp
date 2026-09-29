@@ -229,7 +229,8 @@ bool AttackersValue::IsPossibleTarget(Unit* attacker, Player* bot, float /*range
     // them: a driven vehicle always has one of our players as its victim)
     bool const huntVehicle = c && c->IsVehicle() && bot->InBattleground() && bot->GetBattleground() &&
                              (BGTacticArms::IsOn(bot->GetBattleground(), bot->GetBgTeamId(), BGTactic::SAHunt) ||
-                              BGTacticArms::IsOn(bot->GetBattleground(), bot->GetBgTeamId(), BGTactic::ICHunt));
+                              BGTacticArms::IsOn(bot->GetBattleground(), bot->GetBgTeamId(), BGTactic::ICHunt) ||
+                              BGTacticArms::IsOn(bot->GetBattleground(), bot->GetBgTeamId(), BGTactic::VehicleTargetFix));
     if (c && !huntVehicle)
     {
         if (c->IsInEvadeMode())
