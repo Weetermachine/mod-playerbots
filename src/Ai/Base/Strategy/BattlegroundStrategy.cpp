@@ -119,6 +119,7 @@ void StrandStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode("in vehicle", { NextAction("ram", ACTION_MOVE + 9.0f)}));
     triggers.push_back(new TriggerNode("in vehicle", { NextAction("rocket blast", ACTION_MOVE + 9.0f)}));  // SACannons
     triggers.push_back(new TriggerNode("focus target differs", { NextAction("focus fire", ACTION_RAID + 0.2f)}));  // SAHunt
+    triggers.push_back(new TriggerNode("player has flag", { NextAction("bg move to objective", ACTION_EMERGENCY)}));  // SAChargesPush
 }
 
 void ArenaStrategy::InitTriggers(std::vector<TriggerNode*>& triggers)

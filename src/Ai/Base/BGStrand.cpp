@@ -480,6 +480,12 @@ void CarryTrack(Player* bot, Battleground* bg)
     }
 }
 
+bool PushingCharge(Player* bot, Battleground* bg)
+{
+    return BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAChargesPush) && bot->GetTeamId() == Attackers(bg) &&
+           !bot->GetVehicle() && bot->HasItemCount(ITEM_MASSIVE_SEAFORIUM_CHARGE, 1);
+}
+
 void CarryPlanted(Player* bot)
 {
     std::lock_guard<std::mutex> guard(carryLock);

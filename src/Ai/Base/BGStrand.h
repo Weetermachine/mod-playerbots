@@ -49,6 +49,8 @@ namespace BGStrand
     // SACharges diagnostics: follows each picked-up charge to its outcome (call every move); Planted when one is placed.
     void CarryTrack(Player* bot, Battleground* bg);
     void CarryPlanted(Player* bot);
+    // SAChargesPush: an attacker holding a charge (treated like a flag carrier).
+    bool PushingCharge(Player* bot, Battleground* bg);
 }
 
 #endif

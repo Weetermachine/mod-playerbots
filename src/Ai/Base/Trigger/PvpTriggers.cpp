@@ -7,6 +7,7 @@
 #include "PvpTriggers.h"
 
 #include "BGBossRaid.h"
+#include "BGStrand.h"
 #include "BGTacticArms.h"
 #include "ChooseTargetActions.h"
 
@@ -166,6 +167,9 @@ bool PlayerHasFlag::IsCapturingFlag(Player* bot)
             }
             return false;  // bot doesn't have flag
         }
+
+        if (bot->GetBattlegroundTypeId() == BATTLEGROUND_SA)
+            return BGStrand::PushingCharge(bot, bot->GetBattleground());
 
         if (bot->GetBattlegroundTypeId() == BATTLEGROUND_EY)
         {
