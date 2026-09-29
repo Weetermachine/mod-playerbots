@@ -15,7 +15,6 @@
 
 #include "BGTacticArms.h"
 #include "BattlegroundSA.h"
-#include "BattlegroundScore.h"
 #include "Creature.h"
 #include "GameObject.h"
 #include "Log.h"
@@ -432,19 +431,12 @@ namespace
 struct Carry
 {
     uint32 ms;
-    uint32 deaths;
     TeamId attackers;
+    Position last;  // a carrier that died reappears at a graveyard
 };
 std::mutex carryLock;
 std::unordered_map<ObjectGuid::LowType, Carry> carries;
 uint32 carryOut[5] = {}, carryPlantMs = 0, carryLogMs = 0;  // picked up, planted, died carrying, round ended, lost otherwise
-
-uint32 Deaths(Player* bot, Battleground* bg)
-{
-    auto const* scores = bg->GetPlayerScores();
-    auto it = scores->find(bot->GetGUID().GetCounter());
-    return it != scores->end() ? it->second->GetDeaths() : 0;
-}
 }
 
 void CarryTrack(Player* bot, Battleground* bg)
@@ -457,7 +449,7 @@ void CarryTrack(Player* bot, Battleground* bg)
     {
         if (has)
         {
-            carries[bot->GetGUID().GetCounter()] = {now, Deaths(bot, bg), Attackers(bg)};
+            carries[bot->GetGUID().GetCounter()] = {now, Attackers(bg), bot->GetPosition()};
             ++carryOut[0];
         }
     }
@@ -468,9 +460,11 @@ void CarryTrack(Player* bot, Battleground* bg)
     }
     else if (!has)
     {
-        ++carryOut[Deaths(bot, bg) > it->second.deaths ? 2 : 4];
+        ++carryOut[bot->GetExactDist2d(&it->second.last) > 40.0f ? 2 : 4];
         carries.erase(it);
     }
+    else
+        it->second.last = bot->GetPosition();
     if (!carryLogMs)
         carryLogMs = now;
     else if (getMSTimeDiff(carryLogMs, now) > 5 * MINUTE * IN_MILLISECONDS)
