@@ -111,6 +111,7 @@ enum class BGTactic : uint8
     ICGunship = 88,      // IoC: once the Hangar is ours and an enemy gate is down, a fifth drop in from the gunship
     EYFlagHold = 89,     // EotS: the carrier holds the flag at our tower until we hold 3 towers or holding gets risky
     VehicleTargetFix = 90,  // BG bug fix: enemy vehicles skip the world-mob tap rule (bots dropped every siege vehicle they targeted)
+    ICCannons = 91,      // IoC: while enemy siege is near our keep, a few defenders man its cannons and shoot siege first
     TacticCount          // one past the last value; must stay at or below the mask width (128)
 };
 static_assert(uint32(BGTactic::TacticCount) <= 128, "BGTactic values must fit the 128-bit masks in BGTacticArms.cpp");

@@ -1878,13 +1878,36 @@ bool BGTactics::useItemSpell(uint32 itemEntry, uint32 spellId)
 bool BGTactics::isleMove()
 {
     Battleground* bg = bot->GetBattleground();
-    if (bg->GetStatus() != STATUS_IN_PROGRESS || bot->GetVehicle() || bot->IsNonMeleeSpellCast(false))
+    if (bg->GetStatus() != STATUS_IN_PROGRESS || bot->IsNonMeleeSpellCast(false))
         return false;
     if (BGIsle::Drop(bot, bg))
         return true;
     BGIsle::Order order;
     if (!BGIsle::Objective(bot, bg, order))
         return false;
+    // ICCannons: crew in a keep cannon shoots (the vehicle attacks fire at the current target) or gets out
+    if (order.leave)
+    {
+        WorldPacket exit;
+        bot->GetSession()->HandleRequestVehicleExit(exit);
+        return true;
+    }
+    if (bot->GetVehicle())
+    {
+        if (Unit* t = BGIsle::GunnerTarget(bot, bg))
+        {
+            context->GetValue<Unit*>("current target")->Set(t);
+            for (uint32 spell : {66541u, 67452u})  // the keep cannon's two shots
+                if (botAI->CanCastVehicleSpell(spell, t) && botAI->CastVehicleSpell(spell, t))
+                    break;
+        }
+        return true;
+    }
+    if (order.board && bot->IsWithinDistInMap(order.board, INTERACTION_DISTANCE))
+    {
+        order.board->HandleSpellClick(bot);
+        return true;
+    }
     PositionMap& posMap = context->GetValue<PositionMap&>("position")->Get();
     PositionInfo pos = posMap["bg objective"];
     pos.Set(order.move.GetPositionX(), order.move.GetPositionY(), order.move.GetPositionZ(), bot->GetMapId());

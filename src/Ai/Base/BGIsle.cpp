@@ -18,6 +18,7 @@
 #include "Player.h"
 #include "PlayerbotAI.h"
 #include "Transport.h"
+#include "Vehicle.h"
 
 namespace
 {
@@ -67,6 +68,43 @@ GameObject* NearestOwn(Player* bot, Battleground* bg, uint32 from, uint32 to, Te
     }
     return best;
 }
+// Our keep gates (standing or not): the keep a threat is measured against.
+bool NearOurKeep(Battleground* bg, TeamId team, Unit* u, float dist)
+{
+    uint32 const first = team == TEAM_ALLIANCE ? BG_IC_GO_ALLIANCE_GATE_1 : BG_IC_GO_HORDE_GATE_1;
+    for (uint32 g = 0; g < 3; ++g)
+        if (GameObject* gate = bg->GetBGObject(first + g); gate && u->GetExactDist2d(gate) < dist)
+            return true;
+    return false;
+}
+
+bool SiegeVehicle(uint32 entry)
+{
+    switch (entry)
+    {
+        case NPC_DEMOLISHER: case 35415:
+        case NPC_SIEGE_ENGINE_A: case NPC_SIEGE_ENGINE_H: case 35431: case 35433:
+        case NPC_GLAIVE_THROWER_A: case NPC_GLAIVE_THROWER_H: case 35419:
+            return true;
+        default:
+            return false;
+    }
+}
+
+// An enemy siege vehicle within 110 yd of our keep (the siege spots are 59-65 yd out).
+bool SiegeThreat(Battleground* bg, TeamId team)
+{
+    for (auto const& ref : bg->GetBgMap()->GetPlayers())
+    {
+        Player* p = ref.GetSource();
+        Unit* veh = p && p->IsAlive() && p->GetBgTeamId() != team ? p->GetVehicleBase() : nullptr;
+        if (veh && veh->IsAlive() && SiegeVehicle(veh->GetEntry()) && NearOurKeep(bg, team, veh, 110.0f))
+            return true;
+    }
+    return false;
+}
+
+bool KeepCannon(Unit* u) { return u && u->GetEntry() == NPC_KEEP_CANNON; }
 }  // namespace
 
 namespace BGIsle
@@ -75,7 +113,41 @@ bool Objective(Player* bot, Battleground* bg, Order& out)
 {
     TeamId const team = bot->GetBgTeamId();
     uint32 const n = bot->GetGUID().GetCounter();
-    if (PlayerbotAI::IsHeal(bot) || bot->GetVehicle())
+    if (PlayerbotAI::IsHeal(bot))
+        return false;
+
+    // ICCannons: crew (a fifth of our non-healers) mans our keep cannons while enemy siege is near the keep
+    if (BGTacticArms::IsOn(bg, team, BGTactic::ICCannons))
+    {
+        bool const crew = n % 5 == 2, threat = crew && SiegeThreat(bg, team);
+        Unit* in = bot->GetVehicleBase();
+        if (KeepCannon(in))
+        {
+            out.move = in->GetPosition();
+            out.leave = !threat;
+            return true;
+        }
+        if (threat && !bot->GetVehicle())
+        {
+            Creature* best = nullptr;
+            for (uint32 i = BG_IC_NPC_KEEP_CANNON_1; i <= BG_IC_NPC_KEEP_CANNON_25; ++i)
+            {
+                Creature* c = bg->GetBGCreature(i);
+                if (!c || !c->IsAlive() || !KeepCannon(c) || c->GetFaction() != BG_IC_Factions[team] ||
+                    !c->GetVehicleKit() || c->GetVehicleKit()->IsVehicleInUse())
+                    continue;
+                if (!best || bot->GetExactDist2d(c) < bot->GetExactDist2d(best))
+                    best = c;
+            }
+            if (best && bot->GetExactDist2d(best) < 250.0f)
+            {
+                out.move = best->GetPosition();
+                out.board = best;
+                return true;
+            }
+        }
+    }
+    if (bot->GetVehicle())
         return false;
 
     if (n % 5 == 0 && BGTacticArms::IsOn(bg, team, BGTactic::ICBombs))
@@ -121,6 +193,36 @@ bool Objective(Player* bot, Battleground* bg, Order& out)
             return true;
         }
     return false;
+}
+
+Unit* GunnerTarget(Player* bot, Battleground* bg)
+{
+    Unit* gun = bot->GetVehicleBase();
+    if (!KeepCannon(gun))
+        return nullptr;
+    Unit* best = nullptr;
+    float bestDist = 100.0f;
+    for (bool siege : {true, false})  // enemy siege vehicles first, then players
+    {
+        for (auto const& ref : bg->GetBgMap()->GetPlayers())
+        {
+            Player* p = ref.GetSource();
+            if (!p || !p->IsAlive() || p->GetBgTeamId() == bot->GetBgTeamId())
+                continue;
+            Unit* t = siege ? p->GetVehicleBase() : (p->GetVehicle() ? nullptr : p);
+            if (!t || !t->IsAlive() || (siege && !SiegeVehicle(t->GetEntry())) || !gun->IsWithinLOSInMap(t) ||
+                !bot->CanSeeOrDetect(t))
+                continue;
+            if (float const dist = gun->GetExactDist2d(t); dist < bestDist)
+            {
+                bestDist = dist;
+                best = t;
+            }
+        }
+        if (best)
+            return best;
+    }
+    return nullptr;
 }
 
 bool Drop(Player* bot, Battleground* bg)
