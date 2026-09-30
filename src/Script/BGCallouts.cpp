@@ -48,7 +48,7 @@ struct CalloutState
 std::mutex calloutLock;
 std::unordered_map<uint32, CalloutState> states;  // by BG instance id
 
-bool Enabled() { return sConfigMgr->GetOption<bool>("AiPlayerbot.BGCallouts", false); }
+bool Enabled() { return sConfigMgr->GetOption<bool>("AiPlayerbot.BGCallouts", false, false); }  // read per call: no missing-key log
 
 // The held nodes of an AB or EotS game (owner TEAM_NEUTRAL: nobody holds it); empty for other BGs.
 std::vector<Node> Nodes(Battleground* bg)
