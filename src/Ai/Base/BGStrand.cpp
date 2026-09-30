@@ -588,7 +588,22 @@ bool DefenseObjective(Player* bot, Battleground* bg, Order& out)
         return false;
     if (goOut)
     {
-        DefenseStage(bot, GoOut(bot, bg, gate, gateIdx, front, out) ? 1 : 0);
+        bool const outside = GoOut(bot, bg, gate, gateIdx, front, out);
+        // SAPreDamage: while the outer gates stand, go on to the nearest parked demolisher above 10% on this side
+        if (outside && !green && !blue && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAPreDamage))
+        {
+            std::list<Creature*> demos;
+            bot->GetCreatureListWithEntryInGrid(demos, NPC_DEMOLISHER_SA, 250.0f);
+            bot->GetCreatureListWithEntryInGrid(demos, 32796, 250.0f);
+            Creature* nearest = nullptr;
+            for (Creature* d : demos)
+                if (d->IsAlive() && d->GetHealthPct() > 10.0f && d->GetVehicleKit() && !d->GetVehicleKit()->IsVehicleInUse() &&
+                    d->GetExactDist2d(gate) < 250.0f && (!nearest || gate->GetExactDist2d(d) < gate->GetExactDist2d(nearest)))
+                    nearest = d;
+            if (nearest)
+                out.move = nearest->GetPosition();
+        }
+        DefenseStage(bot, outside ? 1 : 0);
         return true;
     }
     HoldAt(bot, bg, Near(gate, -10.0f, bot), out);
