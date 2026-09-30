@@ -265,6 +265,32 @@ void GunnerSight(uint32 all, uint32 in70, uint32 inRange, uint32 shootable)
     }
 }
 
+// SASortie diagnostics (Server.log, per 5 min): defender objective calls, sortie bots, siege near their gate or any gate
+std::mutex probeLock;
+uint64 probe[6] = {};  // calls, sortie role, siege at own gate (70 yd), siege at any gate (70 yd), driven siege seen, arm on
+uint32 probeLogMs = 0;
+
+void SortieProbe(bool role, bool own, bool any, bool driven, bool arm)
+{
+    std::lock_guard<std::mutex> guard(probeLock);
+    ++probe[0];
+    probe[1] += role;
+    probe[2] += own;
+    probe[3] += any;
+    probe[4] += driven;
+    probe[5] += arm;
+    uint32 const now = getMSTime();
+    if (!probeLogMs)
+        probeLogMs = now;
+    else if (getMSTimeDiff(probeLogMs, now) > 5 * MINUTE * IN_MILLISECONDS)
+    {
+        LOG_INFO("module", "Sortie probe (5 min): defender calls {}, arm on {}, sortie role {}, driven siege anywhere {}, near any gate {}, near own gate {}",
+                 probe[0], probe[5], probe[1], probe[4], probe[3], probe[2]);
+        std::fill(std::begin(probe), std::end(probe), 0);
+        probeLogMs = now;
+    }
+}
+
 // SASortie: half the non-healer defenders.
 bool SortieRole(Player* bot) { return !PlayerbotAI::IsHeal(bot) && (bot->GetGUID().GetCounter() / 3) % 2 == 0; }
 
@@ -432,6 +458,14 @@ bool Objective(Player* bot, Battleground* bg, Order& out)
             }
         }
         out.move = Near(go, -10.0f, bot);
+        {
+            bool anyGate = false;
+            for (uint32 g : {BG_SA_GREEN_GATE, BG_SA_YELLOW_GATE, BG_SA_BLUE_GATE, BG_SA_RED_GATE, BG_SA_PURPLE_GATE})
+                if (GameObject* gg = bg->GetBGObject(g); gg && SiegeAtGate(bg, gg, 70.0f))
+                    anyGate = true;
+            SortieProbe(SortieRole(bot), SiegeAtGate(bg, go, 70.0f), anyGate, !DrivenSiege(bg).empty(),
+                        BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SASortie));
+        }
         // SASortie: while enemy siege nears the gate, go up the wall above it and jump down outside; outside, fight there
         if (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SASortie) && SortieRole(bot) && target <= BG_SA_PURPLE_GATE &&
             SiegeAtGate(bg, go, 70.0f))
@@ -702,7 +736,12 @@ Unit* GunnerTarget(Player* bot, Battleground* bg)
         float const dist = gun->GetExactDist2d(p);
         in70 += dist <= 70.0f ? 1 : 0;
         inRange += dist >= 10.0f && dist <= 70.0f ? 1 : 0;
-        if (dist < 10.0f || dist > 70.0f || !gun->IsWithinLOSInMap(p) || !bot->CanSeeOrDetect(p))
+        // line of sight from the gunner's height (the cannon's base sits behind its own wall)
+        if (dist < 10.0f || dist > 70.0f || !bot->CanSeeOrDetect(p) ||
+            (!gun->IsWithinLOSInMap(p) &&
+             !gun->GetMap()->isInLineOfSight(gun->GetPositionX(), gun->GetPositionY(), gun->GetPositionZ() + 4.0f,
+                                             p->GetPositionX(), p->GetPositionY(), p->GetPositionZ() + 2.0f, gun->GetPhaseMask(),
+                                             LINEOFSIGHT_ALL_CHECKS, VMAP::ModelIgnoreFlags::Nothing)))
             continue;
         ++shootable;
         uint32 score = 0;
