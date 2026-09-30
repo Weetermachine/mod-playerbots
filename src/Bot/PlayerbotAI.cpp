@@ -4008,15 +4008,23 @@ static bool SiegeShot(Player* bot, AiObjectContext* context, uint32 spellId)
            base->GetExactDist2d(siege.x, siege.y) < 15.0f;
 }
 
+// SARam: the gate within 45 degrees of straight ahead, so a shot needs no turn
+static bool RamGateAhead(Unit* vehicleBase, PositionInfo siegePos)
+{
+    Position const gate(siegePos.x, siegePos.y, siegePos.z);
+    return vehicleBase->HasInArc(float(M_PI) / 2.0f, &gate);
+}
+
 // SASiegeRange / ICSiegeRange: a gate shot (a location spell at the siege position) waits until the vehicle is within 50 yd
 static bool SiegeTooFar(Player* bot, Unit* vehicleBase, SpellInfo const* spellInfo, PositionInfo siegePos)
 {
     Battleground* bg = bot->GetBattleground();
     if (!bg || !siegePos.isSet() || !(spellInfo->Targets & TARGET_FLAG_DEST_LOCATION))
         return false;
-    // SARam: hold boulders until at the gate (turning to aim stops the vehicle, so it parked at range)
+    // SARam: on the way in, throw only with the gate ahead (turning to aim stops the vehicle); ram and throw at the gate
     if (bot->GetMapId() == 607 && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SARam))
-        return vehicleBase->GetExactDist2d(siegePos.x, siegePos.y) > 15.0f;
+        return vehicleBase->GetExactDist2d(siegePos.x, siegePos.y) > 50.0f ||
+               (vehicleBase->GetExactDist2d(siegePos.x, siegePos.y) > 15.0f && !RamGateAhead(vehicleBase, siegePos));
     bool const on = (bot->GetMapId() == 607 && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SASiegeRange)) ||
                     (bot->GetMapId() == 628 && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::ICSiegeRange));
     return on && vehicleBase->GetExactDist2d(siegePos.x, siegePos.y) > 50.0f;
@@ -4186,7 +4194,11 @@ bool PlayerbotAI::CastVehicleSpell(uint32 spellId, Unit* target)
         }
     }
 
-    if (siegePos.isSet() && (seat->CanControl() || (seat->m_flags & VEHICLE_SEAT_FLAG_ALLOW_TURNING)))
+    // SARam: no turn on the way in (it stops the vehicle; the shot only fires with the gate ahead)
+    bool const ramApproach = siegePos.isSet() && bot->GetMapId() == 607 && bot->GetBattleground() &&
+                             BGTacticArms::IsOn(bot->GetBattleground(), bot->GetTeamId(), BGTactic::SARam) &&
+                             vehicleBase->GetExactDist2d(siegePos.x, siegePos.y) > 15.0f;
+    if (siegePos.isSet() && !ramApproach && (seat->CanControl() || (seat->m_flags & VEHICLE_SEAT_FLAG_ALLOW_TURNING)))
     {
         vehicleBase->SetFacingTo(vehicleBase->GetAngle(siegePos.x, siegePos.y));
     }
