@@ -48,7 +48,12 @@ bool EnterVehicleAction::Execute(Event event)
     Battleground* sabg = bot->GetMapId() == 607 ? bot->GetBattleground() : nullptr;
     if (sabg)
         if (Unit* seat = BGStrand::PassengerSeat(bot, sabg))
-            return EnterVehicle(seat, true);
+        {
+            bool const in = EnterVehicle(seat, true);
+            if (in && bot->GetVehicle())
+                BGStrand::Stat("passenger_board", bot);
+            return in;
+        }
 
     GuidVector npcs = AI_VALUE(GuidVector, "nearest vehicles");
     for (GuidVector::iterator i = npcs.begin(); i != npcs.end(); i++)

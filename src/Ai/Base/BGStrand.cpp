@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cmath>
 #include <iterator>
+#include <map>
 #include <mutex>
 #include <sstream>
 #include <unordered_map>
@@ -571,6 +572,8 @@ bool DefenseObjective(Player* bot, Battleground* bg, Order& out)
         bool const allHands = AllHands(bg, bot) && SiegeAtGate(bg, yellow, 80.0f);
         if ((outRole && idx % 3 == 0) || allHands)
         {
+            if (allHands && !(outRole && idx % 3 == 0))
+                BGStrand::Stat("allhands_out", bot);
             DefenseStage(bot, GoOut(bot, bg, yellow, BG_SA_YELLOW_GATE, 15.0f, out) ? 1 : 0);
             return true;
         }
@@ -592,16 +595,21 @@ bool DefenseObjective(Player* bot, Battleground* bg, Order& out)
             if (GameObject* banner = bg->GetBGObject(flag))
             {
                 HoldAt(bot, bg, banner->GetPosition(), out);
+                BGStrand::Stat("gy_guard", bot);
                 // SAPreDamage: the workshop by the graveyard spawns demolishers; wear idle ones down
                 if (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAPreDamage))
                     if (Creature* idle = IdleDemolisherNear(bot, banner, 100.0f))
+                    {
                         out.move = idle->GetPosition();
+                        BGStrand::Stat("predamage_move", bot);
+                    }
                 // SAAllHands: a driven demolisher passing the graveyard
                 if (AllHands(bg, bot))
                     for (Unit* d : DrivenSiege(bg))
                         if (d->GetExactDist2d(banner) < 60.0f)
                         {
                             out.move = d->GetPosition();
+                            BGStrand::Stat("gy_guard_engage", bot);
                             break;
                         }
                 DefenseStage(bot, 3);
@@ -624,7 +632,10 @@ bool DefenseObjective(Player* bot, Battleground* bg, Order& out)
         return false;
     // SAAllHands: a driven demolisher within 80 yd of this gate: everyone of this gate goes out and fights it
     if (!goOut && AllHands(bg, bot) && SiegeAtGate(bg, gate, 80.0f))
+    {
         goOut = true;
+        BGStrand::Stat("allhands_out", bot);
+    }
     if (goOut)
     {
         bool const outside = GoOut(bot, bg, gate, gateIdx, front, out);
@@ -632,7 +643,10 @@ bool DefenseObjective(Player* bot, Battleground* bg, Order& out)
         // are boarded within seconds of unlocking)
         if (outside && (green || blue) && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAPreDamage))
             if (Creature* idle = IdleDemolisherNear(bot, gate, 100.0f))
+            {
                 out.move = idle->GetPosition();
+                BGStrand::Stat("predamage_move", bot);
+            }
         DefenseStage(bot, outside ? 1 : 0);
         return true;
     }
@@ -759,6 +773,66 @@ bool LeaveToMelee(Player* bot, Battleground* bg, Unit* vehicle)
                                          p->GetExactDist2d(vehicle) < 40.0f)
             return true;
     return false;
+}
+
+namespace
+{
+std::mutex statLock;
+std::map<std::string, uint32> statCount;
+std::unordered_map<std::string, uint32> statLast;  // name + guid -> last count time
+uint32 statLogMs = 0;
+
+void StatAdd(std::string const& name, std::string const& key)
+{
+    uint32 const now = getMSTime();
+    std::lock_guard<std::mutex> guard(statLock);
+    if (!key.empty())
+    {
+        auto it = statLast.find(key);
+        if (it != statLast.end() && getMSTimeDiff(it->second, now) < 10000)
+            return;
+        statLast[key] = now;
+    }
+    ++statCount[name];
+    if (!statLogMs)
+        statLogMs = now;
+    else if (getMSTimeDiff(statLogMs, now) > 5 * MINUTE * IN_MILLISECONDS)
+    {
+        std::ostringstream o;
+        for (auto const& [n, c] : statCount)
+            o << ' ' << n << '=' << c;
+        LOG_INFO("module", "SA tactic counters (5 min):{}", o.str());
+        statCount.clear();
+        if (statLast.size() > 20000)
+            statLast.clear();
+        statLogMs = now;
+    }
+}
+}
+
+void Stat(char const* name, Player* bot)
+{
+    StatAdd(name, std::string(name) + std::to_string(bot->GetGUID().GetCounter()));
+}
+
+void KillStat(Player* victim)
+{
+    Battleground* bg = victim->GetBattleground();
+    if (!bg || victim->GetMapId() != 607 || Attackers(bg) == TEAM_NEUTRAL || victim->GetTeamId() != Attackers(bg))
+        return;
+    TeamId const defenders = Attackers(bg) == TEAM_ALLIANCE ? TEAM_HORDE : TEAM_ALLIANCE;
+    std::string const tag = BGTacticArms::IsOn(bg, defenders, BGTactic::SADefPack) ? "" : "_ctrl";
+    std::list<Creature*> wrecks;
+    victim->GetDeadCreatureListInGrid(wrecks, 10.0f);
+    for (Creature* w : wrecks)
+        if (w->GetEntry() == NPC_DEMOLISHER_SA || w->GetEntry() == 32796)
+        {
+            StatAdd("driver_kill" + tag, "");
+            return;
+        }
+    if (Destroyed(bg, BG_SA_ANCIENT_GATE))
+        if (GameObject* relic = bg->GetBGObject(BG_SA_TITAN_RELIC); relic && victim->GetExactDist2d(relic) < 25.0f)
+            StatAdd("relic_kill" + tag, "");
 }
 
 bool WarmupDefender(Player* bot, Battleground* bg)
@@ -909,6 +983,7 @@ bool Objective(Player* bot, Battleground* bg, Order& out)
         // SAPassengers: a passenger fights from its seat; with a charge, it gets out at the gate to plant it
         if (bot->HasItemCount(ITEM_MASSIVE_SEAFORIUM_CHARGE, 1) && bot->GetVehicleBase()->GetExactDist2d(go) < 12.0f)
         {
+            Stat("passenger_exit_plant", bot);
             out.move = bot->GetPosition();
             out.leave = true;
             return true;
@@ -1020,7 +1095,10 @@ Unit* HuntTarget(PlayerbotAI* botAI)
                         driver = p;
                     }
         if (driver)
+        {
+            Stat("driver_pick", bot);
             return driver;
+        }
         if (Destroyed(bg, BG_SA_ANCIENT_GATE))
             if (GameObject* relic = bg->GetBGObject(BG_SA_TITAN_RELIC))
             {
@@ -1034,7 +1112,10 @@ Unit* HuntTarget(PlayerbotAI* botAI)
                         nearest = p;
                     }
                 if (nearest)
+                {
+                    Stat("relic_pick", bot);
                     return nearest;
+                }
             }
     }
     if (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SADefense) && Attackers(bg) != TEAM_NEUTRAL &&

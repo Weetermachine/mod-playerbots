@@ -71,6 +71,10 @@ namespace BGStrand
     Unit* PassengerSeat(Player* bot, Battleground* bg);
     // SAPassengers: a ranged bot or healer leaves an empty demolisher to a melee teammate on foot within 40 yd of it.
     bool LeaveToMelee(Player* bot, Battleground* bg, Unit* vehicle);
+    // SotA tactic counters (Server.log per 5 min): an event by this bot (counted once per bot per 10 s), and a death to
+    // classify (a dismounted driver or an attacker near the relic, tagged by whether the defenders had the package).
+    void Stat(char const* name, Player* bot);
+    void KillStat(Player* victim);
     // SADefense diagnostics: a charge was disarmed.
     void Disarmed();
     // SASlows: a driven enemy siege vehicle within 30 yd in line of sight that is not rooted or slowed.

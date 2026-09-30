@@ -770,7 +770,11 @@ public:
 
     // Death -> release -> revive, with positions, so time spent dead (and where players die)
     // can be measured per game.
-    void OnPlayerJustDied(Player* player) override { LogLifecycle("death", player); }
+    void OnPlayerJustDied(Player* player) override
+    {
+        BGStrand::KillStat(player);
+        LogLifecycle("death", player);
+    }
     void OnPlayerReleasedGhost(Player* player) override { LogLifecycle("release", player); }
     void OnPlayerResurrect(Player* player, float /*restore_percent*/, bool& /*applySickness*/) override
     {
