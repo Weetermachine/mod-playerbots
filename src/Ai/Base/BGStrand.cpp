@@ -507,6 +507,16 @@ Creature* IdleDemolisherNear(Player* bot, WorldObject const* post, float radius)
     return nearest;
 }
 
+void HoldAt(Player* bot, Battleground* bg, Position const& pos, Order& out);
+
+// SAAllOut: a healer holds the wall above its gate (the Defender's Portal spot) and heals the fight out front from there
+void WallHeal(Player* bot, Battleground* bg, uint32 gateIdx, Order& out)
+{
+    float const* wall = SOTADefPortalDest[gateIdx];
+    HoldAt(bot, bg, Position(wall[0] + float(bot->GetGUID().GetCounter() % 7) - 3.0f, wall[1], wall[2]), out);
+    BGStrand::Stat("wall_healer", bot);
+}
+
 void HoldAt(Player* bot, Battleground* bg, Position const& pos, Order& out)
 {
     out.move = pos;
@@ -539,7 +549,18 @@ bool DefenseObjective(Player* bot, Battleground* bg, Order& out)
     std::sort(mates.begin(), mates.end());
     uint32 const idx = std::find(mates.begin(), mates.end(), bot->GetGUID().GetCounter()) - mates.begin();
     uint32 const side = heal ? (idx / 2) % 2 : idx % 2;  // 0: west (Green, Purple), 1: east (Blue, Red)
-    bool const outRole = heal ? idx % 2 == 0 : idx % 3 != 2;
+    bool const allOut = BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAAllOut);
+    bool const outRole = allOut ? !heal : heal ? idx % 2 == 0 : idx % 3 != 2;
+
+    // SACannons: the cannon crew boards the busiest free cannon before anything else
+    if (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SACannons) && GunCrew(bot, bg))
+        if (Creature* gun = BusiestGun(bg))
+        {
+            out.move = gun->GetPosition();
+            out.board = gun;
+            Stat("cannon_board", bot);
+            return true;
+        }
 
     // disarm a planted charge nearby first
     if (GameObject* charge = bot->FindNearestGameObject(GO_PLANTED_CHARGE, 30.0f, true))
@@ -570,7 +591,12 @@ bool DefenseObjective(Player* bot, Battleground* bg, Order& out)
         if (!yellow)
             return false;
         bool const allHands = AllHands(bg, bot) && SiegeAtGate(bg, yellow, 80.0f);
-        if ((outRole && idx % 3 == 0) || allHands)
+        if (allOut && heal)
+        {
+            WallHeal(bot, bg, BG_SA_YELLOW_GATE, out);
+            return true;
+        }
+        if ((outRole && (allOut || idx % 3 == 0)) || allHands)
         {
             if (allHands && !(outRole && idx % 3 == 0))
                 BGStrand::Stat("allhands_out", bot);
@@ -648,6 +674,11 @@ bool DefenseObjective(Player* bot, Battleground* bg, Order& out)
                 BGStrand::Stat("predamage_move", bot);
             }
         DefenseStage(bot, outside ? 1 : 0);
+        return true;
+    }
+    if (allOut && heal)
+    {
+        WallHeal(bot, bg, gateIdx, out);
         return true;
     }
     HoldAt(bot, bg, Near(gate, -10.0f, bot), out);

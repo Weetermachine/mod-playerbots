@@ -131,6 +131,7 @@ enum class BGTactic : uint8
     SAPassengers = 108,  // SotA: half the ranged and healers ride demolishers as passengers (untargetable), melee drive
     SAAllHands = 109,    // SotA: every defender of a gate goes out when a driven demolisher is within 80 yd of it
     SADefPack = 110,     // SotA defender package: all hands, 4 graveyard guards, relic room defense, kill dismounted drivers
+    SAAllOut = 111,      // SotA: every non-healer defender fights out front (no gate holders); healers heal from the wall
     TacticCount          // one past the last value; must stay at or below the mask width (128)
 };
 static_assert(uint32(BGTactic::TacticCount) <= 128, "BGTactic values must fit the 128-bit masks in BGTacticArms.cpp");
