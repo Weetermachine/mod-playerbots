@@ -4009,7 +4009,7 @@ static bool SiegeShot(Player* bot, AiObjectContext* context, uint32 spellId)
 }
 
 // SASiegeRange / ICSiegeRange: a gate shot (a location spell at the siege position) waits until the vehicle is within 50 yd
-static bool SiegeTooFar(Player* bot, Unit* vehicleBase, SpellInfo const* spellInfo, PositionInfo const& siegePos)
+static bool SiegeTooFar(Player* bot, Unit* vehicleBase, SpellInfo const* spellInfo, PositionInfo siegePos)
 {
     Battleground* bg = bot->GetBattleground();
     if (!bg || !siegePos.isSet() || !(spellInfo->Targets & TARGET_FLAG_DEST_LOCATION))
