@@ -861,6 +861,31 @@ Unit* HuntTarget(PlayerbotAI* botAI)
         }
         if (best)
             return best;
+        // SAPreDamage: wear parked demolishers down to 10% but leave them alive (a killed one respawns at full health)
+        if (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAPreDamage))
+        {
+            auto parked = [](Unit* u)
+            {
+                return u && (u->GetEntry() == NPC_DEMOLISHER_SA || u->GetEntry() == 32796) && u->IsAlive() &&
+                       u->GetVehicleKit() && !u->GetVehicleKit()->IsVehicleInUse();
+            };
+            if (Unit* victim = bot->GetVictim(); parked(victim) && victim->GetHealthPct() <= 10.0f)
+                bot->AttackStop();  // low enough: stop before it dies
+            std::list<Creature*> demos;
+            bot->GetCreatureListWithEntryInGrid(demos, NPC_DEMOLISHER_SA, 40.0f);
+            bot->GetCreatureListWithEntryInGrid(demos, 32796, 40.0f);
+            Unit* target = nullptr;
+            float nearest = 40.0f;
+            for (Creature* d : demos)
+                if (parked(d) && d->GetHealthPct() > 10.0f && bot->IsValidAttackTarget(d) && bot->IsWithinLOSInMap(d))
+                    if (float const dist = bot->GetExactDist2d(d); dist < nearest)
+                    {
+                        nearest = dist;
+                        target = d;
+                    }
+            if (target)
+                return target;
+        }
     }
     bool const bombs = BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SABombHunt);
     bool const sortie = BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SASortie) && SortieRole(bot);
