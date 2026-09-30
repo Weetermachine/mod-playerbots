@@ -225,7 +225,6 @@ public:
         creators["bg attack fc"] = &ActionContext::bg_attack_fc;
         creators["bg protect fc"] = &ActionContext::bg_protect_fc;
         creators["bg back off"] = &ActionContext::bg_back_off;
-        creators["bg slow siege"] = &ActionContext::bg_slow_siege;
         creators["bg catch fc"] = &ActionContext::bg_catch_fc;
         creators["bg heal fc"] = &ActionContext::bg_heal_fc;
         creators["bg heal tank"] = &ActionContext::bg_heal_tank;
@@ -441,7 +440,6 @@ private:
     static Action* bg_attack_fc(PlayerbotAI* botAI) { return new BGTactics(botAI, "attack fc"); }
     static Action* bg_protect_fc(PlayerbotAI* botAI) { return new BGTactics(botAI, "protect fc"); }
     static Action* bg_back_off(PlayerbotAI* botAI) { return new BGTactics(botAI, "back off"); }
-    static Action* bg_slow_siege(PlayerbotAI* botAI) { return new BGTactics(botAI, "slow siege"); }
     static Action* bg_catch_fc(PlayerbotAI* botAI) { return new BGTactics(botAI, "catch fc"); }
     static Action* bg_heal_fc(PlayerbotAI* botAI) { return new BGTactics(botAI, "heal fc"); }
     static Action* bg_heal_tank(PlayerbotAI* botAI) { return new BGTactics(botAI, "heal tank"); }
