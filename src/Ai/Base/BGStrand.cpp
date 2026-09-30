@@ -456,7 +456,7 @@ namespace
 // SADefense diagnostics (Server.log, per 5 min): distinct defenders per role and outside their gate, disarms
 std::mutex defLock;
 std::unordered_set<ObjectGuid::LowType> defSeen[6];  // out, outside, hold, graveyard, relic door, disarming
-uint32 defDisarms = 0, defLogMs = 0;
+uint32 defDisarms = 0, defDefused = 0, defLogMs = 0;
 
 void DefenseStage(Player* bot, uint32 role)
 {
@@ -467,12 +467,12 @@ void DefenseStage(Player* bot, uint32 role)
         defLogMs = now;
     else if (getMSTimeDiff(defLogMs, now) > 5 * MINUTE * IN_MILLISECONDS)
     {
-        LOG_INFO("module", "Defense roles (5 min, distinct bots): out {} (outside {}), hold {}, graveyard {}, relic door {}, going to a charge {}, disarms {}",
+        LOG_INFO("module", "Defense roles (5 min, distinct bots): out {} (outside {}), hold {}, graveyard {}, relic door {}, going to a charge {}, disarms {} (defused {})",
                  defSeen[0].size(), defSeen[1].size(), defSeen[2].size(), defSeen[3].size(), defSeen[4].size(),
-                 defSeen[5].size(), defDisarms);
+                 defSeen[5].size(), defDisarms, defDefused);
         for (auto& d : defSeen)
             d.clear();
-        defDisarms = 0;
+        defDisarms = defDefused = 0;
         defLogMs = now;
     }
 }
@@ -547,10 +547,11 @@ void HoldAt(Player* bot, Battleground* bg, Position const& pos, Order& out)
 }
 }  // namespace
 
-void Disarmed()
+void Disarmed(bool defused)
 {
     std::lock_guard<std::mutex> guard(defLock);
     ++defDisarms;
+    defDefused += defused ? 1 : 0;
 }
 
 bool DefenseObjective(Player* bot, Battleground* bg, Order& out)

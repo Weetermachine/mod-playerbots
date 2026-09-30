@@ -77,8 +77,8 @@ namespace BGStrand
     void KillStat(Player* victim);
     // a driven siege vehicle died (demo_kill / demo_kill_courtyard, tagged like KillStat)
     void SiegeKill(Unit* vehicle);
-    // SADefense diagnostics: a charge was disarmed.
-    void Disarmed();
+    // SADefense diagnostics: a disarm was sent (defused: the charge went away).
+    void Disarmed(bool defused);
     // SASlows: a driven enemy siege vehicle within 30 yd in line of sight that is not rooted or slowed.
     Unit* SlowTarget(Player* bot, Battleground* bg);
     // SASortie diagnostics: a jump was made (the rest of the stages are counted in Objective).

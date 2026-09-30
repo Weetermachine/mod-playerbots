@@ -2156,7 +2156,7 @@ bool BGTactics::strandMove()
         WorldPacket use(CMSG_GAMEOBJ_USE);
         use << order.disarm->GetGUID();
         bot->GetSession()->HandleGameObjectUseOpcode(use);
-        BGStrand::Disarmed();
+        BGStrand::Disarmed(order.disarm->getLootState() == GO_JUST_DEACTIVATED);  // the charge script deactivates it
         return true;
     }
     // SASortie: at the wall above the gate, jump down outside
