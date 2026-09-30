@@ -11,6 +11,7 @@
 #include <iterator>
 #include <mutex>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "BGTacticArms.h"
@@ -191,6 +192,41 @@ uint32 DefendLane(Battleground* bg, TeamId attackers)
     return c.lane;
 }
 
+// SASortie diagnostics (Server.log, per 5 min): distinct bots per stage; how far short the ones never at the wall were
+std::mutex sortieLock;
+std::unordered_set<ObjectGuid::LowType> sortieSeen[4];  // sent, at the wall, jumped, outside
+std::unordered_map<ObjectGuid::LowType, std::pair<float, float>> sortieShort;  // last 2D distance and height gap
+uint32 sortieLogMs = 0;
+
+void SortieStage(Player* bot, uint32 stage, float dist = 0.0f, float dz = 0.0f)
+{
+    std::lock_guard<std::mutex> guard(sortieLock);
+    ObjectGuid::LowType const id = bot->GetGUID().GetCounter();
+    sortieSeen[stage].insert(id);
+    if (stage == 0)
+        sortieShort[id] = {dist, dz};
+    else
+        sortieShort.erase(id);
+    uint32 const now = getMSTime();
+    if (!sortieLogMs)
+        sortieLogMs = now;
+    else if (getMSTimeDiff(sortieLogMs, now) > 5 * MINUTE * IN_MILLISECONDS)
+    {
+        uint32 near = 0, mid = 0, far = 0, high = 0;
+        for (auto const& [guid, d] : sortieShort)
+        {
+            (d.first < 10.0f ? near : d.first < 30.0f ? mid : far)++;
+            high += d.second >= 6.0f ? 1 : 0;
+        }
+        LOG_INFO("module", "Sortie stages (5 min, distinct bots): sent {}, at the wall {}, jumped {}, outside {}; never at the wall: within 10 yd {}, 10-30 {}, 30+ {} (6+ yd height gap {})",
+                 sortieSeen[0].size(), sortieSeen[1].size(), sortieSeen[2].size(), sortieSeen[3].size(), near, mid, far, high);
+        for (auto& s : sortieSeen)
+            s.clear();
+        sortieShort.clear();
+        sortieLogMs = now;
+    }
+}
+
 // SASortie: half the non-healer defenders.
 bool SortieRole(Player* bot) { return !PlayerbotAI::IsHeal(bot) && (bot->GetGUID().GetCounter() / 3) % 2 == 0; }
 
@@ -359,12 +395,18 @@ bool Objective(Player* bot, Battleground* bg, Order& out)
             SiegeAtGate(bg, go, 70.0f))
         {
             if (Outside(bot, go))
+            {
                 out.move = Near(go, 8.0f, bot);
+                SortieStage(bot, 3);
+            }
             else
             {
                 float const* wall = SOTADefPortalDest[target];
                 Position const top(wall[0], wall[1], wall[2]);
-                if (bot->GetExactDist2d(&top) < 4.0f && std::fabs(bot->GetPositionZ() - wall[2]) < 5.0f)
+                float const dist = bot->GetExactDist2d(&top), dz = std::fabs(bot->GetPositionZ() - wall[2]);
+                bool const atWall = dist < 10.0f && dz < 6.0f;
+                SortieStage(bot, atWall ? 1 : 0, dist, dz);
+                if (atWall)
                 {
                     float const a = go->GetAngle(BEACH_X, BEACH_Y);
                     float const x = wall[0] + 14.0f * std::cos(a), y = wall[1] + 14.0f * std::sin(a);
@@ -576,6 +618,8 @@ bool PushingCharge(Player* bot, Battleground* bg)
     return BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAChargesPush) && bot->GetTeamId() == Attackers(bg) &&
            !bot->GetVehicle() && bot->HasItemCount(ITEM_MASSIVE_SEAFORIUM_CHARGE, 1);
 }
+
+void SortieJumped(Player* bot) { SortieStage(bot, 2); }
 
 void CarryPlanted(Player* bot)
 {

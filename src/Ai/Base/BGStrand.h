@@ -53,6 +53,8 @@ namespace BGStrand
     void CarryPlanted(Player* bot);
     // SAChargesPush: an attacker holding a charge (treated like a flag carrier).
     bool PushingCharge(Player* bot, Battleground* bg);
+    // SASortie diagnostics: a jump was made (the rest of the stages are counted in Objective).
+    void SortieJumped(Player* bot);
 }
 
 #endif

@@ -1875,6 +1875,42 @@ void ChargeCount(uint32 kind, bool done)
 }
 }
 
+// SACannons / ICCannons diagnostics (Server.log, per 5 min): gunner ticks, targets, shots, enemies within 8 yd of a shot
+namespace
+{
+std::mutex gunLock;
+struct GunStat
+{
+    uint32 ticks = 0, targeted = 0, shots = 0, foes = 0, ms = 0;
+};
+std::unordered_map<std::string, GunStat> gunStats;
+void GunCount(Player* bot, char const* bgName, Unit* target, bool shot)
+{
+    uint32 foes = 0;
+    if (target && shot)
+        if (Battleground* bg = bot->GetBattleground())
+            for (auto const& ref : bg->GetBgMap()->GetPlayers())
+                if (Player* p = ref.GetSource(); p && p->IsAlive() && p->GetBgTeamId() != bot->GetBgTeamId() &&
+                                                 p->GetExactDist2d(target) < 8.0f)
+                    ++foes;
+    std::lock_guard<std::mutex> guard(gunLock);
+    GunStat& g = gunStats[bgName];
+    uint32 const now = getMSTime();
+    ++g.ticks;
+    g.targeted += target ? 1 : 0;
+    g.shots += shot ? 1 : 0;
+    g.foes += foes;
+    if (!g.ms)
+        g.ms = now;
+    else if (getMSTimeDiff(g.ms, now) > 5 * MINUTE * IN_MILLISECONDS)
+    {
+        LOG_INFO("module", "Gunners {} (5 min): ticks {}, with a target {}, shots {}, enemies within 8 yd per shot {:.1f}", bgName,
+                 g.ticks, g.targeted, g.shots, g.shots ? float(g.foes) / g.shots : 0.0f);
+        g = GunStat{0, 0, 0, 0, now};
+    }
+}
+}
+
 // SASortie diagnostics (Server.log, per 5 min): jumps off the wall
 namespace
 {
@@ -1926,13 +1962,19 @@ bool BGTactics::isleMove()
     }
     if (bot->GetVehicle())
     {
-        if (Unit* t = BGIsle::GunnerTarget(bot, bg))
+        Unit* t = BGIsle::GunnerTarget(bot, bg);
+        bool shot = false;
+        if (t)
         {
             context->GetValue<Unit*>("current target")->Set(t);
             for (uint32 spell : {66541u, 67452u})  // the keep cannon's two shots
                 if (botAI->CanCastVehicleSpell(spell, t) && botAI->CastVehicleSpell(spell, t))
+                {
+                    shot = true;
                     break;
+                }
         }
+        GunCount(bot, "IC", t, shot);
         return true;
     }
     if (order.board && bot->IsWithinDistInMap(order.board, INTERACTION_DISTANCE))
@@ -1999,8 +2041,14 @@ bool BGTactics::strandMove()
     }
     if (bot->GetVehicleBase() && bot->GetVehicleBase()->GetEntry() == NPC_ANTI_PERSONNAL_CANNON)
     {
-        if (Unit* t = BGStrand::GunnerTarget(bot, bg))
+        Unit* t = BGStrand::GunnerTarget(bot, bg);
+        bool shot = false;
+        if (t)
+        {
             context->GetValue<Unit*>("current target")->Set(t);
+            shot = botAI->CanCastVehicleSpell(49872, t) && botAI->CastVehicleSpell(49872, t);  // Rocket Blast
+        }
+        GunCount(bot, "SA", t, shot);
         return true;
     }
     if (order.board && bot->IsWithinDistInMap(order.board, INTERACTION_DISTANCE))
@@ -2024,6 +2072,7 @@ bool BGTactics::strandMove()
     {
         bot->GetMotionMaster()->MoveJump(order.jump, 18.0f, 8.0f);
         SortieCount();
+        BGStrand::SortieJumped(bot);
         return true;
     }
     // SACharges: at the gate, use the charge (the item, so it is consumed) to plant it at our feet
