@@ -2092,13 +2092,17 @@ bool BGTactics::strandMove()
         return false;
     if (warmup)
         BGStrand::WarmupProbe(bg, 1);
+    auto exit = [&](uint32 e) { if (warmup) BGStrand::WarmupExit(bg, e); };
     if (BGStrand::Ride(bot, bg) || BGStrand::GoAshore(bot, bg))
         return true;
 
     BGStrand::CarryTrack(bot, bg);
     BGStrand::Order order;
     if (!BGStrand::Objective(bot, bg, order))
+    {
+        exit(0);
         return false;
+    }
     PositionMap& posMap = context->GetValue<PositionMap&>("position")->Get();
     PositionInfo siege = posMap["bg siege"];
     if (order.hasSiege)
@@ -2141,6 +2145,7 @@ bool BGTactics::strandMove()
             if (bot->IsMounted())
                 bot->RemoveAurasByType(SPELL_AURA_MOUNTED);
             go->Use(bot);
+            exit(1);
             if (go == order.pickup)
                 ChargeCount(0, bot->HasItemCount(39213, 1));
             return true;
@@ -2157,6 +2162,7 @@ bool BGTactics::strandMove()
     // SASortie: at the wall above the gate, jump down outside
     if (order.hasJump)
     {
+        exit(2);
         bot->GetMotionMaster()->MoveJump(order.jump, 18.0f, 8.0f);
         SortieCount();
         BGStrand::SortieJumped(bot);
@@ -2202,14 +2208,25 @@ bool BGTactics::strandMove()
 
     Unit* mover = bot->GetVehicleBase() ? bot->GetVehicleBase() : bot;
     if (mover->isMoving() || mover->GetDistance(order.move) < 4.0f)
+    {
+        exit(mover->isMoving() ? 3 : 4);
         return false;
+    }
     // drivers keep driving with enemies around (their weapons fire on the way), the others fight
     if (!bot->GetVehicle() && bot->IsInCombat())
+    {
+        exit(5);
         return false;
+    }
     if (!bot->GetVehicle())
         if (int const res = moveDirectRoute())
+        {
+            exit(res > 0 ? 6 : 7);
             return res > 0;
-    return MoveNear(bot->GetMapId(), order.move.GetPositionX(), order.move.GetPositionY(), order.move.GetPositionZ(), 1.5f);
+        }
+    bool const moved = MoveNear(bot->GetMapId(), order.move.GetPositionX(), order.move.GetPositionY(), order.move.GetPositionZ(), 1.5f);
+    exit(moved ? 8 : 9);
+    return moved;
 }
 
 bool BGTactics::moveToStart(bool force)

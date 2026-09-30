@@ -671,6 +671,37 @@ void WarmupProbe(Battleground* bg, uint32 kind)
     }
 }
 
+namespace
+{
+char const* const exitNames[] = {"no objective", "used portal or pile", "jumped", "already moving", "within 4 yd",
+                                 "in combat", "route moved", "route idle", "MoveNear ok", "MoveNear failed", "other"};
+uint32 exits[11][2] = {}, exitLogMs = 0;
+}
+
+void WarmupExit(Battleground* bg, uint32 exit)
+{
+    uint32 const minute = bg->GetStartTime() < 60000 ? 0 : 1;
+    std::lock_guard<std::mutex> guard(warmLock);
+    ++exits[std::min<uint32>(exit, 10)][minute];
+    uint32 const now = getMSTime();
+    if (!exitLogMs)
+        exitLogMs = now;
+    else if (getMSTimeDiff(exitLogMs, now) > 5 * MINUTE * IN_MILLISECONDS)
+    {
+        std::ostringstream o;
+        for (uint32 m = 0; m < 2; ++m)
+        {
+            o << (m ? " | 60-120 s:" : " 0-60 s:");
+            for (uint32 i = 0; i < 11; ++i)
+                if (exits[i][m])
+                    o << ' ' << exitNames[i] << ' ' << exits[i][m] << ',';
+        }
+        LOG_INFO("module", "Warmup exits (5 min):{}", o.str());
+        std::memset(exits, 0, sizeof(exits));
+        exitLogMs = now;
+    }
+}
+
 bool WarmupDefender(Player* bot, Battleground* bg)
 {
     TeamId const attackers = Attackers(bg);

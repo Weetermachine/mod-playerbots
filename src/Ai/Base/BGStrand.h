@@ -65,6 +65,8 @@ namespace BGStrand
     bool WarmupDefender(Player* bot, Battleground* bg);
     // SAWarmup diagnostics: kind 0 a warmup move was triggered, 1 it ran (Server.log per 5 min, by 20 s steps).
     void WarmupProbe(Battleground* bg, uint32 kind);
+    // SAWarmup diagnostics: how a warmup move ended (Server.log per 5 min, first and second warmup minute).
+    void WarmupExit(Battleground* bg, uint32 exit);
     // SADefense diagnostics: a charge was disarmed.
     void Disarmed();
     // SASlows: a driven enemy siege vehicle within 30 yd in line of sight that is not rooted or slowed.
