@@ -744,7 +744,8 @@ bool Objective(Player* bot, Battleground* bg, Order& out)
 
     if (bot->GetVehicle())
     {
-        out.move = Near(go, 12.0f, bot);
+        // SARam: to the wall (Ram hits 3 yd ahead within 3 yd)
+        out.move = Near(go, BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SARam) ? 5.0f : 12.0f, bot);
         out.siege = go->GetPosition();
         out.hasSiege = true;
         return true;
@@ -985,8 +986,9 @@ Unit* GunnerTarget(Player* bot, Battleground* bg)
     Unit* gun = bot->GetVehicleBase();
     if (!gun || gun->GetEntry() != NPC_ANTI_PERSONNAL_CANNON)
         return nullptr;
-    // Rocket Blast hits every unit within 8 yd (10-70 yd, not buildings): a driven demolisher in range first (the guides: two
-    // turrets kill one before it reaches the wall), else the enemy on foot with the most enemies around (carriers count 3)
+    // Rocket Blast hits every unit within 8 yd (10-70 yd, not buildings): SACannonSiege: a driven demolisher in range first
+    // (the guides: two turrets kill one before it reaches the wall); else the enemy on foot with the most enemies around
+    if (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SACannonSiege))
     {
         Unit* siege = nullptr;
         float bestPct = 101.0f;

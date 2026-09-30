@@ -4014,6 +4014,9 @@ static bool SiegeTooFar(Player* bot, Unit* vehicleBase, SpellInfo const* spellIn
     Battleground* bg = bot->GetBattleground();
     if (!bg || !siegePos.isSet() || !(spellInfo->Targets & TARGET_FLAG_DEST_LOCATION))
         return false;
+    // SARam: hold boulders until at the gate (turning to aim stops the vehicle, so it parked at range)
+    if (bot->GetMapId() == 607 && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SARam))
+        return vehicleBase->GetExactDist2d(siegePos.x, siegePos.y) > 15.0f;
     bool const on = (bot->GetMapId() == 607 && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SASiegeRange)) ||
                     (bot->GetMapId() == 628 && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::ICSiegeRange));
     return on && vehicleBase->GetExactDist2d(siegePos.x, siegePos.y) > 50.0f;

@@ -124,6 +124,8 @@ enum class BGTactic : uint8
     SASiegeRange = 101,  // SotA: demolishers shoot the gate only from within 50 yd (stock allowed 120: they shelled from far off)
     ICSiegeRange = 102,  // IoC: siege parks and shoots the gate from 45 yd (the park spots were 59-65 yd, shots allowed from 120)
     SASlows = 103,       // SotA: defenders snare or root driven demolishers in range that are not already (not stuns)
+    SACannonSiege = 104, // SotA: cannon gunners shoot the weakest driven demolisher in range first (cannons v5)
+    SARam = 105,         // SotA: drivers drive to the gate holding boulders, then ram and throw boulders there
     TacticCount          // one past the last value; must stay at or below the mask width (128)
 };
 static_assert(uint32(BGTactic::TacticCount) <= 128, "BGTactic values must fit the 128-bit masks in BGTacticArms.cpp");
