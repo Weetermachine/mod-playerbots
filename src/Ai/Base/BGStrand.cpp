@@ -302,6 +302,19 @@ bool Outside(Player* bot, GameObject* gate)
 
 uint32 DefenderLane(Player* bot, Battleground* bg);
 
+// SASortie: 3+ attackers on foot within 40 yd outside the gate (charges take the gates, not siege).
+bool Massing(Battleground* bg, GameObject* gate)
+{
+    uint32 n = 0;
+    TeamId const attackers = BGStrand::Attackers(bg);
+    float const gateToBeach = gate->GetExactDist2d(BEACH_X, BEACH_Y);
+    for (auto const& ref : bg->GetBgMap()->GetPlayers())
+        if (Player* p = ref.GetSource(); p && p->IsAlive() && p->GetTeamId() == attackers && !p->GetVehicle() &&
+                                         p->GetExactDist2d(gate) < 40.0f && p->GetExactDist2d(BEACH_X, BEACH_Y) < gateToBeach)
+            ++n;
+    return n >= 3;
+}
+
 // SACannons: attackers on foot within a cannon's Rocket Blast range (10-70 yd).
 uint32 FoesInRange(Battleground* bg, Unit* gun)
 {
@@ -466,9 +479,9 @@ bool Objective(Player* bot, Battleground* bg, Order& out)
             SortieProbe(SortieRole(bot), SiegeAtGate(bg, go, 70.0f), anyGate, !DrivenSiege(bg).empty(),
                         BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SASortie));
         }
-        // SASortie: while enemy siege nears the gate, go up the wall above it and jump down outside; outside, fight there
+        // SASortie: while attackers mass outside the gate, go up the wall above it and jump down outside; outside, fight there
         if (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SASortie) && SortieRole(bot) && target <= BG_SA_PURPLE_GATE &&
-            SiegeAtGate(bg, go, 70.0f))
+            Massing(bg, go) && !Destroyed(bg, target))
         {
             if (Outside(bot, go))
             {
@@ -704,7 +717,7 @@ bool SortieMoving(Player* bot, Battleground* bg)
         return false;
     uint32 const target = NextGate(bg, DefenderLane(bot, bg));
     GameObject* go = target <= BG_SA_PURPLE_GATE ? bg->GetBGObject(target) : nullptr;
-    return go && SiegeAtGate(bg, go, 70.0f) && !Outside(bot, go);
+    return go && Massing(bg, go) && !Destroyed(bg, target) && !Outside(bot, go);
 }
 
 void CarryPlanted(Player* bot)
