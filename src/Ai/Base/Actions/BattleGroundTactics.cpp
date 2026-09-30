@@ -2153,10 +2153,11 @@ bool BGTactics::strandMove()
     // SADefense: disarm a planted charge like a client click
     if (order.disarm && order.disarm->IsAtInteractDistance(bot))
     {
+        bool const live = order.disarm->getLootState() != GO_JUST_DEACTIVATED;  // not defused this tick by another bot
         WorldPacket use(CMSG_GAMEOBJ_USE);
         use << order.disarm->GetGUID();
         bot->GetSession()->HandleGameObjectUseOpcode(use);
-        BGStrand::Disarmed(order.disarm->getLootState() == GO_JUST_DEACTIVATED);  // the charge script deactivates it
+        BGStrand::Disarmed(live && order.disarm->getLootState() == GO_JUST_DEACTIVATED);  // the charge script deactivates it
         return true;
     }
     // SASortie: at the wall above the gate, jump down outside
