@@ -119,6 +119,8 @@ enum class BGTactic : uint8
     SASortie = 96,       // SotA: half the non-healer defenders jump off the wall to fight attackers massing outside
     SADefense = 97,      // SotA: defense allocator from the player guides (out front of the gate, graveyards, fall back, disarm)
     SAAttack = 98,       // SotA: attack allocator (1-2 demolishers pressure the other gate; attackers guard planted charges)
+    SAFocusSiege = 99,   // SotA: defenders all attack the weakest driven demolisher in reach (not each the nearest)
+    AVMinesRandom = 100, // AV: per game and team, skip the mines half the time (else stock)
     TacticCount          // one past the last value; must stay at or below the mask width (128)
 };
 static_assert(uint32(BGTactic::TacticCount) <= 128, "BGTactic values must fit the 128-bit masks in BGTacticArms.cpp");

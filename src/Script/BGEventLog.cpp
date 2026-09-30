@@ -36,6 +36,8 @@
 #include "Playerbots.h"
 #include "RandomPlayerbotMgr.h"
 #include "ScriptMgr.h"
+#include "GameObject.h"
+#include "SpellInfo.h"
 #include "Timer.h"
 
 namespace
@@ -605,6 +607,54 @@ public:
 
 // Level changes, logouts and teleports off the BG map: catches bots being reset (e.g. by
 // mod-player-bot-reset), logged out, or teleported out (which removes them from the BG) mid-game.
+// SotA gate damage by source (Server.log, per 5 min): charge blasts, boulders, rams, other; the attacker's distance
+class PlayerbotsSAGateDamageScript : public AllGameObjectScript
+{
+public:
+    PlayerbotsSAGateDamageScript() : AllGameObjectScript("PlayerbotsSAGateDamageScript") {}
+
+    void OnGameObjectModifyHealth(GameObject* go, Unit* attacker, int32& change, SpellInfo const* spellInfo) override
+    {
+        if (change >= 0 || !go || go->GetMapId() != 607 || go->GetGoType() != GAMEOBJECT_TYPE_DESTRUCTIBLE_BUILDING)
+            return;
+        uint32 const spell = spellInfo ? spellInfo->Id : 0;
+        uint32 const src = spell == 52408 ? 0 : spell == 52339 ? 1 : spell == 60206 ? 2 : 3;  // charge, boulder, ram, other
+        float const dist = attacker ? attacker->GetExactDist2d(go) : -1.0f;
+        uint32 const band = dist < 0.0f ? 4 : dist < 30.0f ? 0 : dist < 70.0f ? 1 : dist < 120.0f ? 2 : 3;
+        std::lock_guard<std::mutex> guard(lock);
+        dmg[src] += uint64(-change);
+        hits[src][band]++;
+        if (src == 3)
+            other[spell]++;
+        uint32 const now = getMSTime();
+        if (!logMs)
+            logMs = now;
+        else if (getMSTimeDiff(logMs, now) > 5 * MINUTE * IN_MILLISECONDS)
+        {
+            std::ostringstream o;
+            char const* names[4] = {"charges", "boulders", "rams", "other"};
+            for (uint32 i = 0; i < 4; ++i)
+                o << ' ' << names[i] << ' ' << dmg[i] << " (hits by attacker distance <30/30-70/70-120/120+/none: " << hits[i][0]
+                  << '/' << hits[i][1] << '/' << hits[i][2] << '/' << hits[i][3] << '/' << hits[i][4] << ')';
+            for (auto const& [id, n] : other)
+                o << " spell" << id << "x" << n;
+            LOG_INFO("module", "SA gate damage (5 min):{}", o.str());
+            std::fill(std::begin(dmg), std::end(dmg), 0);
+            for (auto& h : hits)
+                std::fill(std::begin(h), std::end(h), 0);
+            other.clear();
+            logMs = now;
+        }
+    }
+
+private:
+    std::mutex lock;
+    uint64 dmg[4] = {};
+    uint32 hits[4][5] = {};
+    std::map<uint32, uint32> other;
+    uint32 logMs = 0;
+};
+
 class PlayerbotsBGEventLogPlayerScript : public PlayerScript
 {
 public:
@@ -675,4 +725,5 @@ void AddPlayerbotsBGEventLogScripts()
 {
     new PlayerbotsBGEventLogScript();
     new PlayerbotsBGEventLogPlayerScript();
+    new PlayerbotsSAGateDamageScript();
 }

@@ -55,6 +55,8 @@
 #include "SpellInfo.h"
 #include "Vehicle.h"
 
+bool SkipMinesThisGame(Battleground* bg, TeamId team);
+
 // Comeback mode: plans made while behind, per BG [WS, AB, EY] (EotS counts stock strategy picks)
 std::atomic<uint32> comebackBehind[3], comebackPlans[3];
 // Batch 1 tactics, plans that used them (5 min): intercept, escort healer, standoff break, reinforce, retake
@@ -1926,6 +1928,29 @@ void SortieCount()
 }
 }
 
+// AVMinesRandom: one coin flip per game and team
+namespace
+{
+std::mutex mineCoinLock;
+std::unordered_map<uint64, bool> mineCoins;  // (instance id << 1 | team) -> skip the mines
+}
+
+bool SkipMinesThisGame(Battleground* bg, TeamId team)
+{
+    uint64 const key = (uint64(bg->GetInstanceID()) << 1) | uint64(team == TEAM_HORDE);
+    std::lock_guard<std::mutex> guard(mineCoinLock);
+    auto const it = mineCoins.find(key);
+    if (it != mineCoins.end())
+        return it->second;
+    if (mineCoins.size() > 4096)
+        mineCoins.clear();  // old instances
+    bool const skip = urand(0, 1);
+    mineCoins[key] = skip;
+    LOG_INFO("module", "AV mines: bg {} {} {} the mines this game", bg->GetInstanceID(),
+             team == TEAM_ALLIANCE ? "Alliance" : "Horde", skip ? "skips" : "goes for");
+    return skip;
+}
+
 bool BGTactics::useItemSpell(uint32 itemEntry, uint32 spellId)
 {
     Item* item = bot->GetItemByEntry(itemEntry);
@@ -2407,7 +2432,10 @@ bool BGTactics::selectObjective(bool reset)
             // AVBothMines: role 0 for our side's mine as stock, role 1 (another ~4) for the enemy side's.
             // AVMines: roles 0-1 (~8) for our side's mine.
             bool const bothMines = BGTacticArms::IsOn(bg, team, BGTactic::AVBothMines);
-            if (!BgObjective && (enableMineCapture || bothMines) && !BGTacticArms::IsOn(bg, team, BGTactic::AVNoMines) &&
+            // AVMinesRandom: this team skips the mines in half its games (drawn once per game)
+            bool const skipMines = BGTacticArms::IsOn(bg, team, BGTactic::AVNoMines) ||
+                                   (BGTacticArms::IsOn(bg, team, BGTactic::AVMinesRandom) && SkipMinesThisGame(bg, team));
+            if (!BgObjective && (enableMineCapture || bothMines) && !skipMines &&
                 (role == 0 || (role == 1 && (bothMines || BGTacticArms::IsOn(bg, team, BGTactic::AVMines)))))
             {
                 bool const south = (team == TEAM_HORDE) != (bothMines && role == 1);  // our side's mine unless role 1

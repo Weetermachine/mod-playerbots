@@ -808,15 +808,22 @@ Unit* HuntTarget(PlayerbotAI* botAI)
     if (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SADefense) && Attackers(bg) != TEAM_NEUTRAL &&
         bot->GetTeamId() != Attackers(bg))
     {
+        bool const focus = BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAFocusSiege);
         Unit* best = nullptr;
-        float bestDist = 45.0f;
+        float bestDist = 45.0f, bestPct = 101.0f;
         for (Unit* d : DrivenSiege(bg))
-            if (float const dist = bot->GetExactDist2d(d); dist < bestDist && bot->IsValidAttackTarget(d) &&
-                                                           bot->IsWithinLOSInMap(d))
+        {
+            float const dist = bot->GetExactDist2d(d);
+            if (dist >= 45.0f || !bot->IsValidAttackTarget(d) || !bot->IsWithinLOSInMap(d))
+                continue;
+            // SAFocusSiege: the weakest in reach, so everyone out front works on the same one
+            if (focus ? d->GetHealthPct() < bestPct : dist < bestDist)
             {
                 bestDist = dist;
+                bestPct = d->GetHealthPct();
                 best = d;
             }
+        }
         if (best)
             return best;
     }
