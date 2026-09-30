@@ -127,6 +127,8 @@ public:
 private:
     static std::string const HandleConsoleCommandPrivate(WorldSession* session, char const* args);
     bool moveToStart(bool force = false);
+    // SADefense: slow or stun a driven enemy demolisher in range that is not already (the guides: slowing beats damage)
+    bool slowSiege();
     bool selectObjective(bool reset = false);
     bool moveToObjective(bool ignoreDist);
     // 1: moving along a complete route; -1: on a route but nothing to do this tick (let other actions run, e.g.

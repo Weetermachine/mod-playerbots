@@ -63,6 +63,8 @@ namespace BGStrand
     bool DefenseMoving(Player* bot, Battleground* bg);
     // SADefense diagnostics: a charge was disarmed.
     void Disarmed();
+    // SADefense: a driven enemy siege vehicle within 30 yd in line of sight that is not stunned, rooted or slowed.
+    Unit* SlowTarget(Player* bot, Battleground* bg);
     // SASortie diagnostics: a jump was made (the rest of the stages are counted in Objective).
     void SortieJumped(Player* bot);
 }

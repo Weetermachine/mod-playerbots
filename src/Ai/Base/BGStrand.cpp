@@ -353,6 +353,7 @@ bool GunCrew(Player* bot, Battleground* bg)
 }
 
 constexpr uint32 ITEM_MASSIVE_SEAFORIUM_CHARGE = 39213;
+constexpr uint32 GO_PLANTED_CHARGE = 190752;
 
 // SACharges: the nearest bomb pile (spawned) within 150 yd; SAChargesOnWay: only one that adds at most 30 yd to the way to the gate.
 GameObject* NearestBombPile(Player* bot, Battleground* bg, GameObject* gate, bool onWay)
@@ -431,8 +432,6 @@ namespace BGStrand
 
 namespace
 {
-constexpr uint32 GO_PLANTED_CHARGE = 190752;
-
 // SADefense diagnostics (Server.log, per 5 min): distinct defenders per role and outside their gate, disarms
 std::mutex defLock;
 std::unordered_set<ObjectGuid::LowType> defSeen[6];  // out, outside, hold, graveyard, relic door, disarming
@@ -597,6 +596,27 @@ bool DefenseObjective(Player* bot, Battleground* bg, Order& out)
     return true;
 }
 
+Unit* SlowTarget(Player* bot, Battleground* bg)
+{
+    TeamId const attackers = Attackers(bg);
+    if (attackers == TEAM_NEUTRAL || bot->GetTeamId() == attackers)
+        return nullptr;
+    Unit* best = nullptr;
+    float bestDist = 30.0f;
+    for (Unit* d : DrivenSiege(bg))
+    {
+        if (d->HasAuraType(SPELL_AURA_MOD_STUN) || d->HasAuraType(SPELL_AURA_MOD_ROOT) ||
+            d->HasAuraType(SPELL_AURA_MOD_DECREASE_SPEED) || !bot->IsWithinLOSInMap(d) || !bot->IsValidAttackTarget(d))
+            continue;
+        if (float const dist = bot->GetExactDist2d(d); dist < bestDist)
+        {
+            bestDist = dist;
+            best = d;
+        }
+    }
+    return best;
+}
+
 bool DefenseMoving(Player* bot, Battleground* bg)
 {
     Order o;
@@ -614,6 +634,20 @@ bool Objective(Player* bot, Battleground* bg, Order& out)
         lane = AttackLane(bg, attackers);
     if (attacking && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAGateFocus))
         lane = FocusLane(bg, attackers);
+    // SAAttack: 1 driver (2 once 4+ drive) pressures the other gate
+    if (attacking && bot->GetVehicle() && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAAttack))
+    {
+        std::vector<ObjectGuid::LowType> drivers;
+        for (auto const& ref : bg->GetBgMap()->GetPlayers())
+            if (Player* p = ref.GetSource(); p && p->IsAlive() && p->GetTeamId() == attackers)
+                if (Unit* v = p->GetVehicleBase(); v && v->GetEntry() != NPC_ANTI_PERSONNAL_CANNON)
+                    drivers.push_back(p->GetGUID().GetCounter());
+        std::sort(drivers.begin(), drivers.end());
+        size_t const pressure = drivers.size() >= 4 ? 2 : drivers.size() >= 2 ? 1 : 0;
+        auto const it = std::find(drivers.begin(), drivers.end(), bot->GetGUID().GetCounter());
+        if (it != drivers.end() && size_t(it - drivers.begin()) < pressure)
+            lane = 1 - lane;
+    }
     if (!attacking)
         lane = DefenderLane(bot, bg);
     uint32 const target = NextGate(bg, lane);
@@ -775,6 +809,23 @@ Unit* HuntTarget(PlayerbotAI* botAI)
     Battleground* bg = bot->GetBattleground();
     if (!bg || !bot->IsAlive() || bot->GetVehicle() || PlayerbotAI::IsHeal(bot))
         return nullptr;
+    // SAAttack: an enemy at one of our planted charges is disarming it
+    if (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAAttack) && bot->GetTeamId() == Attackers(bg))
+    {
+        GameObject* charge = bot->FindNearestGameObject(GO_PLANTED_CHARGE, 30.0f, true);
+        Unit* best = nullptr;
+        float bestDist = 8.0f;
+        if (charge)
+            for (auto const& ref : bg->GetBgMap()->GetPlayers())
+                if (Player* p = ref.GetSource(); p && p->IsAlive() && p->GetTeamId() != bot->GetTeamId() &&
+                                                 bot->IsValidAttackTarget(p) && bot->IsWithinLOSInMap(p))
+                    if (float const d = p->GetExactDist2d(charge); d < bestDist)
+                    {
+                        bestDist = d;
+                        best = p;
+                    }
+        return best;
+    }
     if (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SADefense) && Attackers(bg) != TEAM_NEUTRAL &&
         bot->GetTeamId() != Attackers(bg))
     {
