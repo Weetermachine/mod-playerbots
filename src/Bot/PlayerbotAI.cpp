@@ -4008,13 +4008,15 @@ static bool SiegeShot(Player* bot, AiObjectContext* context, uint32 spellId)
            base->GetExactDist2d(siege.x, siege.y) < 15.0f;
 }
 
-// SASiegeRange: a SotA gate shot (a location spell at the siege position) waits until the vehicle is within 45 yd
+// SASiegeRange / ICSiegeRange: a gate shot (a location spell at the siege position) waits until the vehicle is within 50 yd
 static bool SiegeTooFar(Player* bot, Unit* vehicleBase, SpellInfo const* spellInfo, PositionInfo const& siegePos)
 {
     Battleground* bg = bot->GetBattleground();
-    return bg && bot->GetMapId() == 607 && siegePos.isSet() && (spellInfo->Targets & TARGET_FLAG_DEST_LOCATION) &&
-           BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SASiegeRange) &&
-           vehicleBase->GetExactDist2d(siegePos.x, siegePos.y) > 45.0f;
+    if (!bg || !siegePos.isSet() || !(spellInfo->Targets & TARGET_FLAG_DEST_LOCATION))
+        return false;
+    bool const on = (bot->GetMapId() == 607 && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SASiegeRange)) ||
+                    (bot->GetMapId() == 628 && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::ICSiegeRange));
+    return on && vehicleBase->GetExactDist2d(siegePos.x, siegePos.y) > 50.0f;
 }
 
 bool PlayerbotAI::CanCastVehicleSpell(uint32 spellId, Unit* target)

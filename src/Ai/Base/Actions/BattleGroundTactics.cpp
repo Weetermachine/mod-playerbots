@@ -3829,6 +3829,22 @@ bool BGTactics::selectObjective(bool reset)
                     z = h;
                 icHordePark.Relocate(478.3f, -830.2f, z);
             }
+            Position icAlliancePark = IC_GATE_ATTACK_POS_ALLIANCE;
+            // ICSiegeRange: each team's siege park 45 yd from the gate it shells, on the line to its usual spot
+            auto closer = [&](Position& park, uint32 gateObj)
+            {
+                GameObject* gate = bg->GetBGObject(gateObj);
+                if (!gate || gate->GetExactDist2d(&park) <= 45.0f)
+                    return;
+                float const a = gate->GetAngle(&park);
+                float const x = gate->GetPositionX() + 45.0f * std::cos(a), y = gate->GetPositionY() + 45.0f * std::sin(a);
+                float const h = bg->GetBgMap()->GetHeight(x, y, park.GetPositionZ() + 20.0f);
+                park.Relocate(x, y, h > INVALID_HEIGHT ? h : park.GetPositionZ());
+            };
+            if (BGTacticArms::IsOn(bg, TEAM_HORDE, BGTactic::ICSiegeRange))
+                closer(icHordePark, BG_IC_GO_ALLIANCE_GATE_3);
+            if (BGTacticArms::IsOn(bg, TEAM_ALLIANCE, BGTactic::ICSiegeRange))
+                closer(icAlliancePark, BG_IC_GO_HORDE_GATE_1);
             uint32 const icRow = bot->GetTeamId() == TEAM_HORDE ? 2
                                : BGTacticArms::IsOn(bg, TEAM_ALLIANCE, BGTactic::ICGuardFix) ? 1 : 0;
             ++icGuard[icRow][0];
@@ -4115,12 +4131,12 @@ bool BGTactics::selectObjective(bool reset)
                         {
                             // just make bot stay where it is if already close
                             // (stops them shifting around between the random spots)
-                            if (bot->GetDistance(IC_GATE_ATTACK_POS_ALLIANCE) < 8.0f)
+                            if (bot->GetDistance(icAlliancePark) < 8.0f)
                                 pos.Set(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), bot->GetMapId());
                             else
-                                pos.Set(IC_GATE_ATTACK_POS_ALLIANCE.GetPositionX() + frand(-5.0f, +5.0f),
-                                        IC_GATE_ATTACK_POS_ALLIANCE.GetPositionY() + frand(-5.0f, +5.0f),
-                                        IC_GATE_ATTACK_POS_ALLIANCE.GetPositionZ(), bot->GetMapId());
+                                pos.Set(icAlliancePark.GetPositionX() + frand(-5.0f, +5.0f),
+                                        icAlliancePark.GetPositionY() + frand(-5.0f, +5.0f),
+                                        icAlliancePark.GetPositionZ(), bot->GetMapId());
                             posMap["bg objective"] = pos;
                             // set siege position
                             PositionInfo siegePos = context->GetValue<PositionMap&>("position")->Get()["bg siege"];
@@ -4212,12 +4228,12 @@ bool BGTactics::selectObjective(bool reset)
                 {
                     // just make bot stay where it is if already close
                     // (stops them shifting around between the random spots)
-                    if (bot->GetDistance(IC_GATE_ATTACK_POS_ALLIANCE) < 8.0f)
+                    if (bot->GetDistance(icAlliancePark) < 8.0f)
                         pos.Set(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), bot->GetMapId());
                     else
-                        pos.Set(IC_GATE_ATTACK_POS_ALLIANCE.GetPositionX() + frand(-5.0f, +5.0f),
-                                IC_GATE_ATTACK_POS_ALLIANCE.GetPositionY() + frand(-5.0f, +5.0f),
-                                IC_GATE_ATTACK_POS_ALLIANCE.GetPositionZ(), bot->GetMapId());
+                        pos.Set(icAlliancePark.GetPositionX() + frand(-5.0f, +5.0f),
+                                icAlliancePark.GetPositionY() + frand(-5.0f, +5.0f),
+                                icAlliancePark.GetPositionZ(), bot->GetMapId());
                     posMap["bg objective"] = pos;
                     // LOG_INFO("playerbots", "bot={} guard vehicles as they attack gate", bot->GetName());
                     return true;
