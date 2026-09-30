@@ -9,6 +9,7 @@
 //   Appender.BGEvents=2,4,1,BGEvents.log,a      (flags 1 = timestamp prefix)
 //   Logger.playerbots.bgevents=4,BGEvents
 
+#include <algorithm>
 #include <map>
 #include <mutex>
 #include <sstream>
@@ -349,6 +350,17 @@ private:
             if (Creature* d = bg->GetBGCreature(i); d && d->IsAlive() && d->IsVisible())
                 demo += (demo.empty() ? "" : ",") + std::to_string(uint32(d->GetHealthPct()));
         s << " demo=" << (demo.empty() ? "-" : demo);
+        std::string drv;  // attacker-driven siege (workshop demolishers are not in the slots above)
+        std::vector<Unit*> seen;
+        for (auto const& ref : bg->GetBgMap()->GetPlayers())
+            if (Player* p = ref.GetSource(); p && p->IsAlive())
+                if (Unit* v = p->GetVehicleBase(); v && v->IsAlive() && v->GetEntry() != NPC_ANTI_PERSONNAL_CANNON &&
+                                                   std::find(seen.begin(), seen.end(), v) == seen.end())
+                {
+                    seen.push_back(v);
+                    drv += (drv.empty() ? "" : ",") + std::to_string(uint32(v->GetHealthPct()));
+                }
+        s << " drv=" << (drv.empty() ? "-" : drv);
         for (uint32 b : {BG_SA_BOAT_ONE, BG_SA_BOAT_TWO})
         {
             GameObject* go = bg->GetBGObject(b);

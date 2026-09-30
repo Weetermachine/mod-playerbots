@@ -148,12 +148,24 @@ uint32 FocusLane(Battleground* bg, TeamId attackers)
     return f.second;
 }
 
-// SAHunt: an enemy-driven demolisher within 50 yd of the gate.
+// The siege vehicles attackers drive (workshop demolishers are not in the BG's demolisher slots).
+std::vector<Unit*> DrivenSiege(Battleground* bg)
+{
+    std::vector<Unit*> out;
+    TeamId const attackers = BGStrand::Attackers(bg);
+    for (auto const& ref : bg->GetBgMap()->GetPlayers())
+        if (Player* p = ref.GetSource(); p && p->IsAlive() && p->GetTeamId() == attackers)
+            if (Unit* v = p->GetVehicleBase(); v && v->IsAlive() && v->GetEntry() != NPC_ANTI_PERSONNAL_CANNON &&
+                                               std::find(out.begin(), out.end(), v) == out.end())
+                out.push_back(v);
+    return out;
+}
+
+// SAHunt / SASortie: an attacker-driven siege vehicle within dist yd of the gate.
 bool SiegeAtGate(Battleground* bg, GameObject* gate, float dist = 50.0f)
 {
-    for (uint32 i = BG_SA_DEMOLISHER_1; i <= BG_SA_DEMOLISHER_8; ++i)
-        if (Creature* d = bg->GetBGCreature(i); d && d->IsAlive() && d->GetVehicleKit() &&
-                                                d->GetVehicleKit()->IsVehicleInUse() && d->GetExactDist2d(gate) < dist)
+    for (Unit* v : DrivenSiege(bg))
+        if (v->GetExactDist2d(gate) < dist)
             return true;
     return false;
 }
@@ -224,6 +236,32 @@ void SortieStage(Player* bot, uint32 stage, float dist = 0.0f, float dz = 0.0f)
             s.clear();
         sortieShort.clear();
         sortieLogMs = now;
+    }
+}
+
+// SACannons diagnostics (Server.log, per 5 min): enemies on foot per gunner look: all, within 70 yd, 10-70 yd, shootable
+std::mutex sightLock;
+uint64 sight[5] = {};  // looks, all, within 70, in range, shootable
+uint32 sightLogMs = 0;
+
+void GunnerSight(uint32 all, uint32 in70, uint32 inRange, uint32 shootable)
+{
+    std::lock_guard<std::mutex> guard(sightLock);
+    ++sight[0];
+    sight[1] += all;
+    sight[2] += in70;
+    sight[3] += inRange;
+    sight[4] += shootable;
+    uint32 const now = getMSTime();
+    if (!sightLogMs)
+        sightLogMs = now;
+    else if (getMSTimeDiff(sightLogMs, now) > 5 * MINUTE * IN_MILLISECONDS)
+    {
+        float const n = float(sight[0]);
+        LOG_INFO("module", "Gunner sight SA (5 min): looks {}, enemies on foot per look {:.1f}, within 70 yd {:.1f}, 10-70 yd {:.1f}, in line of sight {:.1f}",
+                 sight[0], sight[1] / n, sight[2] / n, sight[3] / n, sight[4] / n);
+        std::fill(std::begin(sight), std::end(sight), 0);
+        sightLogMs = now;
     }
 }
 
@@ -544,11 +582,10 @@ Unit* HuntTarget(PlayerbotAI* botAI)
         return nullptr;
     Unit* best = nullptr;
     float bestDist = 60.0f;
-    for (uint32 i = BG_SA_DEMOLISHER_1; i <= BG_SA_DEMOLISHER_8; ++i)
+    for (Unit* d : DrivenSiege(bg))
     {
-        Creature* d = bg->GetBGCreature(i);
-        if (!d || !d->IsAlive() || !d->IsVisible() || d->HasUnitFlag(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE) ||
-            d->GetExactDist2d(gate) > 50.0f || !bot->IsValidAttackTarget(d) || !bot->IsWithinLOSInMap(d))
+        if (d->HasUnitFlag(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE) || d->GetExactDist2d(gate) > 50.0f ||
+            !bot->IsValidAttackTarget(d) || !bot->IsWithinLOSInMap(d))
             continue;
         if (float const dist = bot->GetExactDist2d(d); dist < bestDist)
         {
@@ -644,12 +681,15 @@ Unit* GunnerTarget(Player* bot, Battleground* bg)
         if (Player* p = ref.GetSource(); p && p->IsAlive() && p->GetTeamId() != bot->GetTeamId() && !p->GetVehicle())
             foes.push_back(p);
     Unit* best = nullptr;
-    uint32 bestScore = 0;
+    uint32 bestScore = 0, in70 = 0, inRange = 0, shootable = 0;
     for (Player* p : foes)
     {
         float const dist = gun->GetExactDist2d(p);
+        in70 += dist <= 70.0f ? 1 : 0;
+        inRange += dist >= 10.0f && dist <= 70.0f ? 1 : 0;
         if (dist < 10.0f || dist > 70.0f || !gun->IsWithinLOSInMap(p) || !bot->CanSeeOrDetect(p))
             continue;
+        ++shootable;
         uint32 score = 0;
         for (Player* q : foes)
             if (q->GetExactDist2d(p) < 8.0f)
@@ -660,6 +700,7 @@ Unit* GunnerTarget(Player* bot, Battleground* bg)
             best = p;
         }
     }
+    GunnerSight(foes.size(), in70, inRange, shootable);
     return best;
 }
 
