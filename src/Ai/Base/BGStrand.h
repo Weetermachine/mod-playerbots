@@ -67,6 +67,10 @@ namespace BGStrand
     void WarmupProbe(Battleground* bg, uint32 kind);
     // SAWarmup diagnostics: how a warmup move ended (Server.log per 5 min, first and second warmup minute).
     void WarmupExit(Battleground* bg, uint32 exit);
+    // SAPassengers: a friendly driven demolisher within 30 yd with a free seat for this bot to ride in; nullptr otherwise.
+    Unit* PassengerSeat(Player* bot, Battleground* bg);
+    // SAPassengers: a ranged bot or healer leaves an empty demolisher to a melee teammate on foot within 40 yd of it.
+    bool LeaveToMelee(Player* bot, Battleground* bg, Unit* vehicle);
     // SADefense diagnostics: a charge was disarmed.
     void Disarmed();
     // SASlows: a driven enemy siege vehicle within 30 yd in line of sight that is not rooted or slowed.

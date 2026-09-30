@@ -6,6 +6,7 @@
 
 #include "VehicleActions.h"
 
+#include "BGStrand.h"
 #include "BGTacticArms.h"
 #include "BattlegroundIC.h"
 #include "BattlegroundSA.h"
@@ -43,11 +44,21 @@ bool EnterVehicleAction::Execute(Event event)
         return false;
     }
 
+    // SAPassengers (SotA): a passenger boards a driven demolisher nearby first
+    Battleground* sabg = bot->GetMapId() == 607 ? bot->GetBattleground() : nullptr;
+    if (sabg)
+        if (Unit* seat = BGStrand::PassengerSeat(bot, sabg))
+            return EnterVehicle(seat, true);
+
     GuidVector npcs = AI_VALUE(GuidVector, "nearest vehicles");
     for (GuidVector::iterator i = npcs.begin(); i != npcs.end(); i++)
     {
         Unit* vehicleBase = botAI->GetUnit(*i);
         if (!vehicleBase)
+            continue;
+
+        // SAPassengers: melee drive
+        if (sabg && BGStrand::LeaveToMelee(bot, sabg, vehicleBase))
             continue;
 
         if (vehicleBase->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE))

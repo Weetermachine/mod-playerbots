@@ -702,6 +702,45 @@ void WarmupExit(Battleground* bg, uint32 exit)
     }
 }
 
+namespace
+{
+// SAPassengers: this attacker rides as a passenger this round: ranged or healer, half of them (by guid and round)
+bool PassengerRole(Player* bot, Battleground* bg)
+{
+    if (!BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAPassengers) || bot->GetTeamId() != BGStrand::Attackers(bg))
+        return false;
+    if (!PlayerbotAI::IsHeal(bot) && !PlayerbotAI::IsRanged(bot))
+        return false;
+    uint32 const round = bg->GetInstanceID() * 2 + (BGStrand::Attackers(bg) == TEAM_HORDE ? 1 : 0);
+    return (bot->GetGUID().GetCounter() * 2654435761u + round * 40503u) % 2 == 0;
+}
+}
+
+Unit* PassengerSeat(Player* bot, Battleground* bg)
+{
+    if (bot->GetVehicle() || !PassengerRole(bot, bg))
+        return nullptr;
+    Unit* best = nullptr;
+    for (Unit* d : DrivenSiege(bg))
+        if (d->GetVehicleKit() && d->GetVehicleKit()->GetAvailableSeatCount() > 0 && d->GetExactDist2d(bot) < 30.0f &&
+            (!best || d->GetExactDist2d(bot) < best->GetExactDist2d(bot)))
+            best = d;
+    return best;
+}
+
+bool LeaveToMelee(Player* bot, Battleground* bg, Unit* vehicle)
+{
+    if (!BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAPassengers) ||
+        (!PlayerbotAI::IsHeal(bot) && !PlayerbotAI::IsRanged(bot)))
+        return false;
+    for (auto const& ref : bg->GetBgMap()->GetPlayers())
+        if (Player* p = ref.GetSource(); p && p != bot && p->IsAlive() && p->GetTeamId() == bot->GetTeamId() &&
+                                         !p->GetVehicle() && !PlayerbotAI::IsHeal(p) && !PlayerbotAI::IsRanged(p) &&
+                                         p->GetExactDist2d(vehicle) < 40.0f)
+            return true;
+    return false;
+}
+
 bool WarmupDefender(Player* bot, Battleground* bg)
 {
     TeamId const attackers = Attackers(bg);
@@ -845,6 +884,17 @@ bool Objective(Player* bot, Battleground* bg, Order& out)
         return true;
     }
 
+    if (Vehicle* veh = bot->GetVehicle(); veh && veh->GetSeatForPassenger(bot) && !veh->GetSeatForPassenger(bot)->CanControl())
+    {
+        // SAPassengers: a passenger fights from its seat; with a charge, it gets out at the gate to plant it
+        if (bot->HasItemCount(ITEM_MASSIVE_SEAFORIUM_CHARGE, 1) && bot->GetVehicleBase()->GetExactDist2d(go) < 12.0f)
+        {
+            out.move = bot->GetPosition();
+            out.leave = true;
+            return true;
+        }
+        return false;
+    }
     if (bot->GetVehicle())
     {
         // SARam: to the wall (Ram hits 3 yd ahead within 3 yd)
