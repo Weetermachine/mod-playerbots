@@ -10,6 +10,7 @@
 #include <cmath>
 #include <iterator>
 #include <mutex>
+#include <sstream>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -484,6 +485,20 @@ bool GoOut(Player* bot, Battleground* bg, GameObject* gate, uint32 gateIdx, floa
     return false;
 }
 
+// SAPreDamage: the idle demolisher above 10% nearest to a post, within radius of it
+Creature* IdleDemolisherNear(Player* bot, WorldObject const* post, float radius)
+{
+    std::list<Creature*> demos;
+    bot->GetCreatureListWithEntryInGrid(demos, NPC_DEMOLISHER_SA, radius + 150.0f);
+    bot->GetCreatureListWithEntryInGrid(demos, 32796, radius + 150.0f);
+    Creature* nearest = nullptr;
+    for (Creature* d : demos)
+        if (d->IsAlive() && d->GetHealthPct() > 10.0f && d->GetVehicleKit() && !d->GetVehicleKit()->IsVehicleInUse() &&
+            d->GetExactDist2d(post) < radius && (!nearest || post->GetExactDist2d(d) < post->GetExactDist2d(nearest)))
+            nearest = d;
+    return nearest;
+}
+
 void HoldAt(Player* bot, Battleground* bg, Position const& pos, Order& out)
 {
     out.move = pos;
@@ -568,6 +583,10 @@ bool DefenseObjective(Player* bot, Battleground* bg, Order& out)
             if (GameObject* banner = bg->GetBGObject(flag))
             {
                 HoldAt(bot, bg, banner->GetPosition(), out);
+                // SAPreDamage: the workshop by the graveyard spawns demolishers; wear idle ones down
+                if (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAPreDamage))
+                    if (Creature* idle = IdleDemolisherNear(bot, banner, 100.0f))
+                        out.move = idle->GetPosition();
                 DefenseStage(bot, 3);
                 return true;
             }
@@ -589,20 +608,11 @@ bool DefenseObjective(Player* bot, Battleground* bg, Order& out)
     if (goOut)
     {
         bool const outside = GoOut(bot, bg, gate, gateIdx, front, out);
-        // SAPreDamage: while the outer gates stand, go on to the nearest parked demolisher above 10% on this side
-        if (outside && !green && !blue && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAPreDamage))
-        {
-            std::list<Creature*> demos;
-            bot->GetCreatureListWithEntryInGrid(demos, NPC_DEMOLISHER_SA, 250.0f);
-            bot->GetCreatureListWithEntryInGrid(demos, 32796, 250.0f);
-            Creature* nearest = nullptr;
-            for (Creature* d : demos)
-                if (d->IsAlive() && d->GetHealthPct() > 10.0f && d->GetVehicleKit() && !d->GetVehicleKit()->IsVehicleInUse() &&
-                    d->GetExactDist2d(gate) < 250.0f && (!nearest || gate->GetExactDist2d(d) < gate->GetExactDist2d(nearest)))
-                    nearest = d;
-            if (nearest)
-                out.move = nearest->GetPosition();
-        }
+        // SAPreDamage: go on to the nearest idle demolisher above 10% (the beach ones while the outer gates stand, the
+        // workshop ones later)
+        if (outside && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAPreDamage))
+            if (Creature* idle = IdleDemolisherNear(bot, gate, green || blue ? 100.0f : 250.0f))
+                out.move = idle->GetPosition();
         DefenseStage(bot, outside ? 1 : 0);
         return true;
     }
@@ -632,6 +642,35 @@ Unit* SlowTarget(Player* bot, Battleground* bg)
     return best;
 }
 
+namespace
+{
+std::mutex warmLock;
+uint32 warmSeen[2][9] = {}, warmLogMs = 0;  // [triggered, ran][20 s step of battleground time]
+}
+
+void WarmupProbe(Battleground* bg, uint32 kind)
+{
+    uint32 const step = std::min<uint32>(bg->GetStartTime() / 20000, 8);
+    std::lock_guard<std::mutex> guard(warmLock);
+    ++warmSeen[kind][step];
+    uint32 const now = getMSTime();
+    if (!warmLogMs)
+        warmLogMs = now;
+    else if (getMSTimeDiff(warmLogMs, now) > 5 * MINUTE * IN_MILLISECONDS)
+    {
+        std::ostringstream o;
+        for (uint32 k = 0; k < 2; ++k)
+        {
+            o << (k ? " | moves run:" : " move triggers:");
+            for (uint32 i = 0; i < 9; ++i)
+                o << ' ' << warmSeen[k][i];
+        }
+        LOG_INFO("module", "Warmup probe (5 min, by 20 s of battleground time):{}", o.str());
+        std::memset(warmSeen, 0, sizeof(warmSeen));
+        warmLogMs = now;
+    }
+}
+
 bool WarmupDefender(Player* bot, Battleground* bg)
 {
     TeamId const attackers = Attackers(bg);
@@ -647,7 +686,12 @@ bool DefenseMoving(Player* bot, Battleground* bg)
         return false;
     // SAWarmup: during the warmup every defender walks to its place (the round's move trigger is not active yet)
     if (WarmupDefender(bot, bg))
-        return o.urgent || o.hasJump || bot->GetExactDist2d(&o.move) > 8.0f;
+    {
+        bool const go = o.urgent || o.hasJump || bot->GetExactDist2d(&o.move) > 8.0f;
+        if (go)
+            WarmupProbe(bg, 0);
+        return go;
+    }
     return o.urgent;
 }
 

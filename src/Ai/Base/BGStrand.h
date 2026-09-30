@@ -63,6 +63,8 @@ namespace BGStrand
     bool DefenseMoving(Player* bot, Battleground* bg);
     // SAWarmup: an allocator defender during the warmup (the round has not started: attackers are on the boats).
     bool WarmupDefender(Player* bot, Battleground* bg);
+    // SAWarmup diagnostics: kind 0 a warmup move was triggered, 1 it ran (Server.log per 5 min, by 20 s steps).
+    void WarmupProbe(Battleground* bg, uint32 kind);
     // SADefense diagnostics: a charge was disarmed.
     void Disarmed();
     // SASlows: a driven enemy siege vehicle within 30 yd in line of sight that is not rooted or slowed.
