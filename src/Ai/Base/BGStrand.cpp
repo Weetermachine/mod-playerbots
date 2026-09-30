@@ -561,7 +561,8 @@ bool DefenseObjective(Player* bot, Battleground* bg, Order& out)
         GameObject* yellow = bg->GetBGObject(BG_SA_YELLOW_GATE);
         if (!yellow)
             return false;
-        if (outRole && idx % 3 == 0)
+        bool const allHands = BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAAllHands) && SiegeAtGate(bg, yellow, 80.0f);
+        if ((outRole && idx % 3 == 0) || allHands)
         {
             DefenseStage(bot, GoOut(bot, bg, yellow, BG_SA_YELLOW_GATE, 15.0f, out) ? 1 : 0);
             return true;
@@ -587,6 +588,14 @@ bool DefenseObjective(Player* bot, Battleground* bg, Order& out)
                 if (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAPreDamage))
                     if (Creature* idle = IdleDemolisherNear(bot, banner, 100.0f))
                         out.move = idle->GetPosition();
+                // SAAllHands: a driven demolisher passing the graveyard
+                if (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAAllHands))
+                    for (Unit* d : DrivenSiege(bg))
+                        if (d->GetExactDist2d(banner) < 60.0f)
+                        {
+                            out.move = d->GetPosition();
+                            break;
+                        }
                 DefenseStage(bot, 3);
                 return true;
             }
@@ -605,13 +614,16 @@ bool DefenseObjective(Player* bot, Battleground* bg, Order& out)
     GameObject* gate = bg->GetBGObject(gateIdx);
     if (!gate)
         return false;
+    // SAAllHands: a driven demolisher within 80 yd of this gate: everyone of this gate goes out and fights it
+    if (!goOut && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAAllHands) && SiegeAtGate(bg, gate, 80.0f))
+        goOut = true;
     if (goOut)
     {
         bool const outside = GoOut(bot, bg, gate, gateIdx, front, out);
-        // SAPreDamage: go on to the nearest idle demolisher above 10% (the beach ones while the outer gates stand, the
-        // workshop ones later)
-        if (outside && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAPreDamage))
-            if (Creature* idle = IdleDemolisherNear(bot, gate, green || blue ? 100.0f : 250.0f))
+        // SAPreDamage: once an outer gate fell, go on to the nearest idle workshop demolisher above 10% (the beach ones
+        // are boarded within seconds of unlocking)
+        if (outside && (green || blue) && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAPreDamage))
+            if (Creature* idle = IdleDemolisherNear(bot, gate, 100.0f))
                 out.move = idle->GetPosition();
         DefenseStage(bot, outside ? 1 : 0);
         return true;

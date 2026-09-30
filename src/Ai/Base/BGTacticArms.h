@@ -129,6 +129,7 @@ enum class BGTactic : uint8
     SAWarmup = 106,      // SotA: allocator defenders take their positions during the warmup (attackers still on the boats)
     SAPreDamage = 107,   // SotA: defenders wear parked demolishers down to 10% but do not kill them (they respawn full)
     SAPassengers = 108,  // SotA: half the ranged and healers ride demolishers as passengers (untargetable), melee drive
+    SAAllHands = 109,    // SotA: every defender of a gate goes out when a driven demolisher is within 80 yd of it
     TacticCount          // one past the last value; must stay at or below the mask width (128)
 };
 static_assert(uint32(BGTactic::TacticCount) <= 128, "BGTactic values must fit the 128-bit masks in BGTacticArms.cpp");
