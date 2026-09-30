@@ -757,6 +757,41 @@ private:
     uint32 logMs = 0;
 };
 
+// SotA anti-personnel cannon damage (Server.log, per 5 min): hits, damage and kills on players and on vehicles
+class PlayerbotsSACannonDamageScript : public UnitScript
+{
+public:
+    PlayerbotsSACannonDamageScript() : UnitScript("PlayerbotsSACannonDamageScript") {}
+
+    void OnDamage(Unit* attacker, Unit* victim, uint32& damage) override
+    {
+        if (!attacker || !victim || damage == 0 || victim->GetMapId() != 607 || attacker->GetEntry() != 27894)
+            return;
+        uint32 const k = victim->IsVehicle() ? 1 : 0;  // 0: players (and others on foot), 1: vehicles
+        std::lock_guard<std::mutex> guard(lock);
+        ++hits[k];
+        dmg[k] += damage;
+        if (damage >= victim->GetHealth())
+            ++kills[k];
+        uint32 const now = getMSTime();
+        if (!logMs)
+            logMs = now;
+        else if (getMSTimeDiff(logMs, now) > 5 * MINUTE * IN_MILLISECONDS)
+        {
+            LOG_INFO("module", "SA cannon damage (5 min): on foot hits {} damage {} kills {} | vehicles hits {} damage {} kills {}",
+                     hits[0], dmg[0], kills[0], hits[1], dmg[1], kills[1]);
+            hits[0] = hits[1] = kills[0] = kills[1] = 0;
+            dmg[0] = dmg[1] = 0;
+            logMs = now;
+        }
+    }
+
+private:
+    std::mutex lock;
+    uint32 hits[2] = {}, kills[2] = {}, logMs = 0;
+    uint64 dmg[2] = {};
+};
+
 class PlayerbotsBGEventLogPlayerScript : public PlayerScript
 {
 public:
@@ -833,5 +868,6 @@ void AddPlayerbotsBGEventLogScripts()
     new PlayerbotsBGEventLogPlayerScript();
     new PlayerbotsSAGateDamageScript();
     new PlayerbotsSASiegeDamageScript();
+    new PlayerbotsSACannonDamageScript();
     new PlayerbotsSASlowAuraScript();
 }
