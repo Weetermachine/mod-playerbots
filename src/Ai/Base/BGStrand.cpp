@@ -485,6 +485,13 @@ bool GoOut(Player* bot, Battleground* bg, GameObject* gate, uint32 gateIdx, floa
     return false;
 }
 
+// SAAllHands, also part of the defender package (SADefPack)
+bool AllHands(Battleground* bg, Player* bot)
+{
+    return BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAAllHands) ||
+           BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SADefPack);
+}
+
 // SAPreDamage: the idle demolisher above 10% nearest to a post, within radius of it
 Creature* IdleDemolisherNear(Player* bot, WorldObject const* post, float radius)
 {
@@ -561,7 +568,7 @@ bool DefenseObjective(Player* bot, Battleground* bg, Order& out)
         GameObject* yellow = bg->GetBGObject(BG_SA_YELLOW_GATE);
         if (!yellow)
             return false;
-        bool const allHands = BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAAllHands) && SiegeAtGate(bg, yellow, 80.0f);
+        bool const allHands = AllHands(bg, bot) && SiegeAtGate(bg, yellow, 80.0f);
         if ((outRole && idx % 3 == 0) || allHands)
         {
             DefenseStage(bot, GoOut(bot, bg, yellow, BG_SA_YELLOW_GATE, 15.0f, out) ? 1 : 0);
@@ -577,9 +584,10 @@ bool DefenseObjective(Player* bot, Battleground* bg, Order& out)
     if (green || blue)
     {
         // an outer gate fell: two guard the graveyards behind it, the other side keeps its holders
-        if (!heal && idx < 2)
+        uint32 const guards = BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SADefPack) ? 4 : 2;
+        if (!heal && idx < guards)
         {
-            uint32 const flag = green && blue ? (idx == 0 ? BG_SA_LEFT_FLAG : BG_SA_RIGHT_FLAG)
+            uint32 const flag = green && blue ? (idx % 2 == 0 ? BG_SA_LEFT_FLAG : BG_SA_RIGHT_FLAG)
                                               : (green ? BG_SA_LEFT_FLAG : BG_SA_RIGHT_FLAG);
             if (GameObject* banner = bg->GetBGObject(flag))
             {
@@ -589,7 +597,7 @@ bool DefenseObjective(Player* bot, Battleground* bg, Order& out)
                     if (Creature* idle = IdleDemolisherNear(bot, banner, 100.0f))
                         out.move = idle->GetPosition();
                 // SAAllHands: a driven demolisher passing the graveyard
-                if (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAAllHands))
+                if (AllHands(bg, bot))
                     for (Unit* d : DrivenSiege(bg))
                         if (d->GetExactDist2d(banner) < 60.0f)
                         {
@@ -615,7 +623,7 @@ bool DefenseObjective(Player* bot, Battleground* bg, Order& out)
     if (!gate)
         return false;
     // SAAllHands: a driven demolisher within 80 yd of this gate: everyone of this gate goes out and fights it
-    if (!goOut && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAAllHands) && SiegeAtGate(bg, gate, 80.0f))
+    if (!goOut && AllHands(bg, bot) && SiegeAtGate(bg, gate, 80.0f))
         goOut = true;
     if (goOut)
     {
@@ -991,6 +999,43 @@ Unit* HuntTarget(PlayerbotAI* botAI)
                         best = p;
                     }
         return best;
+    }
+    // SADefPack: an attacker just thrown out of a destroyed demolisher, then (once the relic door is down) the attacker
+    // nearest the relic
+    if (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SADefPack) && Attackers(bg) != TEAM_NEUTRAL &&
+        bot->GetTeamId() != Attackers(bg))
+    {
+        std::list<Creature*> wrecks;
+        bot->GetDeadCreatureListInGrid(wrecks, 60.0f);
+        Unit* driver = nullptr;
+        float best = 60.0f;
+        for (Creature* w : wrecks)
+            if (w->GetEntry() == NPC_DEMOLISHER_SA || w->GetEntry() == 32796)
+                for (auto const& ref : bg->GetBgMap()->GetPlayers())
+                    if (Player* p = ref.GetSource(); p && p->IsAlive() && p->GetTeamId() == Attackers(bg) && !p->GetVehicle() &&
+                                                     p->GetExactDist2d(w) < 10.0f && bot->IsValidAttackTarget(p) &&
+                                                     bot->GetExactDist2d(p) < best && bot->IsWithinLOSInMap(p))
+                    {
+                        best = bot->GetExactDist2d(p);
+                        driver = p;
+                    }
+        if (driver)
+            return driver;
+        if (Destroyed(bg, BG_SA_ANCIENT_GATE))
+            if (GameObject* relic = bg->GetBGObject(BG_SA_TITAN_RELIC))
+            {
+                Unit* nearest = nullptr;
+                float nd = 25.0f;
+                for (auto const& ref : bg->GetBgMap()->GetPlayers())
+                    if (Player* p = ref.GetSource(); p && p->IsAlive() && p->GetTeamId() == Attackers(bg) &&
+                                                     p->GetExactDist2d(relic) < nd && bot->IsValidAttackTarget(p))
+                    {
+                        nd = p->GetExactDist2d(relic);
+                        nearest = p;
+                    }
+                if (nearest)
+                    return nearest;
+            }
     }
     if (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SADefense) && Attackers(bg) != TEAM_NEUTRAL &&
         bot->GetTeamId() != Attackers(bg))
