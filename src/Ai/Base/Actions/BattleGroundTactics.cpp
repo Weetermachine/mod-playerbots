@@ -1745,6 +1745,9 @@ bool BGTactics::Execute(Event /*event*/)
     if (getName() == "move to objective" && bgType == BATTLEGROUND_SA)
         return strandMove();
 
+    if (getName() == "slow siege")
+        return bgType == BATTLEGROUND_SA && slowSiege();
+
     if (getName() == "move to objective" && bgType == BATTLEGROUND_IC && isleMove())
         return true;
 
@@ -1949,6 +1952,53 @@ bool SkipMinesThisGame(Battleground* bg, TeamId team)
     LOG_INFO("module", "AV mines: bg {} {} {} the mines this game", bg->GetInstanceID(),
              team == TEAM_ALLIANCE ? "Alliance" : "Horde", skip ? "skips" : "goes for");
     return skip;
+}
+
+// SASlows diagnostics (Server.log, per 5 min): snare and root casts at driven demolishers
+namespace
+{
+std::atomic<uint32> slowCasts{0}, slowLogMs{0};
+void SlowCount()
+{
+    ++slowCasts;
+    uint32 now = getMSTime(), last = slowLogMs.load();
+    if (!last)
+        slowLogMs = now;
+    else if (getMSTimeDiff(last, now) > 5 * MINUTE * IN_MILLISECONDS && slowLogMs.compare_exchange_strong(last, now))
+        LOG_INFO("module", "Siege slows (5 min): casts {}", slowCasts.exchange(0));
+}
+}
+
+bool BGTactics::slowSiege()
+{
+    Battleground* bg = bot->GetBattleground();
+    if (!bg || bg->GetStatus() != STATUS_IN_PROGRESS || !bot->IsAlive() || bot->GetVehicle() ||
+        !BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SASlows))
+        return false;
+    Unit* siege = BGStrand::SlowTarget(bot, bg);
+    if (!siege)
+        return false;
+    // snares and roots only: vehicles never took stuns, fears or polymorph
+    static std::unordered_map<uint8, std::vector<std::string>> const slows = {
+        {CLASS_WARRIOR, {"hamstring", "piercing howl"}},
+        {CLASS_HUNTER, {"concussive shot", "wing clip"}},
+        {CLASS_PRIEST, {"mind flay"}},
+        {CLASS_DEATH_KNIGHT, {"chains of ice"}},
+        {CLASS_SHAMAN, {"frost shock"}},
+        {CLASS_MAGE, {"frost nova", "cone of cold", "frostbolt"}},
+        {CLASS_WARLOCK, {"curse of exhaustion"}},
+        {CLASS_DRUID, {"entangling roots"}},
+    };
+    auto const it = slows.find(bot->getClass());
+    if (it == slows.end())
+        return false;
+    for (std::string const& spell : it->second)
+        if (botAI->CanCastSpell(spell, siege) && botAI->CastSpell(spell, siege))
+        {
+            SlowCount();
+            return true;
+        }
+    return false;
 }
 
 bool BGTactics::useItemSpell(uint32 itemEntry, uint32 spellId)

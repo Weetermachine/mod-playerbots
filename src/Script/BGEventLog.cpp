@@ -37,6 +37,7 @@
 #include "Playerbots.h"
 #include "RandomPlayerbotMgr.h"
 #include "ScriptMgr.h"
+#include "SpellAuras.h"
 #include "GameObject.h"
 #include "SpellInfo.h"
 #include "Timer.h"
@@ -719,6 +720,43 @@ private:
     std::set<ObjectGuid::LowType> hitters, victims;
 };
 
+// SotA: snares and roots that land on driven siege vehicles (Server.log, per 5 min, by spell)
+class PlayerbotsSASlowAuraScript : public UnitScript
+{
+public:
+    PlayerbotsSASlowAuraScript() : UnitScript("PlayerbotsSASlowAuraScript") {}
+
+    void OnAuraApply(Unit* unit, Aura* aura) override
+    {
+        if (!unit || !aura || unit->GetMapId() != 607 || !unit->IsVehicle() || unit->GetEntry() == 27894 ||
+            !unit->GetVehicleKit() || !unit->GetVehicleKit()->IsVehicleInUse())
+            return;
+        SpellInfo const* info = aura->GetSpellInfo();
+        if (!info || !(info->HasAura(SPELL_AURA_MOD_DECREASE_SPEED) || info->HasAura(SPELL_AURA_MOD_ROOT) ||
+                       info->HasAura(SPELL_AURA_MOD_STUN)))
+            return;
+        std::lock_guard<std::mutex> guard(lock);
+        ++applied[info->SpellName[0]];
+        uint32 const now = getMSTime();
+        if (!logMs)
+            logMs = now;
+        else if (getMSTimeDiff(logMs, now) > 5 * MINUTE * IN_MILLISECONDS)
+        {
+            std::ostringstream o;
+            for (auto const& [name, n] : applied)
+                o << ' ' << name << ' ' << n;
+            LOG_INFO("module", "SA siege slowed (5 min, landed):{}", o.str());
+            applied.clear();
+            logMs = now;
+        }
+    }
+
+private:
+    std::mutex lock;
+    std::map<std::string, uint32> applied;
+    uint32 logMs = 0;
+};
+
 class PlayerbotsBGEventLogPlayerScript : public PlayerScript
 {
 public:
@@ -791,4 +829,5 @@ void AddPlayerbotsBGEventLogScripts()
     new PlayerbotsBGEventLogPlayerScript();
     new PlayerbotsSAGateDamageScript();
     new PlayerbotsSASiegeDamageScript();
+    new PlayerbotsSASlowAuraScript();
 }

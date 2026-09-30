@@ -127,6 +127,8 @@ public:
 private:
     static std::string const HandleConsoleCommandPrivate(WorldSession* session, char const* args);
     bool moveToStart(bool force = false);
+    // SASlows: snare or root a driven enemy demolisher in range that is not already
+    bool slowSiege();
     bool selectObjective(bool reset = false);
     bool moveToObjective(bool ignoreDist);
     // 1: moving along a complete route; -1: on a route but nothing to do this tick (let other actions run, e.g.

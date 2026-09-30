@@ -596,6 +596,27 @@ bool DefenseObjective(Player* bot, Battleground* bg, Order& out)
     return true;
 }
 
+Unit* SlowTarget(Player* bot, Battleground* bg)
+{
+    TeamId const attackers = Attackers(bg);
+    if (attackers == TEAM_NEUTRAL || bot->GetTeamId() == attackers)
+        return nullptr;
+    Unit* best = nullptr;
+    float bestDist = 30.0f;
+    for (Unit* d : DrivenSiege(bg))
+    {
+        if (d->HasAuraType(SPELL_AURA_MOD_ROOT) || d->HasAuraType(SPELL_AURA_MOD_DECREASE_SPEED) ||
+            !bot->IsWithinLOSInMap(d) || !bot->IsValidAttackTarget(d))
+            continue;
+        if (float const dist = bot->GetExactDist2d(d); dist < bestDist)
+        {
+            bestDist = dist;
+            best = d;
+        }
+    }
+    return best;
+}
+
 bool DefenseMoving(Player* bot, Battleground* bg)
 {
     Order o;

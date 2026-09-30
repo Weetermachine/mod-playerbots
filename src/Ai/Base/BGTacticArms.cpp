@@ -194,7 +194,8 @@ int TacticBit(std::string const& tactic)
          : tactic == "SAFocusSiege" ? int(BGTactic::SAFocusSiege)
          : tactic == "AVMinesRandom" ? int(BGTactic::AVMinesRandom)
          : tactic == "SASiegeRange" ? int(BGTactic::SASiegeRange)
-         : tactic == "ICSiegeRange" ? int(BGTactic::ICSiegeRange) : -1;
+         : tactic == "ICSiegeRange" ? int(BGTactic::ICSiegeRange)
+         : tactic == "SASlows" ? int(BGTactic::SASlows) : -1;
 }
 
 char const* BGName(BattlegroundTypeId type)
@@ -384,6 +385,7 @@ bool GlobalSwitch(BGTactic tactic, TeamId team, BattlegroundTypeId type)
         case BGTactic::AVMinesRandom:
         case BGTactic::SASiegeRange:
         case BGTactic::ICSiegeRange:
+        case BGTactic::SASlows:
         case BGTactic::TacticCount:
             return false;  // arms only
     }
