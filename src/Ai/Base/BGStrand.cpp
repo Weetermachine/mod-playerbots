@@ -150,17 +150,36 @@ uint32 FocusLane(Battleground* bg, TeamId attackers)
     return f.second;
 }
 
+// Drivers seen in a siege vehicle, by guid: when (the dismounted-driver kill counter)
+std::mutex driverLock;
+std::unordered_map<ObjectGuid::LowType, uint32> lastDrove;
+
 // The siege vehicles attackers drive (workshop demolishers are not in the BG's demolisher slots).
 std::vector<Unit*> DrivenSiege(Battleground* bg)
 {
     std::vector<Unit*> out;
     TeamId const attackers = BGStrand::Attackers(bg);
+    uint32 const now = getMSTime();
     for (auto const& ref : bg->GetBgMap()->GetPlayers())
         if (Player* p = ref.GetSource(); p && p->IsAlive() && p->GetTeamId() == attackers)
-            if (Unit* v = p->GetVehicleBase(); v && v->IsAlive() && v->GetEntry() != NPC_ANTI_PERSONNAL_CANNON &&
-                                               std::find(out.begin(), out.end(), v) == out.end())
-                out.push_back(v);
+            if (Unit* v = p->GetVehicleBase(); v && v->IsAlive() && v->GetEntry() != NPC_ANTI_PERSONNAL_CANNON)
+            {
+                {
+                    std::lock_guard<std::mutex> guard(driverLock);
+                    lastDrove[p->GetGUID().GetCounter()] = now;
+                }
+                if (std::find(out.begin(), out.end(), v) == out.end())
+                    out.push_back(v);
+            }
     return out;
+}
+
+// An attacker that was in a siege vehicle within the last 5 s and is on foot now (its demolisher just died)
+bool JustDismounted(Player* p)
+{
+    std::lock_guard<std::mutex> guard(driverLock);
+    auto const it = lastDrove.find(p->GetGUID().GetCounter());
+    return it != lastDrove.end() && !p->GetVehicle() && getMSTimeDiff(it->second, getMSTime()) < 5000;
 }
 
 // SAHunt / SASortie: an attacker-driven siege vehicle within dist yd of the gate.
@@ -572,6 +591,19 @@ bool DefenseObjective(Player* bot, Battleground* bg, Order& out)
         return true;
     }
 
+    // SADefPack: the relic door is down: everyone to the relic (they had stayed ~110 yd back at their fall-back spots)
+    if (Destroyed(bg, BG_SA_ANCIENT_GATE) && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SADefPack))
+        if (GameObject* relic = bg->GetBGObject(BG_SA_TITAN_RELIC))
+        {
+            Position const floor = Floor(relic);
+            HoldAt(bot, bg, Position(floor.GetPositionX() + float(bot->GetGUID().GetCounter() % 9) - 4.0f,
+                                     floor.GetPositionY() + float(bot->GetGUID().GetCounter() * 7 % 9) - 4.0f,
+                                     floor.GetPositionZ()), out);
+            out.urgent = bot->GetExactDist2d(relic) > 30.0f;  // at the relic: fight (the relic hunt picks targets)
+            Stat(out.urgent ? "relic_phase_on_way" : "relic_phase_at_relic", bot);
+            return true;
+        }
+
     bool const green = Destroyed(bg, BG_SA_GREEN_GATE), blue = Destroyed(bg, BG_SA_BLUE_GATE);
     bool const purple = Destroyed(bg, BG_SA_PURPLE_GATE), red = Destroyed(bg, BG_SA_RED_GATE);
     if (Destroyed(bg, BG_SA_YELLOW_GATE))
@@ -853,14 +885,11 @@ void KillStat(Player* victim)
         return;
     TeamId const defenders = Attackers(bg) == TEAM_ALLIANCE ? TEAM_HORDE : TEAM_ALLIANCE;
     std::string const tag = BGTacticArms::IsOn(bg, defenders, BGTactic::SADefPack) ? "" : "_ctrl";
-    std::list<Creature*> wrecks;
-    victim->GetDeadCreatureListInGrid(wrecks, 10.0f);
-    for (Creature* w : wrecks)
-        if (w->GetEntry() == NPC_DEMOLISHER_SA || w->GetEntry() == 32796)
-        {
-            StatAdd("driver_kill" + tag, "");
-            return;
-        }
+    if (JustDismounted(victim))
+    {
+        StatAdd("driver_kill" + tag, "");
+        return;
+    }
     if (Destroyed(bg, BG_SA_ANCIENT_GATE))
         if (GameObject* relic = bg->GetBGObject(BG_SA_TITAN_RELIC); relic && victim->GetExactDist2d(relic) < 25.0f)
             StatAdd("relic_kill" + tag, "");
@@ -924,7 +953,8 @@ bool Objective(Player* bot, Battleground* bg, Order& out)
 
     if (!attacking)
     {
-        if (target != BG_SA_TITAN_RELIC && DefenseObjective(bot, bg, out))
+        if ((target != BG_SA_TITAN_RELIC || BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SADefPack)) &&
+            DefenseObjective(bot, bg, out))
             return true;
         if (target == BG_SA_TITAN_RELIC)
         {
@@ -1111,20 +1141,16 @@ Unit* HuntTarget(PlayerbotAI* botAI)
     if (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SADefPack) && Attackers(bg) != TEAM_NEUTRAL &&
         bot->GetTeamId() != Attackers(bg))
     {
-        std::list<Creature*> wrecks;
-        bot->GetDeadCreatureListInGrid(wrecks, 60.0f);
         Unit* driver = nullptr;
         float best = 60.0f;
-        for (Creature* w : wrecks)
-            if (w->GetEntry() == NPC_DEMOLISHER_SA || w->GetEntry() == 32796)
-                for (auto const& ref : bg->GetBgMap()->GetPlayers())
-                    if (Player* p = ref.GetSource(); p && p->IsAlive() && p->GetTeamId() == Attackers(bg) && !p->GetVehicle() &&
-                                                     p->GetExactDist2d(w) < 10.0f && bot->IsValidAttackTarget(p) &&
-                                                     bot->GetExactDist2d(p) < best && bot->IsWithinLOSInMap(p))
-                    {
-                        best = bot->GetExactDist2d(p);
-                        driver = p;
-                    }
+        for (auto const& ref : bg->GetBgMap()->GetPlayers())
+            if (Player* p = ref.GetSource(); p && p->IsAlive() && p->GetTeamId() == Attackers(bg) && JustDismounted(p) &&
+                                             bot->IsValidAttackTarget(p) && bot->GetExactDist2d(p) < best &&
+                                             bot->IsWithinLOSInMap(p))
+            {
+                best = bot->GetExactDist2d(p);
+                driver = p;
+            }
         if (driver)
         {
             Stat("driver_pick", bot);
