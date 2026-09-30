@@ -2087,7 +2087,7 @@ bool BGTactics::isleMove()
 bool BGTactics::strandMove()
 {
     Battleground* bg = bot->GetBattleground();
-    if (bg->GetStatus() != STATUS_IN_PROGRESS || bot->IsNonMeleeSpellCast(false))
+    if ((bg->GetStatus() != STATUS_IN_PROGRESS && !BGStrand::WarmupDefender(bot, bg)) || bot->IsNonMeleeSpellCast(false))
         return false;
     if (BGStrand::Ride(bot, bg) || BGStrand::GoAshore(bot, bg))
         return true;

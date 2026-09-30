@@ -617,10 +617,23 @@ Unit* SlowTarget(Player* bot, Battleground* bg)
     return best;
 }
 
+bool WarmupDefender(Player* bot, Battleground* bg)
+{
+    TeamId const attackers = Attackers(bg);
+    return bg->GetStatus() == STATUS_WAIT_JOIN && bot->IsAlive() && attackers != TEAM_NEUTRAL &&
+           bot->GetTeamId() != attackers && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAWarmup) &&
+           BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SADefense);
+}
+
 bool DefenseMoving(Player* bot, Battleground* bg)
 {
     Order o;
-    return DefenseObjective(bot, bg, o) && o.urgent;
+    if (!DefenseObjective(bot, bg, o))
+        return false;
+    // SAWarmup: during the warmup every defender walks to its place (the round's move trigger is not active yet)
+    if (WarmupDefender(bot, bg))
+        return o.urgent || o.hasJump || bot->GetExactDist2d(&o.move) > 8.0f;
+    return o.urgent;
 }
 
 bool Objective(Player* bot, Battleground* bg, Order& out)

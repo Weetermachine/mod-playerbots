@@ -126,6 +126,7 @@ enum class BGTactic : uint8
     SASlows = 103,       // SotA: defenders snare or root driven demolishers in range that are not already (not stuns)
     SACannonSiege = 104, // SotA: cannon gunners shoot the weakest driven demolisher in range first (cannons v5)
     SARam = 105,         // SotA: drivers drive to the gate holding boulders, then ram and throw boulders there
+    SAWarmup = 106,      // SotA: allocator defenders take their positions during the warmup (attackers still on the boats)
     TacticCount          // one past the last value; must stay at or below the mask width (128)
 };
 static_assert(uint32(BGTactic::TacticCount) <= 128, "BGTactic values must fit the 128-bit masks in BGTacticArms.cpp");

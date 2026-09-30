@@ -61,6 +61,8 @@ namespace BGStrand
     bool DefenseObjective(Player* bot, Battleground* bg, Order& out);
     // SADefense: a defender on its way out of the gate or to a charge (moves like a flag carrier).
     bool DefenseMoving(Player* bot, Battleground* bg);
+    // SAWarmup: an allocator defender during the warmup (the round has not started: attackers are on the boats).
+    bool WarmupDefender(Player* bot, Battleground* bg);
     // SADefense diagnostics: a charge was disarmed.
     void Disarmed();
     // SASlows: a driven enemy siege vehicle within 30 yd in line of sight that is not rooted or slowed.
