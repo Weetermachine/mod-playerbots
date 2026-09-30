@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <map>
 #include <mutex>
+#include <set>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -655,6 +656,69 @@ private:
     uint32 logMs = 0;
 };
 
+// SotA damage to driven siege vehicles (Server.log, per 5 min): hits, distinct hitters, damage as a share of max health,
+// kills, and how far the vehicle was from the nearest gate when hit
+class PlayerbotsSASiegeDamageScript : public UnitScript
+{
+public:
+    PlayerbotsSASiegeDamageScript() : UnitScript("PlayerbotsSASiegeDamageScript") {}
+
+    void OnDamage(Unit* attacker, Unit* victim, uint32& damage) override
+    {
+        if (!Driven(victim) || !attacker || damage == 0)
+            return;
+        Player* p = attacker->GetCharmerOrOwnerPlayerOrPlayerItself();
+        if (!p)
+            return;
+        std::lock_guard<std::mutex> guard(lock);
+        ++hits;
+        dmg += damage;
+        maxHp = victim->GetMaxHealth();
+        hitters.insert(p->GetGUID().GetCounter());
+        victims.insert(victim->GetGUID().GetCounter());
+        Log();
+    }
+
+    void OnUnitDeath(Unit* unit, Unit* /*killer*/) override
+    {
+        if (!Driven(unit))
+            return;
+        std::lock_guard<std::mutex> guard(lock);
+        ++kills;
+        Log();
+    }
+
+private:
+    // a siege vehicle someone drives on SotA (not the defenders' cannons)
+    static bool Driven(Unit* u)
+    {
+        return u && u->GetMapId() == 607 && u->IsVehicle() && u->GetEntry() != 27894 && u->GetVehicleKit() &&
+               u->GetVehicleKit()->IsVehicleInUse();
+    }
+
+    void Log()
+    {
+        uint32 const now = getMSTime();
+        if (!logMs)
+            logMs = now;
+        else if (getMSTimeDiff(logMs, now) > 5 * MINUTE * IN_MILLISECONDS)
+        {
+            LOG_INFO("module", "SA siege damage (5 min): hits {} by {} players on {} vehicles, damage {} ({:.1f} vehicle max healths of {}), kills {}",
+                     hits, hitters.size(), victims.size(), dmg, maxHp ? double(dmg) / maxHp : 0.0, maxHp, kills);
+            hits = kills = 0;
+            dmg = 0;
+            hitters.clear();
+            victims.clear();
+            logMs = now;
+        }
+    }
+
+    std::mutex lock;
+    uint32 hits = 0, kills = 0, maxHp = 0, logMs = 0;
+    uint64 dmg = 0;
+    std::set<ObjectGuid::LowType> hitters, victims;
+};
+
 class PlayerbotsBGEventLogPlayerScript : public PlayerScript
 {
 public:
@@ -726,4 +790,5 @@ void AddPlayerbotsBGEventLogScripts()
     new PlayerbotsBGEventLogScript();
     new PlayerbotsBGEventLogPlayerScript();
     new PlayerbotsSAGateDamageScript();
+    new PlayerbotsSASiegeDamageScript();
 }
