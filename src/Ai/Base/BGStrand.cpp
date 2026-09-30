@@ -985,8 +985,26 @@ Unit* GunnerTarget(Player* bot, Battleground* bg)
     Unit* gun = bot->GetVehicleBase();
     if (!gun || gun->GetEntry() != NPC_ANTI_PERSONNAL_CANNON)
         return nullptr;
-    // Rocket Blast hits every unit within 8 yd for 4000 (10-70 yd, not buildings; demolishers have ~15x health): the enemy
-    // on foot with the most enemies around, a charge carrier counting 3
+    // Rocket Blast hits every unit within 8 yd (10-70 yd, not buildings): a driven demolisher in range first (the guides: two
+    // turrets kill one before it reaches the wall), else the enemy on foot with the most enemies around (carriers count 3)
+    {
+        Unit* siege = nullptr;
+        float bestPct = 101.0f;
+        for (Unit* d : DrivenSiege(bg))
+        {
+            float const dist = gun->GetExactDist2d(d);
+            if (dist < 10.0f || dist > 70.0f || d->GetHealthPct() >= bestPct ||
+                (!gun->IsWithinLOSInMap(d) &&
+                 !gun->GetMap()->isInLineOfSight(gun->GetPositionX(), gun->GetPositionY(), gun->GetPositionZ() + 4.0f,
+                                                 d->GetPositionX(), d->GetPositionY(), d->GetPositionZ() + 2.0f,
+                                                 gun->GetPhaseMask(), LINEOFSIGHT_ALL_CHECKS, VMAP::ModelIgnoreFlags::Nothing)))
+                continue;
+            bestPct = d->GetHealthPct();
+            siege = d;
+        }
+        if (siege)
+            return siege;
+    }
     std::vector<Player*> foes;
     for (auto const& ref : bg->GetBgMap()->GetPlayers())
         if (Player* p = ref.GetSource(); p && p->IsAlive() && p->GetTeamId() != bot->GetTeamId() && !p->GetVehicle())
