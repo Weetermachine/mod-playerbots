@@ -2067,6 +2067,15 @@ bool BGTactics::strandMove()
                 ChargeCount(0, bot->HasItemCount(39213, 1));
             return true;
         }
+    // SADefense: disarm a planted charge like a client click
+    if (order.disarm && order.disarm->IsAtInteractDistance(bot))
+    {
+        WorldPacket use(CMSG_GAMEOBJ_USE);
+        use << order.disarm->GetGUID();
+        bot->GetSession()->HandleGameObjectUseOpcode(use);
+        BGStrand::Disarmed();
+        return true;
+    }
     // SASortie: at the wall above the gate, jump down outside
     if (order.hasJump)
     {

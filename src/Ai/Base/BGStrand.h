@@ -32,6 +32,8 @@ namespace BGStrand
         GameObject* portal = nullptr;  // SAPortals: the Defender's Portal to take
         Position jump;                 // SASortie: jump off the wall to this point outside (set with hasJump)
         bool hasJump = false;
+        GameObject* disarm = nullptr;  // SADefense: a planted enemy charge to disarm at the move point
+        bool urgent = false;           // SADefense: move above combat (going out, or to a charge)
     };
 
     // The Titan Relic carries the attackers' faction; TEAM_NEUTRAL while objects respawn.
@@ -55,6 +57,12 @@ namespace BGStrand
     bool PushingCharge(Player* bot, Battleground* bg);
     // SASortie: a sortie bot still inside while attackers mass at its gate (moves like a flag carrier, above combat).
     bool SortieMoving(Player* bot, Battleground* bg);
+    // SADefense: this defender's place from the allocator; false when SADefense is off or not defending.
+    bool DefenseObjective(Player* bot, Battleground* bg, Order& out);
+    // SADefense: a defender on its way out of the gate or to a charge (moves like a flag carrier).
+    bool DefenseMoving(Player* bot, Battleground* bg);
+    // SADefense diagnostics: a charge was disarmed.
+    void Disarmed();
     // SASortie diagnostics: a jump was made (the rest of the stages are counted in Objective).
     void SortieJumped(Player* bot);
 }

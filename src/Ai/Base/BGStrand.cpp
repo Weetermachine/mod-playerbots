@@ -429,6 +429,180 @@ uint32 DefenderLane(Player* bot, Battleground* bg)
 namespace BGStrand
 {
 
+namespace
+{
+constexpr uint32 GO_PLANTED_CHARGE = 190752;
+
+// SADefense diagnostics (Server.log, per 5 min): distinct defenders per role and outside their gate, disarms
+std::mutex defLock;
+std::unordered_set<ObjectGuid::LowType> defSeen[6];  // out, outside, hold, graveyard, relic door, disarming
+uint32 defDisarms = 0, defLogMs = 0;
+
+void DefenseStage(Player* bot, uint32 role)
+{
+    std::lock_guard<std::mutex> guard(defLock);
+    defSeen[role].insert(bot->GetGUID().GetCounter());
+    uint32 const now = getMSTime();
+    if (!defLogMs)
+        defLogMs = now;
+    else if (getMSTimeDiff(defLogMs, now) > 5 * MINUTE * IN_MILLISECONDS)
+    {
+        LOG_INFO("module", "Defense roles (5 min, distinct bots): out {} (outside {}), hold {}, graveyard {}, relic door {}, going to a charge {}, disarms {}",
+                 defSeen[0].size(), defSeen[1].size(), defSeen[2].size(), defSeen[3].size(), defSeen[4].size(),
+                 defSeen[5].size(), defDisarms);
+        for (auto& d : defSeen)
+            d.clear();
+        defDisarms = 0;
+        defLogMs = now;
+    }
+}
+
+// The wall spot above a gate (SOTADefPortalDest shares the gate order), for jumping down outside it.
+bool GoOut(Player* bot, Battleground* bg, GameObject* gate, uint32 gateIdx, float front, Order& out)
+{
+    if (Outside(bot, gate))
+    {
+        out.move = Near(gate, front, bot);
+        return true;
+    }
+    out.urgent = true;
+    float const* wall = SOTADefPortalDest[gateIdx];
+    Position const top(wall[0], wall[1], wall[2]);
+    if (bot->GetExactDist2d(&top) < 10.0f && std::fabs(bot->GetPositionZ() - wall[2]) < 6.0f)
+    {
+        float const a = gate->GetAngle(BEACH_X, BEACH_Y);
+        float const x = wall[0] + 14.0f * std::cos(a), y = wall[1] + 14.0f * std::sin(a);
+        float const z = gate->GetMap()->GetHeight(gate->GetPhaseMask(), x, y, wall[2]);
+        out.jump = Position(x, y, z > INVALID_HEIGHT ? z : gate->GetPositionZ());
+        out.hasJump = true;
+    }
+    out.move = top;
+    if (GameObject* portal = PortalToward(bot, bg, top))
+    {
+        out.move = portal->GetPosition();
+        out.portal = portal;
+    }
+    return false;
+}
+
+void HoldAt(Player* bot, Battleground* bg, Position const& pos, Order& out)
+{
+    out.move = pos;
+    if (GameObject* portal = PortalToward(bot, bg, pos))  // fall back through the portals
+    {
+        out.move = portal->GetPosition();
+        out.portal = portal;
+    }
+}
+}  // namespace
+
+void Disarmed()
+{
+    std::lock_guard<std::mutex> guard(defLock);
+    ++defDisarms;
+}
+
+bool DefenseObjective(Player* bot, Battleground* bg, Order& out)
+{
+    TeamId const attackers = Attackers(bg);
+    if (!BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SADefense) || attackers == TEAM_NEUTRAL ||
+        bot->GetTeamId() == attackers || bot->GetVehicle())
+        return false;
+    // this bot's rank among its team's healers or non-healers (by guid): roles and sides stay fixed
+    bool const heal = PlayerbotAI::IsHeal(bot);
+    std::vector<ObjectGuid::LowType> mates;
+    for (auto const& ref : bg->GetBgMap()->GetPlayers())
+        if (Player* p = ref.GetSource(); p && p->GetTeamId() == bot->GetTeamId() && PlayerbotAI::IsHeal(p) == heal)
+            mates.push_back(p->GetGUID().GetCounter());
+    std::sort(mates.begin(), mates.end());
+    uint32 const idx = std::find(mates.begin(), mates.end(), bot->GetGUID().GetCounter()) - mates.begin();
+    uint32 const side = heal ? (idx / 2) % 2 : idx % 2;  // 0: west (Green, Purple), 1: east (Blue, Red)
+    bool const outRole = heal ? idx % 2 == 0 : idx % 3 != 2;
+
+    // disarm a planted charge nearby first
+    if (GameObject* charge = bot->FindNearestGameObject(GO_PLANTED_CHARGE, 30.0f, true))
+    {
+        out.move = charge->GetPosition();
+        out.disarm = charge;
+        out.urgent = true;
+        DefenseStage(bot, 5);
+        return true;
+    }
+
+    bool const green = Destroyed(bg, BG_SA_GREEN_GATE), blue = Destroyed(bg, BG_SA_BLUE_GATE);
+    bool const purple = Destroyed(bg, BG_SA_PURPLE_GATE), red = Destroyed(bg, BG_SA_RED_GATE);
+    if (Destroyed(bg, BG_SA_YELLOW_GATE))
+    {
+        // courtyard: everyone in front of the relic door, stopping bombers
+        GameObject* door = bg->GetBGObject(BG_SA_ANCIENT_GATE);
+        if (!door || Destroyed(bg, BG_SA_ANCIENT_GATE))
+            return false;
+        HoldAt(bot, bg, Near(door, 8.0f, bot), out);
+        DefenseStage(bot, 4);
+        return true;
+    }
+    if (purple || red)
+    {
+        // fall back to Yellow: a third just outside it, the rest inside
+        GameObject* yellow = bg->GetBGObject(BG_SA_YELLOW_GATE);
+        if (!yellow)
+            return false;
+        if (outRole && idx % 3 == 0)
+        {
+            DefenseStage(bot, GoOut(bot, bg, yellow, BG_SA_YELLOW_GATE, 15.0f, out) ? 1 : 0);
+            return true;
+        }
+        HoldAt(bot, bg, Near(yellow, -8.0f, bot), out);
+        DefenseStage(bot, 2);
+        return true;
+    }
+    uint32 gateIdx = side ? BG_SA_BLUE_GATE : BG_SA_GREEN_GATE;
+    bool goOut = outRole;
+    float front = 30.0f;
+    if (green || blue)
+    {
+        // an outer gate fell: two guard the graveyards behind it, the other side keeps its holders
+        if (!heal && idx < 2)
+        {
+            uint32 const flag = green && blue ? (idx == 0 ? BG_SA_LEFT_FLAG : BG_SA_RIGHT_FLAG)
+                                              : (green ? BG_SA_LEFT_FLAG : BG_SA_RIGHT_FLAG);
+            if (GameObject* banner = bg->GetBGObject(flag))
+            {
+                HoldAt(bot, bg, banner->GetPosition(), out);
+                DefenseStage(bot, 3);
+                return true;
+            }
+        }
+        bool const ownFell = side ? blue : green;
+        if (ownFell || outRole)
+        {
+            // the breach: fight out front of the middle gate behind it
+            bool const breachWest = green && (!blue || side == 0);
+            gateIdx = breachWest ? BG_SA_PURPLE_GATE : BG_SA_RED_GATE;
+            front = 20.0f;
+        }
+        else
+            goOut = false;  // watch the other side from inside its gate
+    }
+    GameObject* gate = bg->GetBGObject(gateIdx);
+    if (!gate)
+        return false;
+    if (goOut)
+    {
+        DefenseStage(bot, GoOut(bot, bg, gate, gateIdx, front, out) ? 1 : 0);
+        return true;
+    }
+    HoldAt(bot, bg, Near(gate, -10.0f, bot), out);
+    DefenseStage(bot, 2);
+    return true;
+}
+
+bool DefenseMoving(Player* bot, Battleground* bg)
+{
+    Order o;
+    return DefenseObjective(bot, bg, o) && o.urgent;
+}
+
 bool Objective(Player* bot, Battleground* bg, Order& out)
 {
     TeamId const attackers = Attackers(bg);
@@ -449,6 +623,8 @@ bool Objective(Player* bot, Battleground* bg, Order& out)
 
     if (!attacking)
     {
+        if (target != BG_SA_TITAN_RELIC && DefenseObjective(bot, bg, out))
+            return true;
         if (target == BG_SA_TITAN_RELIC)
         {
             out.move = Floor(go);
@@ -599,6 +775,21 @@ Unit* HuntTarget(PlayerbotAI* botAI)
     Battleground* bg = bot->GetBattleground();
     if (!bg || !bot->IsAlive() || bot->GetVehicle() || PlayerbotAI::IsHeal(bot))
         return nullptr;
+    if (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SADefense) && Attackers(bg) != TEAM_NEUTRAL &&
+        bot->GetTeamId() != Attackers(bg))
+    {
+        Unit* best = nullptr;
+        float bestDist = 45.0f;
+        for (Unit* d : DrivenSiege(bg))
+            if (float const dist = bot->GetExactDist2d(d); dist < bestDist && bot->IsValidAttackTarget(d) &&
+                                                           bot->IsWithinLOSInMap(d))
+            {
+                bestDist = dist;
+                best = d;
+            }
+        if (best)
+            return best;
+    }
     bool const bombs = BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SABombHunt);
     bool const sortie = BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SASortie) && SortieRole(bot);
     if (!bombs && !sortie && !BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAHunt))
