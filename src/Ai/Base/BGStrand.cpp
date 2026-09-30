@@ -276,36 +276,41 @@ bool Outside(Player* bot, GameObject* gate)
 
 uint32 DefenderLane(Player* bot, Battleground* bg);
 
-// SACannons: the anti-personnel cannons within 45 yd of a gate.
-std::vector<Creature*> GunsAt(Battleground* bg, GameObject* gate)
+// SACannons: attackers on foot within a cannon's Rocket Blast range (10-70 yd).
+uint32 FoesInRange(Battleground* bg, Unit* gun)
 {
-    std::vector<Creature*> out;
-    for (uint32 i = BG_SA_GUN_1; i <= BG_SA_GUN_10; ++i)
-        if (Creature* gun = bg->GetBGCreature(i); gun && gun->IsAlive() && gun->GetExactDist2d(gate) < 45.0f)
-            out.push_back(gun);
-    return out;
+    uint32 n = 0;
+    TeamId const attackers = BGStrand::Attackers(bg);
+    for (auto const& ref : bg->GetBgMap()->GetPlayers())
+        if (Player* p = ref.GetSource(); p && p->IsAlive() && p->GetTeamId() == attackers && !p->GetVehicle())
+            if (float const d = gun->GetExactDist2d(p); d >= 10.0f && d <= 70.0f)
+                ++n;
+    return n;
 }
 
-// SACannons: this defender's cannon at its gate, if it is one of the first (by guid) non-healer defenders of its lane
-// alive, one per cannon; nullptr otherwise.
-Creature* GunFor(Player* bot, Battleground* bg, GameObject* gate, uint32 lane)
+// SACannons: the free cannon with the most attackers in range (2+), if any.
+Creature* BusiestGun(Battleground* bg)
 {
-    std::vector<Creature*> guns = GunsAt(bg, gate);
-    if (guns.empty() || PlayerbotAI::IsHeal(bot))
-        return nullptr;
-    std::vector<uint32> crew;
-    for (auto const& ref : bg->GetBgMap()->GetPlayers())
-        if (Player* p = ref.GetSource(); p && p->IsAlive() && p->GetTeamId() == bot->GetTeamId() &&
-                                         DefenderLane(p, bg) == lane && !PlayerbotAI::IsHeal(p) &&
-                                         !(BGTacticArms::IsOn(bg, p->GetTeamId(), BGTactic::SASortie) && SortieRole(p)))
-            crew.push_back(p->GetGUID().GetCounter());
-    std::sort(crew.begin(), crew.end());
-    auto const it = std::find(crew.begin(), crew.end(), bot->GetGUID().GetCounter());
-    size_t const idx = it - crew.begin();
-    if (it == crew.end() || idx >= std::min<size_t>(guns.size(), 2))
-        return nullptr;
-    std::sort(guns.begin(), guns.end(), [](Creature* a, Creature* b) { return a->GetGUID().GetCounter() < b->GetGUID().GetCounter(); });
-    return guns[idx];
+    Creature* best = nullptr;
+    uint32 bestN = 1;
+    for (uint32 i = BG_SA_GUN_1; i <= BG_SA_GUN_10; ++i)
+        if (Creature* gun = bg->GetBGCreature(i); gun && gun->IsAlive() && gun->GetVehicleKit() &&
+                                                  !gun->GetVehicleKit()->IsVehicleInUse())
+            if (uint32 const n = FoesInRange(bg, gun); n > bestN)
+            {
+                bestN = n;
+                best = gun;
+            }
+    return best;
+}
+
+bool SortieRole(Player* bot);
+
+// SACannons: a quarter of the non-healer defenders (not sortie bots) crew the cannons.
+bool GunCrew(Player* bot, Battleground* bg)
+{
+    return !PlayerbotAI::IsHeal(bot) && bot->GetGUID().GetCounter() % 4 == 1 &&
+           !(BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SASortie) && SortieRole(bot));
 }
 
 constexpr uint32 ITEM_MASSIVE_SEAFORIUM_CHARGE = 39213;
@@ -412,15 +417,14 @@ bool Objective(Player* bot, Battleground* bg, Order& out)
         }
         if (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SACannons))
         {
-            Creature* gun = GunFor(bot, bg, go, lane);
             Unit* in = bot->GetVehicleBase();
             if (in && in->GetEntry() == NPC_ANTI_PERSONNAL_CANNON)
             {
-                out.leave = in != gun;  // stay in our gate's cannon only
+                out.leave = FoesInRange(bg, in) == 0;  // nobody in its range: free the crew for another gun
                 out.move = in->GetPosition();
                 return true;
             }
-            if (gun && !gun->GetVehicleKit()->IsVehicleInUse())
+            if (Creature* gun = GunCrew(bot, bg) ? BusiestGun(bg) : nullptr)
             {
                 out.move = gun->GetPosition();
                 out.board = gun;
@@ -657,6 +661,17 @@ bool PushingCharge(Player* bot, Battleground* bg)
 }
 
 void SortieJumped(Player* bot) { SortieStage(bot, 2); }
+
+bool SortieMoving(Player* bot, Battleground* bg)
+{
+    TeamId const attackers = Attackers(bg);
+    if (!BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SASortie) || !SortieRole(bot) || attackers == TEAM_NEUTRAL ||
+        bot->GetTeamId() == attackers || bot->GetVehicle())
+        return false;
+    uint32 const target = NextGate(bg, DefenderLane(bot, bg));
+    GameObject* go = target <= BG_SA_PURPLE_GATE ? bg->GetBGObject(target) : nullptr;
+    return go && SiegeAtGate(bg, go, 70.0f) && !Outside(bot, go);
+}
 
 void CarryPlanted(Player* bot)
 {
