@@ -169,7 +169,8 @@ bool PlayerHasFlag::IsCapturingFlag(Player* bot)
         }
 
         if (bot->GetBattlegroundTypeId() == BATTLEGROUND_SA)
-            BGStrand::PaxSample(botAI);
+            if (PlayerbotAI* ai = GET_PLAYERBOT_AI(bot))
+                BGStrand::PaxSample(ai);
         if (bot->GetBattlegroundTypeId() == BATTLEGROUND_SA)
             return BGStrand::PushingCharge(bot, bot->GetBattleground()) || BGStrand::SortieMoving(bot, bot->GetBattleground()) ||
                    BGStrand::DefenseMoving(bot, bot->GetBattleground()) || BGStrand::EscortMoving(bot, bot->GetBattleground());
