@@ -503,6 +503,7 @@ bool GoOut(Player* bot, Battleground* bg, GameObject* gate, uint32 gateIdx, floa
     out.move = top;
     if (GameObject* portal = PortalToward(bot, bg, top, &out.portalSaving))
     {
+        BGStrand::Stat("portal_chosen", bot);
         out.move = portal->GetPosition();
         out.portal = portal;
     }
@@ -545,6 +546,7 @@ void HoldAt(Player* bot, Battleground* bg, Position const& pos, Order& out)
     out.move = pos;
     if (GameObject* portal = PortalToward(bot, bg, pos, &out.portalSaving))  // fall back through the portals
     {
+        BGStrand::Stat("portal_chosen", bot);
         out.move = portal->GetPosition();
         out.portal = portal;
     }
@@ -1262,6 +1264,7 @@ bool Objective(Player* bot, Battleground* bg, Order& out)
                 out.move = top;
                 if (GameObject* portal = PortalToward(bot, bg, top, &out.portalSaving))
                 {
+                    BGStrand::Stat("portal_chosen", bot);
                     out.move = portal->GetPosition();
                     out.portal = portal;
                 }
@@ -1275,6 +1278,7 @@ bool Objective(Player* bot, Battleground* bg, Order& out)
         if (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAPortals))
             if (GameObject* portal = PortalToward(bot, bg, out.move, &out.portalSaving))
             {
+                BGStrand::Stat("portal_chosen", bot);
                 out.move = portal->GetPosition();
                 out.portal = portal;
             }

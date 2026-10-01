@@ -2140,6 +2140,9 @@ bool BGTactics::strandMove()
         order.board->HandleSpellClick(bot);
         return true;
     }
+    // portal diagnostics: close to the chosen portal but not in reach to use it
+    if (order.portal && !order.portal->IsAtInteractDistance(bot) && bot->GetExactDist(order.portal) < 8.0f)
+        BGStrand::Stat("portal_close_not_in_reach", bot);
     // SAPortals / SACharges: portals and bomb piles are used like a client click (they cast their spell on the user)
     for (GameObject* go : {order.portal, order.pickup})
         if (go && go->IsAtInteractDistance(bot))
