@@ -123,13 +123,16 @@ Unit* EnemyPlayerValue::Calculate()
 {
     bool controllingCannon = false;
     bool controllingVehicle = false;
+    bool passenger = false;
     if (Vehicle* vehicle = bot->GetVehicle())
     {
         VehicleSeatEntry const* seat = vehicle->GetSeatForPassenger(bot);
-        if (!seat || !seat->CanControl())  // not in control of vehicle so cant attack anyone
-            return nullptr;
+        if (!seat || (!seat->CanControl() && !(seat->m_flags & VEHICLE_SEAT_FLAG_CAN_ATTACK)))
+            return nullptr;  // a passenger seat that can't attack
         VehicleEntry const* vi = vehicle->GetVehicleInfo();
-        if (vi && vi->m_flags & VEHICLE_FLAG_FIXED_POSITION)
+        if (!seat->CanControl())
+            passenger = true;  // fights from its seat: it can't close in
+        else if (vi && vi->m_flags & VEHICLE_FLAG_FIXED_POSITION)
             controllingCannon = true;
         else
             controllingVehicle = true;
@@ -192,7 +195,8 @@ Unit* EnemyPlayerValue::Calculate()
 
         // Aggro weak enemies from further away.
         // If controlling mobile vehicle only agro close enemies (otherwise will never reach objective)
-        uint32 const aggroDistance = controllingVehicle                                               ? 5.0f
+        uint32 const aggroDistance = passenger                                                        ? 30.0f
+                                     : controllingVehicle                                             ? 5.0f
                                      : (controllingCannon || bot->GetHealth() > pTarget->GetHealth()) ? maxAggroDistance
                                                                                                       : 20.0f;
         if (!bot->IsWithinDist(pTarget, aggroDistance))
