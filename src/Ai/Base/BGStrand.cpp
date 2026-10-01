@@ -533,6 +533,30 @@ Creature* IdleDemolisherNear(Player* bot, WorldObject const* post, float radius)
 
 void HoldAt(Player* bot, Battleground* bg, Position const& pos, Order& out);
 
+// SAWorkshopGuard / SAWorkshopKill: the workshop banner this defender holds: the first 4 non-healers (by guid), two
+// per workshop the attackers hold (its demolishers have spawned), for the rest of the round; nullptr otherwise
+GameObject* GuardedWorkshop(Player* bot, Battleground* bg)
+{
+    TeamId const team = bot->GetTeamId();
+    if (!(BGTacticArms::IsOn(bg, team, BGTactic::SAWorkshopGuard) || BGTacticArms::IsOn(bg, team, BGTactic::SAWorkshopKill)) ||
+        Attackers(bg) == TEAM_NEUTRAL || team == Attackers(bg) || !bot->IsAlive() || PlayerbotAI::IsHeal(bot))
+        return nullptr;
+    auto spawned = [&](uint32 a, uint32 b)
+    { return bg->GetBgMap()->GetCreature(bg->BgCreatures[a]) || bg->GetBgMap()->GetCreature(bg->BgCreatures[b]); };
+    bool const left = spawned(BG_SA_DEMOLISHER_7, BG_SA_DEMOLISHER_8), right = spawned(BG_SA_DEMOLISHER_5, BG_SA_DEMOLISHER_6);
+    if (!left && !right)
+        return nullptr;
+    std::vector<ObjectGuid::LowType> mates;
+    for (auto const& ref : bg->GetBgMap()->GetPlayers())
+        if (Player* p = ref.GetSource(); p && p->GetTeamId() == team && !PlayerbotAI::IsHeal(p))
+            mates.push_back(p->GetGUID().GetCounter());
+    std::sort(mates.begin(), mates.end());
+    uint32 const idx = std::find(mates.begin(), mates.end(), bot->GetGUID().GetCounter()) - mates.begin();
+    if (idx >= 4)
+        return nullptr;
+    return bg->GetBGObject(left && (!right || idx % 2 == 0) ? BG_SA_LEFT_FLAG : BG_SA_RIGHT_FLAG);
+}
+
 // SAAllOut: a healer holds the wall above its gate (the Defender's Portal spot) and heals the fight out front from there
 void WallHeal(Player* bot, Battleground* bg, uint32 gateIdx, Order& out)
 {
@@ -610,6 +634,15 @@ bool DefenseObjective(Player* bot, Battleground* bg, Order& out)
             Stat(out.urgent ? "relic_phase_on_way" : "relic_phase_at_relic", bot);
             return true;
         }
+
+    // SAWorkshopGuard / SAWorkshopKill: hold the attackers' workshop for the rest of the round (above combat while far)
+    if (GameObject* ws = GuardedWorkshop(bot, bg))
+    {
+        HoldAt(bot, bg, ws->GetPosition(), out);
+        out.urgent = bot->GetExactDist2d(ws) > 60.0f;
+        Stat(out.urgent ? "ws_guard_on_way" : "ws_guard", bot);
+        return true;
+    }
 
     bool const green = Destroyed(bg, BG_SA_GREEN_GATE), blue = Destroyed(bg, BG_SA_BLUE_GATE);
     bool const purple = Destroyed(bg, BG_SA_PURPLE_GATE), red = Destroyed(bg, BG_SA_RED_GATE);
@@ -1501,15 +1534,18 @@ Unit* HuntTarget(PlayerbotAI* botAI)
         }
         if (best)
             return best;
-        // SAPreDamage: wear parked demolishers down to 10% but leave them alive (a killed one respawns at full health)
-        if (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAPreDamage))
+        // SAPreDamage: wear parked demolishers down to 10% but leave them alive (a killed one respawns at full health);
+        // workshop guards do the same there (SAWorkshopKill: destroy them instead, 30 s respawn)
+        bool const wsGuard = GuardedWorkshop(bot, bg) != nullptr;
+        bool const wsKill = wsGuard && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAWorkshopKill);
+        if (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAPreDamage) || wsGuard)
         {
             auto parked = [](Unit* u)
             {
                 return u && (u->GetEntry() == NPC_DEMOLISHER_SA || u->GetEntry() == 32796) && u->IsAlive() &&
                        u->GetVehicleKit() && !u->GetVehicleKit()->IsVehicleInUse();
             };
-            if (Unit* victim = bot->GetVictim(); parked(victim) && victim->GetHealthPct() <= 10.0f)
+            if (Unit* victim = bot->GetVictim(); !wsKill && parked(victim) && victim->GetHealthPct() <= 10.0f)
                 bot->AttackStop();  // low enough: stop before it dies
             std::list<Creature*> demos;
             bot->GetCreatureListWithEntryInGrid(demos, NPC_DEMOLISHER_SA, 40.0f);
@@ -1517,14 +1553,18 @@ Unit* HuntTarget(PlayerbotAI* botAI)
             Unit* target = nullptr;
             float nearest = 40.0f;
             for (Creature* d : demos)
-                if (parked(d) && d->GetHealthPct() > 10.0f && bot->IsValidAttackTarget(d) && bot->IsWithinLOSInMap(d))
+                if (parked(d) && (wsKill || d->GetHealthPct() > 10.0f) && bot->IsValidAttackTarget(d) && bot->IsWithinLOSInMap(d))
                     if (float const dist = bot->GetExactDist2d(d); dist < nearest)
                     {
                         nearest = dist;
                         target = d;
                     }
             if (target)
+            {
+                if (wsGuard)
+                    Stat(wsKill ? "ws_kill_idle" : "ws_wear_idle", bot);
                 return target;
+            }
         }
     }
     bool const bombs = BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SABombHunt);

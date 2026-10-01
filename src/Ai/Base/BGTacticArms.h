@@ -135,6 +135,8 @@ enum class BGTactic : uint8
     SAEscort = 112,      // SotA: attackers on foot (not charge carriers) stay with a driven demolisher and hit whoever hits it
     SASiegeSupply = 113,  // SotA: attackers skip the central graveyard, fetch every idle demolisher, carriers refill charges
     SADriveFire = 114,   // SotA: drivers on their way to the gate throw boulders at enemy players and ram those in front
+    SAWorkshopGuard = 115,  // SotA: 4 defenders hold the attackers' workshops all round, wear idle demolishers to 10%
+    SAWorkshopKill = 116,   // SotA: as SAWorkshopGuard, but destroy idle demolishers (30 s respawn)
     TacticCount          // one past the last value; must stay at or below the mask width (128)
 };
 static_assert(uint32(BGTactic::TacticCount) <= 128, "BGTactic values must fit the 128-bit masks in BGTacticArms.cpp");
