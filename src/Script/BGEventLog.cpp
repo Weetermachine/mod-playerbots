@@ -672,7 +672,14 @@ public:
         if (!p)
             return;
         uint32 const k = attacker->IsVehicle() ? 1 : 0;  // 0: players on foot, 1: from a cannon
+        // on foot: 0 melee, 1 ranged from the ground, 2 ranged from above (5+ yd higher than the vehicle)
+        uint32 const r = PlayerbotAI::IsRanged(p) ? (p->GetPositionZ() > victim->GetPositionZ() + 5.0f ? 2 : 1) : 0;
         std::lock_guard<std::mutex> guard(lock);
+        if (!k)
+        {
+            ++roleHits[r];
+            roleDmg[r] += damage;
+        }
         ++hits;
         ++srcHits[k];
         srcDmg[k] += damage;
@@ -719,6 +726,10 @@ private:
             LOG_INFO("module", "SA siege damage (5 min): hits {} by {} players on {} vehicles, damage {} ({:.1f} vehicle max healths of {}), kills {} | on foot hits {} damage {} | cannons hits {} damage {}",
                      hits, hitters.size(), victims.size(), dmg, maxHp ? double(dmg) / maxHp : 0.0, maxHp, kills,
                      srcHits[0], srcDmg[0], srcHits[1], srcDmg[1]);
+            LOG_INFO("module", "SA siege damage on foot (5 min): melee hits {} damage {} | ranged ground hits {} damage {} | ranged above hits {} damage {}",
+                     roleHits[0], roleDmg[0], roleHits[1], roleDmg[1], roleHits[2], roleDmg[2]);
+            roleHits[0] = roleHits[1] = roleHits[2] = 0;
+            roleDmg[0] = roleDmg[1] = roleDmg[2] = 0;
             hits = kills = srcHits[0] = srcHits[1] = 0;
             dmg = srcDmg[0] = srcDmg[1] = 0;
             for (auto it = lastDriven.begin(); it != lastDriven.end();)
@@ -730,8 +741,8 @@ private:
     }
 
     std::mutex lock;
-    uint32 hits = 0, kills = 0, maxHp = 0, logMs = 0, srcHits[2] = {};
-    uint64 dmg = 0, srcDmg[2] = {};
+    uint32 hits = 0, kills = 0, maxHp = 0, logMs = 0, srcHits[2] = {}, roleHits[3] = {};
+    uint64 dmg = 0, srcDmg[2] = {}, roleDmg[3] = {};
     std::set<ObjectGuid::LowType> hitters, victims;
     std::unordered_map<ObjectGuid::LowType, uint32> lastDriven;
 };

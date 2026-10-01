@@ -390,6 +390,23 @@ bool GunCrew(Player* bot, Battleground* bg)
            !(BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SASortie) && SortieRole(bot));
 }
 
+// SACannonCrewPlus: a second quarter of the non-healers (not sortie bots) crews while a free cannon has a driven
+// demolisher in its range (10-70 yd)
+bool ExtraCrew(Player* bot, Battleground* bg)
+{
+    if (!BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SACannonCrewPlus) || PlayerbotAI::IsHeal(bot) ||
+        bot->GetGUID().GetCounter() % 4 != 3 || (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SASortie) && SortieRole(bot)))
+        return false;
+    std::vector<Unit*> const siege = DrivenSiege(bg);
+    for (uint32 i = BG_SA_GUN_1; i <= BG_SA_GUN_10; ++i)
+        if (Creature* gun = bg->GetBGCreature(i); gun && gun->IsAlive() && gun->GetVehicleKit() &&
+                                                  !gun->GetVehicleKit()->IsVehicleInUse())
+            for (Unit* v : siege)
+                if (float const d = gun->GetExactDist2d(v); d >= 10.0f && d <= 70.0f)
+                    return true;
+    return false;
+}
+
 constexpr uint32 ITEM_MASSIVE_SEAFORIUM_CHARGE = 39213;
 constexpr uint32 GO_PLANTED_CHARGE = 190752;
 
@@ -551,6 +568,22 @@ bool GoOut(Player* bot, Battleground* bg, GameObject* gate, uint32 gateIdx, floa
         out.portal = portal;
     }
     return false;
+}
+
+void HoldAt(Player* bot, Battleground* bg, Position const& pos, Order& out);
+
+// SAWallRanged: a ranged dps defender takes the wall above this gate while a driven demolisher is within 70 yd of it
+bool WallRanged(Player* bot, Battleground* bg, GameObject* gate, uint32 gateIdx, BGStrand::Order& out)
+{
+    if (!BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAWallRanged) || PlayerbotAI::IsHeal(bot) ||
+        !PlayerbotAI::IsRanged(bot) || gateIdx >= 5 || !SiegeAtGate(bg, gate, 70.0f))
+        return false;
+    float const* wall = SOTADefPortalDest[gateIdx];
+    uint32 const n = bot->GetGUID().GetCounter();
+    HoldAt(bot, bg, Position(wall[0] + float(n % 9) - 4.0f, wall[1] + float(n * 7 % 5) - 2.0f, wall[2]), out);
+    WallPortalUp(bot, bg, gateIdx, out);
+    BGStrand::Stat("wall_ranged", bot);
+    return true;
 }
 
 // SAAllHands, also part of the defender package (SADefPack)
@@ -715,12 +748,13 @@ bool DefenseObjective(Player* bot, Battleground* bg, Order& out)
     bool const outRole = allOut ? !heal : heal ? idx % 2 == 0 : idx % 3 != 2;
 
     // SACannons: the cannon crew boards the busiest free cannon before anything else
-    if (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SACannons) && GunCrew(bot, bg))
+    bool const extraCrew = !GunCrew(bot, bg) && ExtraCrew(bot, bg);
+    if (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SACannons) && (GunCrew(bot, bg) || extraCrew))
         if (Creature* gun = BusiestGun(bg, BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SACannonsFollow)))
         {
             out.move = gun->GetPosition();
             out.board = gun;
-            Stat("cannon_board", bot);
+            Stat(extraCrew ? "cannon_board_extra" : "cannon_board", bot);
             return true;
         }
 
@@ -792,6 +826,11 @@ bool DefenseObjective(Player* bot, Battleground* bg, Order& out)
             WallHeal(bot, bg, BG_SA_YELLOW_GATE, out);
             return true;
         }
+        if (!(outRole && idx % 3 == 0) && WallRanged(bot, bg, yellow, BG_SA_YELLOW_GATE, out))
+        {
+            DefenseStage(bot, 2);
+            return true;
+        }
         if ((outRole && (allOut || idx % 3 == 0)) || allHands)
         {
             if (allHands && !(outRole && idx % 3 == 0))
@@ -852,6 +891,11 @@ bool DefenseObjective(Player* bot, Battleground* bg, Order& out)
     GameObject* gate = bg->GetBGObject(gateIdx);
     if (!gate)
         return false;
+    if (!goOut && WallRanged(bot, bg, gate, gateIdx, out))
+    {
+        DefenseStage(bot, 2);
+        return true;
+    }
     // SAAllHands: a driven demolisher within 80 yd of this gate: everyone of this gate goes out and fights it
     if (!goOut && AllHands(bg, bot) && SiegeAtGate(bg, gate, 80.0f))
     {
@@ -1656,11 +1700,14 @@ Unit* HuntTarget(PlayerbotAI* botAI)
     {
         bool const focus = BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAFocusSiege);
         Unit* best = nullptr;
-        float bestDist = 45.0f, bestPct = 101.0f;
+        // SAWallRanged: ranged dps reach 60 yd (from the wall a demolisher shelling from 45-50 yd is in sight)
+        float const reach = BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAWallRanged) && PlayerbotAI::IsRanged(bot)
+                                ? 60.0f : 45.0f;
+        float bestDist = reach, bestPct = 101.0f;
         for (Unit* d : DrivenSiege(bg))
         {
             float const dist = bot->GetExactDist2d(d);
-            if (dist >= 45.0f || !bot->IsValidAttackTarget(d) || !bot->IsWithinLOSInMap(d))
+            if (dist >= reach || !bot->IsValidAttackTarget(d) || !bot->IsWithinLOSInMap(d))
                 continue;
             // SAFocusSiege: the weakest in reach, so everyone out front works on the same one
             if (focus ? d->GetHealthPct() < bestPct : dist < bestDist)
