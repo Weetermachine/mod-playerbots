@@ -628,6 +628,74 @@ void Disarmed(bool defused)
     defDefused += defused ? 1 : 0;
 }
 
+// SABeachAmbush: per defender, the round (instance and attacking team) whose ambush it has finished; per round, its start
+std::mutex ambushLock;
+std::unordered_map<ObjectGuid::LowType, uint64> ambushOver;
+std::unordered_map<uint64, uint32> ambushStart;
+
+uint64 AmbushRound(Battleground* bg) { return (uint64(bg->GetInstanceID()) << 2) | uint64(Attackers(bg)); }
+
+void AmbushDied(Player* victim)
+{
+    Battleground* bg = victim->GetBattleground();
+    if (!bg || Attackers(bg) == TEAM_NEUTRAL || victim->GetTeamId() == Attackers(bg) ||
+        !BGTacticArms::IsOn(bg, victim->GetTeamId(), BGTactic::SABeachAmbush))
+        return;
+    {
+        std::lock_guard<std::mutex> guard(ambushLock);
+        auto& over = ambushOver[victim->GetGUID().GetCounter()];
+        if (over == AmbushRound(bg))
+            return;
+        over = AmbushRound(bg);
+    }
+    Stat("ambush_over_death", victim);
+}
+
+// SABeachAmbush: in the warmup a defender (not cannon crew) waits a little inland of the beach demolishers on its side (by
+// guid) and fights the landing there, until its first death in the round or 75 s into it; then the usual positions
+bool BeachAmbush(Player* bot, Battleground* bg, Order& out)
+{
+    if (!BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SABeachAmbush) || Attackers(bg) == TEAM_NEUTRAL ||
+        bot->GetTeamId() == Attackers(bg) || bot->GetVehicle() || !bot->IsAlive() || GunCrew(bot, bg))
+        return false;
+    uint64 const round = AmbushRound(bg);
+    bool timeUp = false;
+    {
+        std::lock_guard<std::mutex> guard(ambushLock);
+        auto it = ambushOver.find(bot->GetGUID().GetCounter());
+        if (it != ambushOver.end() && it->second == round)
+            return false;
+        if (bg->GetStatus() == STATUS_IN_PROGRESS)
+        {
+            uint32& start = ambushStart[round];
+            if (!start)
+                start = getMSTime();
+            if (getMSTimeDiff(start, getMSTime()) > 75000)
+            {
+                ambushOver[bot->GetGUID().GetCounter()] = round;
+                timeUp = true;
+            }
+        }
+    }
+    if (timeUp)
+    {
+        Stat("ambush_over_time", bot);
+        return false;
+    }
+    uint32 const n = bot->GetGUID().GetCounter();
+    bool const west = n % 2;
+    float const* a = BG_SA_NpcSpawnlocs[west ? BG_SA_DEMOLISHER_3 : BG_SA_DEMOLISHER_1];
+    float const* b = BG_SA_NpcSpawnlocs[west ? BG_SA_DEMOLISHER_4 : BG_SA_DEMOLISHER_2];
+    float const x = (a[0] + b[0]) / 2.0f - 15.0f + float(n * 37 % 9) - 4.0f;
+    float const y = (a[1] + b[1]) / 2.0f + float(n * 53 % 9) - 4.0f;
+    float const z = bot->GetMap()->GetHeight(bot->GetPhaseMask(), x, y, a[2] + 10.0f);
+    out.move = Position(x, y, z > INVALID_HEIGHT ? z : a[2]);
+    bool const fighting = bg->GetStatus() == STATUS_IN_PROGRESS;
+    out.urgent = fighting && bot->GetExactDist2d(&out.move) > 30.0f;
+    Stat(fighting ? "ambush_fight" : "ambush_wait", bot);
+    return true;
+}
+
 bool DefenseObjective(Player* bot, Battleground* bg, Order& out)
 {
     TeamId const attackers = Attackers(bg);
@@ -655,6 +723,9 @@ bool DefenseObjective(Player* bot, Battleground* bg, Order& out)
             Stat("cannon_board", bot);
             return true;
         }
+
+    if (BeachAmbush(bot, bg, out))
+        return true;
 
     // disarm a planted charge nearby first
     if (GameObject* charge = bot->FindNearestGameObject(GO_PLANTED_CHARGE, 30.0f, true))
@@ -973,6 +1044,7 @@ void Stat(char const* name, Player* bot)
 
 void KillStat(Player* victim)
 {
+    AmbushDied(victim);
     Battleground* bg = victim->GetBattleground();
     if (!bg || victim->GetMapId() != 607 || Attackers(bg) == TEAM_NEUTRAL || victim->GetTeamId() != Attackers(bg))
         return;
