@@ -808,6 +808,77 @@ private:
     uint64 dmg[2] = {};
 };
 
+// SotA demolisher passengers (Server.log, per 5 min): what bots in a demolisher's passenger seats do, by distinct riders
+class PlayerbotsSAPassengerScript : public UnitScript
+{
+public:
+    PlayerbotsSAPassengerScript() : UnitScript("PlayerbotsSAPassengerScript") {}
+
+    void OnDamage(Unit* attacker, Unit* victim, uint32& damage) override
+    {
+        Player* p = Rider(attacker);
+        if (!p || !victim || damage == 0)
+            return;
+        uint32 const k = victim->IsVehicle() ? 1 : 0;  // 0: on foot, 1: vehicles
+        std::lock_guard<std::mutex> guard(lock);
+        ++hits[k];
+        dmg[k] += damage;
+        kills[k] += damage >= victim->GetHealth() ? 1 : 0;
+        riders.insert(p->GetGUID().GetCounter());
+        Log();
+    }
+
+    void OnHeal(Unit* healer, Unit* receiver, uint32& gain) override
+    {
+        Player* p = Rider(healer);
+        if (!p || !receiver || gain == 0)
+            return;
+        uint32 const k = receiver->IsVehicle() ? 1 : 0;
+        std::lock_guard<std::mutex> guard(lock);
+        ++heals[k];
+        healed[k] += gain;
+        healers.insert(p->GetGUID().GetCounter());
+        Log();
+    }
+
+private:
+    // a player in a SotA demolisher's passenger seat (not the driver)
+    static Player* Rider(Unit* u)
+    {
+        Player* p = u ? u->ToPlayer() : nullptr;
+        if (!p || p->GetMapId() != 607)
+            return nullptr;
+        Vehicle* v = p->GetVehicle();
+        if (!v || !v->GetBase() || (v->GetBase()->GetEntry() != 28781 && v->GetBase()->GetEntry() != 32796))
+            return nullptr;
+        VehicleSeatEntry const* seat = v->GetSeatForPassenger(p);
+        return seat && !seat->CanControl() ? p : nullptr;
+    }
+
+    void Log()
+    {
+        uint32 const now = getMSTime();
+        if (!logMs)
+            logMs = now;
+        else if (getMSTimeDiff(logMs, now) > 5 * MINUTE * IN_MILLISECONDS)
+        {
+            LOG_INFO("module", "SA passengers (5 min): damage by {} riders: on foot hits {} damage {} kills {} | vehicles hits {} damage {} kills {} || healing by {} riders: others {} ({}) | vehicles {} ({})",
+                     riders.size(), hits[0], dmg[0], kills[0], hits[1], dmg[1], kills[1], healers.size(), heals[0], healed[0],
+                     heals[1], healed[1]);
+            hits[0] = hits[1] = kills[0] = kills[1] = heals[0] = heals[1] = 0;
+            dmg[0] = dmg[1] = healed[0] = healed[1] = 0;
+            riders.clear();
+            healers.clear();
+            logMs = now;
+        }
+    }
+
+    std::mutex lock;
+    uint32 hits[2] = {}, kills[2] = {}, heals[2] = {}, logMs = 0;
+    uint64 dmg[2] = {}, healed[2] = {};
+    std::set<ObjectGuid::LowType> riders, healers;
+};
+
 class PlayerbotsBGEventLogPlayerScript : public PlayerScript
 {
 public:
@@ -885,5 +956,6 @@ void AddPlayerbotsBGEventLogScripts()
     new PlayerbotsSAGateDamageScript();
     new PlayerbotsSASiegeDamageScript();
     new PlayerbotsSACannonDamageScript();
+    new PlayerbotsSAPassengerScript();
     new PlayerbotsSASlowAuraScript();
 }
