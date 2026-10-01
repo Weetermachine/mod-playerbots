@@ -137,6 +137,8 @@ enum class BGTactic : uint8
     SADriveFire = 114,   // SotA: drivers on their way to the gate throw boulders at enemy players and ram those in front
     SAWorkshopGuard = 115,  // SotA: 4 defenders hold the attackers' workshops all round, wear idle demolishers to 10%
     SAWorkshopKill = 116,   // SotA: as SAWorkshopGuard, but destroy idle demolishers (30 s respawn)
+    SACannonsFollow = 117,  // SotA: cannon crews pick guns by driven siege in range (x3) and closing in, not only foot
+    SAWallPortals = 118,    // SotA: defenders take a gate's portal up to its wall to jump out or heal from there
     TacticCount          // one past the last value; must stay at or below the mask width (128)
 };
 static_assert(uint32(BGTactic::TacticCount) <= 128, "BGTactic values must fit the 128-bit masks in BGTacticArms.cpp");

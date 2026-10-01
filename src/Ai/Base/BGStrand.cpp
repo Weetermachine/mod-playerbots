@@ -19,6 +19,7 @@
 
 #include "AiObjectContext.h"
 #include "BGTacticArms.h"
+#include "Config.h"
 #include "BattlegroundSA.h"
 #include "Creature.h"
 #include "GameObject.h"
@@ -350,15 +351,29 @@ uint32 FoesInRange(Battleground* bg, Unit* gun)
     return n;
 }
 
-// SACannons: the free cannon with the most attackers in range (2+), if any.
-Creature* BusiestGun(Battleground* bg)
+// SACannons: a gun's draw: attackers on foot in its range (10-70 yd); SACannonsFollow: a driven demolisher in range counts
+// 3, one closing in (70-100 yd) 1
+uint32 GunDraw(Battleground* bg, Unit* gun, bool follow)
+{
+    uint32 n = FoesInRange(bg, gun);
+    if (follow)
+        for (Unit* v : DrivenSiege(bg))
+        {
+            float const d = gun->GetExactDist2d(v);
+            n += d >= 10.0f && d <= 70.0f ? 3 : d > 70.0f && d <= 100.0f ? 1 : 0;
+        }
+    return n;
+}
+
+// SACannons: the free cannon with the most draw (2+), if any.
+Creature* BusiestGun(Battleground* bg, bool follow)
 {
     Creature* best = nullptr;
     uint32 bestN = 1;
     for (uint32 i = BG_SA_GUN_1; i <= BG_SA_GUN_10; ++i)
         if (Creature* gun = bg->GetBGCreature(i); gun && gun->IsAlive() && gun->GetVehicleKit() &&
                                                   !gun->GetVehicleKit()->IsVehicleInUse())
-            if (uint32 const n = FoesInRange(bg, gun); n > bestN)
+            if (uint32 const n = GunDraw(bg, gun, follow); n > bestN)
             {
                 bestN = n;
                 best = gun;
@@ -418,6 +433,32 @@ GameObject* PortalToward(Player* bot, Battleground* bg, Position const& dest, fl
     if (best && saving)
         *saving = bestSaving;
     return best;
+}
+
+// SAWallPortals: the Defender's Portal that lands on this gate's wall spot (SOTADefPortalDest[gateIdx]); the portals
+// only hop about 30 yd, from just inside a gate up to its own wall
+GameObject* WallPortal(Battleground* bg, uint32 gateIdx)
+{
+    static uint32 const portalOf[5] = {1, 2, 0, 4, 3};  // dest (gate order) -> portal (blue, green, yellow, purple, red)
+    return gateIdx < 5 ? bg->GetBGObject(BG_SA_PORTAL_DEFFENDER_BLUE + portalOf[gateIdx]) : nullptr;
+}
+
+// SAWallPortals: a defender off its gate's wall spot and within 80 yd of the gate's portal takes it up there
+bool WallPortalUp(Player* bot, Battleground* bg, uint32 gateIdx, BGStrand::Order& out)
+{
+    if (!BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAWallPortals) || gateIdx >= 5)
+        return false;
+    float const* wall = SOTADefPortalDest[gateIdx];
+    Position const top(wall[0], wall[1], wall[2]);
+    GameObject* portal = WallPortal(bg, gateIdx);
+    if (!portal || (bot->GetExactDist2d(&top) < 10.0f && std::fabs(bot->GetPositionZ() - wall[2]) < 6.0f) ||
+        bot->GetExactDist2d(portal) > 80.0f)
+        return false;
+    out.move = portal->GetPosition();
+    out.portal = portal;
+    out.portalSaving = 0.0f;  // it saves the stairs, not straight-line distance
+    BGStrand::Stat("wall_portal_chosen", bot);
+    return true;
 }
 
 // The graveyard banner if the enemy holds it (Alliance banners have even entries).
@@ -501,6 +542,8 @@ bool GoOut(Player* bot, Battleground* bg, GameObject* gate, uint32 gateIdx, floa
         out.hasJump = true;
     }
     out.move = top;
+    if (WallPortalUp(bot, bg, gateIdx, out))
+        return false;
     if (GameObject* portal = PortalToward(bot, bg, top, &out.portalSaving))
     {
         BGStrand::Stat("portal_chosen", bot);
@@ -562,6 +605,7 @@ void WallHeal(Player* bot, Battleground* bg, uint32 gateIdx, Order& out)
 {
     float const* wall = SOTADefPortalDest[gateIdx];
     HoldAt(bot, bg, Position(wall[0] + float(bot->GetGUID().GetCounter() % 7) - 3.0f, wall[1], wall[2]), out);
+    WallPortalUp(bot, bg, gateIdx, out);
     BGStrand::Stat("wall_healer", bot);
 }
 
@@ -604,7 +648,7 @@ bool DefenseObjective(Player* bot, Battleground* bg, Order& out)
 
     // SACannons: the cannon crew boards the busiest free cannon before anything else
     if (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SACannons) && GunCrew(bot, bg))
-        if (Creature* gun = BusiestGun(bg))
+        if (Creature* gun = BusiestGun(bg, BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SACannonsFollow)))
         {
             out.move = gun->GetPosition();
             out.board = gun;
@@ -1108,6 +1152,26 @@ bool EscortObjective(Player* bot, Battleground* bg, Order& out)
     return true;
 }
 
+// SASiegeSupply: whether this attacker claims idle demolishers in this life: a roll at
+// AiPlayerbot.BGTactics.SA.SupplyClaimPct (default 100) when alive and on foot, kept until it dies or boards one
+std::mutex supplyLock;
+std::unordered_map<ObjectGuid::LowType, std::pair<bool, bool>> supplyRoll;  // guid -> (rolled, claims)
+
+bool SupplyClaims(Player* p)
+{
+    int32 const pct = sConfigMgr->GetOption<int32>("AiPlayerbot.BGTactics.SA.SupplyClaimPct", 100, false);
+    std::lock_guard<std::mutex> guard(supplyLock);
+    auto& roll = supplyRoll[p->GetGUID().GetCounter()];
+    if (!p->IsAlive() || p->GetVehicle())
+    {
+        roll.first = false;
+        return false;
+    }
+    if (!roll.first)
+        roll = {true, pct >= 100 || (pct > 0 && int32(urand(1, 100)) <= pct)};
+    return roll.second;
+}
+
 // SASiegeSupply: the idle demolisher this attacker fetches: each idle one goes to the nearest free attacker on foot
 // (not healers or charge holders; closest pairs first), however far
 Unit* SupplySiege(Player* bot, Battleground* bg)
@@ -1127,8 +1191,8 @@ Unit* SupplySiege(Player* bot, Battleground* bg)
         return nullptr;
     std::vector<std::tuple<float, Player*, Unit*>> pairs;
     for (auto const& ref : bg->GetBgMap()->GetPlayers())
-        if (Player* p = ref.GetSource(); p && p->IsAlive() && p->GetTeamId() == team && !p->GetVehicle() &&
-                                         !PlayerbotAI::IsHeal(p) && !p->HasItemCount(ITEM_MASSIVE_SEAFORIUM_CHARGE, 1))
+        if (Player* p = ref.GetSource(); p && p->GetTeamId() == team && SupplyClaims(p) && !PlayerbotAI::IsHeal(p) &&
+                                         !p->HasItemCount(ITEM_MASSIVE_SEAFORIUM_CHARGE, 1))
             for (Unit* d : idle)
                 pairs.emplace_back(p->GetExactDist2d(d), p, d);
     std::sort(pairs.begin(), pairs.end(), [](auto const& a, auto const& b) { return std::get<0>(a) < std::get<0>(b); });
@@ -1250,11 +1314,13 @@ bool Objective(Player* bot, Battleground* bg, Order& out)
             Unit* in = bot->GetVehicleBase();
             if (in && in->GetEntry() == NPC_ANTI_PERSONNAL_CANNON)
             {
-                out.leave = FoesInRange(bg, in) == 0;  // nobody in its range: free the crew for another gun
+                // nobody in its range: free the crew for another gun
+                out.leave = GunDraw(bg, in, BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SACannonsFollow)) == 0;
                 out.move = in->GetPosition();
                 return true;
             }
-            if (Creature* gun = GunCrew(bot, bg) ? BusiestGun(bg) : nullptr)
+            if (Creature* gun = GunCrew(bot, bg) ? BusiestGun(bg, BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SACannonsFollow))
+                                                 : nullptr)
             {
                 out.move = gun->GetPosition();
                 out.board = gun;
