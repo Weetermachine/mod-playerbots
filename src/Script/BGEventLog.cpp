@@ -41,6 +41,7 @@
 #include "SpellAuras.h"
 #include "GameObject.h"
 #include "SpellInfo.h"
+#include "SpellMgr.h"
 #include "Timer.h"
 
 namespace
@@ -658,6 +659,44 @@ private:
     uint32 logMs = 0;
 };
 
+// IoC gate damage by spell (Server.log, per 5 min): hits and damage per spell id
+class PlayerbotsICGateDamageScript : public AllGameObjectScript
+{
+public:
+    PlayerbotsICGateDamageScript() : AllGameObjectScript("PlayerbotsICGateDamageScript") {}
+
+    void OnGameObjectModifyHealth(GameObject* go, Unit* /*attacker*/, int32& change, SpellInfo const* spellInfo) override
+    {
+        if (change >= 0 || !go || go->GetMapId() != 628 || go->GetGoType() != GAMEOBJECT_TYPE_DESTRUCTIBLE_BUILDING)
+            return;
+        std::lock_guard<std::mutex> guard(lock);
+        auto& s = bySpell[spellInfo ? spellInfo->Id : 0];
+        ++s.first;
+        s.second += uint64(-change);
+        uint32 const now = getMSTime();
+        if (!logMs)
+            logMs = now;
+        else if (getMSTimeDiff(logMs, now) > 5 * MINUTE * IN_MILLISECONDS)
+        {
+            std::ostringstream o;
+            for (auto const& [id, v] : bySpell)
+            {
+                SpellInfo const* info = sSpellMgr->GetSpellInfo(id);
+                o << ' ' << (info && info->SpellName[0] ? info->SpellName[0] : "spell") << '(' << id << ") hits " << v.first
+                  << " damage " << v.second << ';';
+            }
+            LOG_INFO("module", "IC gate damage (5 min):{}", o.str());
+            bySpell.clear();
+            logMs = now;
+        }
+    }
+
+private:
+    std::mutex lock;
+    std::map<uint32, std::pair<uint32, uint64>> bySpell;
+    uint32 logMs = 0;
+};
+
 // SotA damage to driven siege vehicles (Server.log, per 5 min): hits, distinct hitters, damage as a share of max health,
 // kills, and how far the vehicle was from the nearest gate when hit
 class PlayerbotsSASiegeDamageScript : public UnitScript
@@ -1045,6 +1084,7 @@ void AddPlayerbotsBGEventLogScripts()
     new PlayerbotsBGEventLogScript();
     new PlayerbotsBGEventLogPlayerScript();
     new PlayerbotsSAGateDamageScript();
+    new PlayerbotsICGateDamageScript();
     new PlayerbotsSASiegeDamageScript();
     new PlayerbotsSACannonDamageScript();
     new PlayerbotsSAPassengerScript();

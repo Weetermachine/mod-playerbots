@@ -3988,6 +3988,31 @@ bool PlayerbotAI::CastSpell(uint32 spellId, float x, float y, float z, Item* ite
     return true;
 }
 
+// RamFirst: the Ram damages buildings within 3 yd of a point in front of the vehicle (its size ahead, at least 3 yd):
+// whether that reaches the gate the vehicle is sieging (the nearest destructible building, within 8 yd of the siege
+// position), measured against the gate's model
+static bool RamWillHit(Unit* base, PositionInfo siege)
+{
+    GameObject* gate = base->FindNearestGameObjectOfType(GAMEOBJECT_TYPE_DESTRUCTIBLE_BUILDING, 40.0f);
+    if (!gate || gate->GetDestructibleState() == GO_DESTRUCTIBLE_DESTROYED || gate->GetExactDist2d(siege.x, siege.y) > 8.0f)
+        return false;
+    float const ahead = std::max(3.0f, base->GetObjectSize());
+    return gate->IsInRange2d(base->GetPositionX() + ahead * std::cos(base->GetOrientation()),
+                             base->GetPositionY() + ahead * std::sin(base->GetOrientation()), 3.0f);
+}
+
+// RamFirst: the Ram shares its 1.5 s global cooldown with the gate shot (Hurl Boulder, Glaive Throw), which was always
+// tried first and ready again in time, so the Ram was never cast. A gate shot yields while the Ram is ready and will hit.
+static bool YieldsToRam(Player* bot, AiObjectContext* context, Unit* base, uint32 spellId)
+{
+    Battleground* bg = bot->GetBattleground();
+    if (!bg || !BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::RamFirst))
+        return false;
+    uint32 const ram = context->GetValue<uint32>("vehicle spell id", "ram")->Get();
+    PositionInfo siege = context->GetValue<PositionMap&>("position")->Get()["bg siege"];
+    return ram && ram != spellId && siege.isSet() && !base->HasSpellCooldown(ram) && RamWillHit(base, siege);
+}
+
 // ICSiegeFix: this bot's vehicle should hit the gate: a location spell with a siege position set, or Ram at the gate
 static bool SiegeShot(Player* bot, AiObjectContext* context, uint32 spellId)
 {
@@ -4009,10 +4034,14 @@ static bool SiegeShot(Player* bot, AiObjectContext* context, uint32 spellId)
                         return true;
         return false;
     }
-    // Ram: no explicit target, it damages buildings just in front of the vehicle; cast at the gate (within 15 yd)
+    // Ram: no explicit target, it damages buildings just in front of the vehicle; cast at the gate (within 15 yd;
+    // RamFirst: when it will connect)
     Unit* base = bot->GetVehicleBase();
-    return !info->Targets && info->HasEffect(SPELL_EFFECT_GAMEOBJECT_DAMAGE) && base &&
-           base->GetExactDist2d(siege.x, siege.y) < 15.0f;
+    if (!base || info->Targets || !info->HasEffect(SPELL_EFFECT_GAMEOBJECT_DAMAGE))
+        return false;
+    if (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::RamFirst))
+        return RamWillHit(base, siege);
+    return base->GetExactDist2d(siege.x, siege.y) < 15.0f;
 }
 
 // SARam: the gate within 45 degrees of straight ahead, so a shot needs no turn
@@ -4083,6 +4112,11 @@ bool PlayerbotAI::CanCastVehicleSpell(uint32 spellId, Unit* target)
     {
         if (ramDiag && !target)
             BGStrand::RamCount("can_gate_shot_on_cooldown");
+        return false;
+    }
+    if (!target && YieldsToRam(bot, aiObjectContext, vehicleBase, spellId))
+    {
+        BGStrand::RamCount("gate_shot_yields_to_ram");
         return false;
     }
 
