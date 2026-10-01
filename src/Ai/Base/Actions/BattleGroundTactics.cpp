@@ -2148,6 +2148,8 @@ bool BGTactics::strandMove()
                 bot->RemoveAurasByType(SPELL_AURA_MOUNTED);
             go->Use(bot);
             exit(1);
+            if (go == order.portal)
+                BGStrand::PortalUsed(bot, order.portalSaving);
             if (go == order.pickup)
                 ChargeCount(0, bot->HasItemCount(39213, 1));
             return true;

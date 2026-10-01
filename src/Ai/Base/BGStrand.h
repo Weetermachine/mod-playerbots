@@ -30,6 +30,7 @@ namespace BGStrand
         GameObject* pickup = nullptr;  // SACharges: the bomb pile to take a charge from
         GameObject* plantAt = nullptr; // SACharges: the gate to plant the carried charge at
         GameObject* portal = nullptr;  // SAPortals: the Defender's Portal to take
+        float portalSaving = 0.0f;     // yd the portal saves over walking (straight lines)
         Position jump;                 // SASortie: jump off the wall to this point outside (set with hasJump)
         bool hasJump = false;
         GameObject* disarm = nullptr;  // SADefense: a planted enemy charge to disarm at the move point
@@ -81,6 +82,8 @@ namespace BGStrand
     // classify (a dismounted driver or an attacker near the relic, tagged by whether the defenders had the package).
     void Stat(char const* name, Player* bot);
     void KillStat(Player* victim);
+    // portal diagnostics (Server.log per 5 min): a defender took a Defender's Portal saving this many yd
+    void PortalUsed(Player* bot, float saving);
     // passenger casting diagnostics (Server.log per 5 min): a step of a passenger's spell casting, and its state (5 s)
     void PaxCast(Player* bot, std::string const& what);
     void PaxSample(PlayerbotAI* botAI);

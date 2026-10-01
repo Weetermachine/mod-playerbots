@@ -396,7 +396,7 @@ GameObject* NearestBombPile(Player* bot, Battleground* bg, GameObject* gate, boo
 
 // SAPortals: the Defender's Portal whose destination saves this bot 40+ yd on its way to dest (straight lines), if any.
 // Portal order in BG_SA_Objects: blue, green, yellow, purple, red; SOTADefPortalDest: green, yellow, blue, red, purple.
-GameObject* PortalToward(Player* bot, Battleground* bg, Position const& dest)
+GameObject* PortalToward(Player* bot, Battleground* bg, Position const& dest, float* saving = nullptr)
 {
     static uint32 const destOf[5] = {2, 0, 1, 4, 3};
     float const direct = bot->GetExactDist2d(&dest);
@@ -415,6 +415,8 @@ GameObject* PortalToward(Player* bot, Battleground* bg, Position const& dest)
             best = portal;
         }
     }
+    if (best && saving)
+        *saving = bestSaving;
     return best;
 }
 
@@ -499,7 +501,7 @@ bool GoOut(Player* bot, Battleground* bg, GameObject* gate, uint32 gateIdx, floa
         out.hasJump = true;
     }
     out.move = top;
-    if (GameObject* portal = PortalToward(bot, bg, top))
+    if (GameObject* portal = PortalToward(bot, bg, top, &out.portalSaving))
     {
         out.move = portal->GetPosition();
         out.portal = portal;
@@ -541,7 +543,7 @@ void WallHeal(Player* bot, Battleground* bg, uint32 gateIdx, Order& out)
 void HoldAt(Player* bot, Battleground* bg, Position const& pos, Order& out)
 {
     out.move = pos;
-    if (GameObject* portal = PortalToward(bot, bg, pos))  // fall back through the portals
+    if (GameObject* portal = PortalToward(bot, bg, pos, &out.portalSaving))  // fall back through the portals
     {
         out.move = portal->GetPosition();
         out.portal = portal;
@@ -984,6 +986,35 @@ void PaxSample(PlayerbotAI* botAI)
     PaxCast(bot, bot->isMoving() ? "moving_yes" : "moving_no");
 }
 
+namespace
+{
+std::mutex portalLock;
+uint32 portalUses = 0, portalLogMs = 0;
+float portalYards = 0.0f;
+std::unordered_set<ObjectGuid::LowType> portalBots;
+}  // namespace
+
+void PortalUsed(Player* bot, float saving)
+{
+    std::lock_guard<std::mutex> guard(portalLock);
+    ++portalUses;
+    portalYards += saving;
+    portalBots.insert(bot->GetGUID().GetCounter());
+    uint32 const now = getMSTime();
+    if (!portalLogMs)
+        portalLogMs = now;
+    else if (getMSTimeDiff(portalLogMs, now) > 5 * MINUTE * IN_MILLISECONDS)
+    {
+        LOG_INFO("module", "SA portals (5 min): uses {} by {} defenders, {:.0f} yd saved ({:.0f} yd per use, about {:.0f} s of running)",
+                 portalUses, portalBots.size(), portalYards, portalUses ? portalYards / portalUses : 0.0f,
+                 portalUses ? portalYards / portalUses / 7.0f : 0.0f);
+        portalUses = 0;
+        portalYards = 0.0f;
+        portalBots.clear();
+        portalLogMs = now;
+    }
+}
+
 bool WarmupDefender(Player* bot, Battleground* bg)
 {
     TeamId const attackers = Attackers(bg);
@@ -1229,7 +1260,7 @@ bool Objective(Player* bot, Battleground* bg, Order& out)
                     out.hasJump = true;
                 }
                 out.move = top;
-                if (GameObject* portal = PortalToward(bot, bg, top))
+                if (GameObject* portal = PortalToward(bot, bg, top, &out.portalSaving))
                 {
                     out.move = portal->GetPosition();
                     out.portal = portal;
@@ -1242,7 +1273,7 @@ bool Objective(Player* bot, Battleground* bg, Order& out)
             SiegeAtGate(bg, go))
             out.move = Near(go, 6.0f, bot);
         if (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAPortals))
-            if (GameObject* portal = PortalToward(bot, bg, out.move))
+            if (GameObject* portal = PortalToward(bot, bg, out.move, &out.portalSaving))
             {
                 out.move = portal->GetPosition();
                 out.portal = portal;
