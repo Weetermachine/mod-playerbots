@@ -13,6 +13,7 @@
 #include <mutex>
 #include <sstream>
 #include <unordered_map>
+#include <tuple>
 #include <unordered_set>
 #include <vector>
 
@@ -378,10 +379,10 @@ constexpr uint32 ITEM_MASSIVE_SEAFORIUM_CHARGE = 39213;
 constexpr uint32 GO_PLANTED_CHARGE = 190752;
 
 // SACharges: the nearest bomb pile (spawned) within 150 yd; SAChargesOnWay: only one that adds at most 30 yd to the way to the gate.
-GameObject* NearestBombPile(Player* bot, Battleground* bg, GameObject* gate, bool onWay)
+GameObject* NearestBombPile(Player* bot, Battleground* bg, GameObject* gate, bool onWay, float maxDist = 150.0f)
 {
     GameObject* best = nullptr;
-    float bestDist = 150.0f;
+    float bestDist = maxDist;
     float const direct = bot->GetExactDist2d(gate);
     for (uint32 i = BG_SA_BOMB; i < BG_SA_MAXOBJ; ++i)
         if (GameObject* go = bg->GetBGObject(i); go && go->isSpawned())
@@ -1041,6 +1042,95 @@ bool EscortObjective(Player* bot, Battleground* bg, Order& out)
     return true;
 }
 
+// SASiegeSupply: the idle demolisher this attacker fetches: each idle one goes to the nearest free attacker on foot
+// (not healers or charge holders; closest pairs first), however far
+Unit* SupplySiege(Player* bot, Battleground* bg)
+{
+    TeamId const team = bot->GetTeamId();
+    if (!BGTacticArms::IsOn(bg, team, BGTactic::SASiegeSupply) || team != Attackers(bg) || !bot->IsAlive() ||
+        bot->GetVehicle() || PlayerbotAI::IsHeal(bot) || bot->HasItemCount(ITEM_MASSIVE_SEAFORIUM_CHARGE, 1))
+        return nullptr;
+    std::vector<Unit*> idle;
+    for (uint32 i = BG_SA_DEMOLISHER_1; i <= BG_SA_DEMOLISHER_8; ++i)
+        if (Creature* d = bg->GetBgMap()->GetCreature(bg->BgCreatures[i]);  // GetBGCreature logs every empty slot
+            d && d->IsAlive() && d->IsVisible() && d->IsFriendlyTo(bot) &&
+            !d->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE) && d->GetVehicleKit() &&
+            !d->GetVehicleKit()->IsVehicleInUse())
+            idle.push_back(d);
+    if (idle.empty())
+        return nullptr;
+    std::vector<std::tuple<float, Player*, Unit*>> pairs;
+    for (auto const& ref : bg->GetBgMap()->GetPlayers())
+        if (Player* p = ref.GetSource(); p && p->IsAlive() && p->GetTeamId() == team && !p->GetVehicle() &&
+                                         !PlayerbotAI::IsHeal(p) && !p->HasItemCount(ITEM_MASSIVE_SEAFORIUM_CHARGE, 1))
+            for (Unit* d : idle)
+                pairs.emplace_back(p->GetExactDist2d(d), p, d);
+    std::sort(pairs.begin(), pairs.end(), [](auto const& a, auto const& b) { return std::get<0>(a) < std::get<0>(b); });
+    std::vector<Player*> busy;
+    std::vector<Unit*> taken;
+    for (auto const& [dist, p, d] : pairs)
+    {
+        if (std::find(busy.begin(), busy.end(), p) != busy.end() || std::find(taken.begin(), taken.end(), d) != taken.end())
+            continue;
+        if (p == bot)
+            return d;
+        busy.push_back(p);
+        taken.push_back(d);
+    }
+    return nullptr;
+}
+
+bool SupplyMoving(Player* bot, Battleground* bg)
+{
+    Unit* d = SupplySiege(bot, bg);
+    return d && bot->GetExactDist2d(d) > 40.0f;
+}
+
+// SADriveFire: on the way to the gate (more than 50 yd off) a driver throws a boulder (2999 to players within 10 yd of
+// the impact) at the enemy player in front with the most enemies around it, and rams (3000 + knockback) one right ahead
+void DriveFire(Player* bot, Battleground* bg, Position const& gate)
+{
+    Unit* base = bot->GetVehicleBase();
+    if (!base || !BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SADriveFire) || bot->GetTeamId() != Attackers(bg) ||
+        (base->GetEntry() != NPC_DEMOLISHER_SA && base->GetEntry() != 32796) || base->GetExactDist2d(&gate) <= 50.0f)
+        return;
+    VehicleSeatEntry const* seat = bot->GetVehicle()->GetSeatForPassenger(bot);
+    if (!seat || !seat->CanControl())
+        return;
+    if (!base->HasSpellCooldown(60206))
+        for (auto const& ref : bg->GetBgMap()->GetPlayers())
+            if (Player* p = ref.GetSource(); p && p->IsAlive() && p->GetTeamId() != bot->GetTeamId() &&
+                                             base->GetExactDist2d(p) < 10.0f && base->HasInArc(float(M_PI) / 2.0f, p) &&
+                                             base->IsValidAttackTarget(p))
+            {
+                if (base->CastSpell(base, 60206, false) == SPELL_CAST_OK)
+                    Stat("drivefire_ram", bot);
+                return;
+            }
+    if (base->HasSpellCooldown(52338))
+        return;
+    Player* best = nullptr;
+    uint32 bestN = 0;
+    for (auto const& ref : bg->GetBgMap()->GetPlayers())
+    {
+        Player* p = ref.GetSource();
+        if (!p || !p->IsAlive() || p->GetTeamId() == bot->GetTeamId() || base->GetExactDist2d(p) > 45.0f ||
+            !base->HasInArc(float(M_PI), p) || !base->IsValidAttackTarget(p) || !base->IsWithinLOSInMap(p))
+            continue;
+        uint32 n = 0;
+        for (auto const& ref2 : bg->GetBgMap()->GetPlayers())
+            if (Player* o = ref2.GetSource(); o && o->IsAlive() && o->GetTeamId() == p->GetTeamId() && o->GetExactDist2d(p) < 10.0f)
+                ++n;
+        if (n > bestN)
+        {
+            bestN = n;
+            best = p;
+        }
+    }
+    if (best && base->CastSpell(best->GetPositionX(), best->GetPositionY(), best->GetPositionZ(), 52338, false) == SPELL_CAST_OK)
+        Stat(bestN >= 2 ? "drivefire_boulder_group" : "drivefire_boulder", bot);
+}
+
 bool EscortMoving(Player* bot, Battleground* bg)
 {
     Order o;
@@ -1188,6 +1278,15 @@ bool Objective(Player* bot, Battleground* bg, Order& out)
         return true;
     }
 
+    // SASiegeSupply: an idle demolisher, however far (above combat while more than 40 yd off)
+    if (Unit* demo = SupplySiege(bot, bg))
+    {
+        out.move = demo->GetPosition();
+        out.urgent = bot->GetExactDist2d(demo) > 40.0f;
+        Stat("supply_fetch", bot);
+        return true;
+    }
+
     // SACharges: a third of the attackers on foot (not healers) carry charges from the piles to the gate
     if (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SACharges) && bot->GetGUID().GetCounter() % 3 == 0 &&
         !PlayerbotAI::IsHeal(bot))
@@ -1198,7 +1297,12 @@ bool Objective(Player* bot, Battleground* bg, Order& out)
             out.plantAt = go;
             return true;
         }
-        if (GameObject* pile = NearestBombPile(bot, bg, go, BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAChargesOnWay)))
+        GameObject* pile = NearestBombPile(bot, bg, go, BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAChargesOnWay));
+        // SASiegeSupply: nothing on the way: go back to the nearest pile within 250 yd
+        if (!pile && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SASiegeSupply) &&
+            (pile = NearestBombPile(bot, bg, go, false, 250.0f)))
+            Stat("supply_refill", bot);
+        if (pile)
         {
             out.move = pile->GetPosition();
             out.pickup = pile;
@@ -1214,7 +1318,9 @@ bool Objective(Player* bot, Battleground* bg, Order& out)
         banner = EnemyBanner(bg, BG_SA_LEFT_FLAG, attackers);
     if (!banner && blue)
         banner = EnemyBanner(bg, BG_SA_RIGHT_FLAG, attackers);
-    if (!banner && (Destroyed(bg, BG_SA_PURPLE_GATE) || Destroyed(bg, BG_SA_RED_GATE)))
+    // SASiegeSupply: not the central graveyard: deaths in the courtyard then respawn at the workshops' graveyards
+    if (!banner && (Destroyed(bg, BG_SA_PURPLE_GATE) || Destroyed(bg, BG_SA_RED_GATE)) &&
+        !BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SASiegeSupply))
         banner = EnemyBanner(bg, BG_SA_CENTRAL_FLAG, attackers);
     if (EscortObjective(bot, bg, out))
         return true;

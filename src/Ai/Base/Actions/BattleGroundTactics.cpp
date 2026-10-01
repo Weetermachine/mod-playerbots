@@ -2113,6 +2113,8 @@ bool BGTactics::strandMove()
     PositionInfo pos = posMap["bg objective"];
     pos.Set(order.move.GetPositionX(), order.move.GetPositionY(), order.move.GetPositionZ(), bot->GetMapId());
     posMap["bg objective"] = pos;
+    if (order.hasSiege)
+        BGStrand::DriveFire(bot, bg, order.siege);
 
     // SACannons: in a cannon, shoot the nearest enemy player (the vehicle attacks fire at the current target)
     if (order.leave || (order.use && bot->GetVehicle()))

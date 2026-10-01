@@ -879,6 +879,39 @@ private:
     std::set<ObjectGuid::LowType> riders, healers;
 };
 
+// SotA: damage demolishers deal to players (Server.log, per 5 min): boulders and rams on the way in and at the gates
+class PlayerbotsSADemolisherHitsScript : public UnitScript
+{
+public:
+    PlayerbotsSADemolisherHitsScript() : UnitScript("PlayerbotsSADemolisherHitsScript") {}
+
+    void OnDamage(Unit* attacker, Unit* victim, uint32& damage) override
+    {
+        if (!attacker || !victim || damage == 0 || victim->GetMapId() != 607 || !victim->IsPlayer() ||
+            (attacker->GetEntry() != 28781 && attacker->GetEntry() != 32796))
+            return;
+        std::lock_guard<std::mutex> guard(lock);
+        ++hits;
+        dmg += damage;
+        kills += damage >= victim->GetHealth() ? 1 : 0;
+        uint32 const now = getMSTime();
+        if (!logMs)
+            logMs = now;
+        else if (getMSTimeDiff(logMs, now) > 5 * MINUTE * IN_MILLISECONDS)
+        {
+            LOG_INFO("module", "SA demolisher hits on players (5 min): hits {} damage {} kills {}", hits, dmg, kills);
+            hits = kills = 0;
+            dmg = 0;
+            logMs = now;
+        }
+    }
+
+private:
+    std::mutex lock;
+    uint32 hits = 0, kills = 0, logMs = 0;
+    uint64 dmg = 0;
+};
+
 class PlayerbotsBGEventLogPlayerScript : public PlayerScript
 {
 public:
@@ -957,5 +990,6 @@ void AddPlayerbotsBGEventLogScripts()
     new PlayerbotsSASiegeDamageScript();
     new PlayerbotsSACannonDamageScript();
     new PlayerbotsSAPassengerScript();
+    new PlayerbotsSADemolisherHitsScript();
     new PlayerbotsSASlowAuraScript();
 }

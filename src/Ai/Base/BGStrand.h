@@ -63,6 +63,10 @@ namespace BGStrand
     bool DefenseMoving(Player* bot, Battleground* bg);
     // SAEscort: an escort more than 25 yd from its demolisher (moves like a flag carrier, above combat).
     bool EscortMoving(Player* bot, Battleground* bg);
+    // SASiegeSupply: a fetcher more than 40 yd from its idle demolisher (moves like a flag carrier, above combat).
+    bool SupplyMoving(Player* bot, Battleground* bg);
+    // SADriveFire: a driver more than 50 yd from its gate attacks enemy players on the way (call every move).
+    void DriveFire(Player* bot, Battleground* bg, Position const& gate);
     // SAWarmup: an allocator defender during the warmup (the round has not started: attackers are on the boats).
     bool WarmupDefender(Player* bot, Battleground* bg);
     // SAWarmup diagnostics: kind 0 a warmup move was triggered, 1 it ran (Server.log per 5 min, by 20 s steps).
