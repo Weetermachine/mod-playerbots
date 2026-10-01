@@ -912,7 +912,9 @@ void SiegeKill(Unit* vehicle)
     if (!bg || Attackers(bg) == TEAM_NEUTRAL)
         return;
     TeamId const defenders = Attackers(bg) == TEAM_ALLIANCE ? TEAM_HORDE : TEAM_ALLIANCE;
-    std::string const tag = BGTacticArms::IsOn(bg, defenders, BGTactic::SADefPack) ? "" : "_ctrl";
+    std::string tag = BGTacticArms::IsOn(bg, defenders, BGTactic::SADefPack) ? "" : "_ctrl";
+    if (BGTacticArms::IsOn(bg, Attackers(bg), BGTactic::SAEscort))
+        tag += "_esc";
     bool const courtyard = Destroyed(bg, BG_SA_YELLOW_GATE) && !Destroyed(bg, BG_SA_ANCIENT_GATE);
     StatAdd(std::string(courtyard ? "demo_kill_courtyard" : "demo_kill") + tag, "");
 }
@@ -939,6 +941,46 @@ bool DefenseMoving(Player* bot, Battleground* bg)
         return go;
     }
     return o.urgent;
+}
+
+// SAEscort: the driven demolisher this attacker escorts (spread over them by guid); none for charge carriers, a
+// quarter left free (graveyard banners, the gate) and while nothing is driven
+Unit* EscortedSiege(Player* bot, Battleground* bg)
+{
+    uint32 const n = bot->GetGUID().GetCounter();
+    if (!BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAEscort) || bot->GetTeamId() != Attackers(bg) ||
+        !bot->IsAlive() || bot->GetVehicle() || bot->HasItemCount(ITEM_MASSIVE_SEAFORIUM_CHARGE, 1) || n % 4 == 3)
+        return nullptr;
+    if (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SACharges) && n % 3 == 0 && !PlayerbotAI::IsHeal(bot))
+        return nullptr;
+    std::vector<Unit*> siege = DrivenSiege(bg);
+    if (siege.empty())
+        return nullptr;
+    std::sort(siege.begin(), siege.end(), [](Unit* a, Unit* b) { return a->GetGUID() < b->GetGUID(); });
+    return siege[n % siege.size()];
+}
+
+// SAEscort: a few yards behind the escorted demolisher (beach side); above combat only while more than 25 yd off
+bool EscortObjective(Player* bot, Battleground* bg, Order& out)
+{
+    Unit* v = EscortedSiege(bot, bg);
+    if (!v)
+        return false;
+    uint32 const n = bot->GetGUID().GetCounter();
+    float const a = v->GetAngle(BEACH_X, BEACH_Y);
+    float const x = v->GetPositionX() + 6.0f * std::cos(a) + float(n * 37 % 9) - 4.0f;
+    float const y = v->GetPositionY() + 6.0f * std::sin(a) + float(n * 53 % 9) - 4.0f;
+    float const z = v->GetMap()->GetHeight(v->GetPhaseMask(), x, y, v->GetPositionZ() + 10.0f);
+    out.move = Position(x, y, z > INVALID_HEIGHT ? z : v->GetPositionZ());
+    out.urgent = bot->GetExactDist2d(v) > 25.0f;
+    Stat(out.urgent ? "escort_catch_up" : "escort_with", bot);
+    return true;
+}
+
+bool EscortMoving(Player* bot, Battleground* bg)
+{
+    Order o;
+    return EscortObjective(bot, bg, o) && o.urgent;
 }
 
 bool Objective(Player* bot, Battleground* bg, Order& out)
@@ -1110,6 +1152,8 @@ bool Objective(Player* bot, Battleground* bg, Order& out)
         banner = EnemyBanner(bg, BG_SA_RIGHT_FLAG, attackers);
     if (!banner && (Destroyed(bg, BG_SA_PURPLE_GATE) || Destroyed(bg, BG_SA_RED_GATE)))
         banner = EnemyBanner(bg, BG_SA_CENTRAL_FLAG, attackers);
+    if (EscortObjective(bot, bg, out))
+        return true;
     if (banner)
     {
         out.move = banner->GetPosition();
@@ -1142,21 +1186,55 @@ Unit* HuntTarget(PlayerbotAI* botAI)
     if (!bg || !bot->IsAlive() || bot->GetVehicle() || PlayerbotAI::IsHeal(bot))
         return nullptr;
     // SAAttack: an enemy at one of our planted charges is disarming it
-    if (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAAttack) && bot->GetTeamId() == Attackers(bg))
+    if (bot->GetTeamId() == Attackers(bg))
     {
-        GameObject* charge = bot->FindNearestGameObject(GO_PLANTED_CHARGE, 30.0f, true);
-        Unit* best = nullptr;
-        float bestDist = 8.0f;
-        if (charge)
+        if (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAAttack))
+        {
+            GameObject* charge = bot->FindNearestGameObject(GO_PLANTED_CHARGE, 30.0f, true);
+            Unit* best = nullptr;
+            float bestDist = 8.0f;
+            if (charge)
+                for (auto const& ref : bg->GetBgMap()->GetPlayers())
+                    if (Player* p = ref.GetSource(); p && p->IsAlive() && p->GetTeamId() != bot->GetTeamId() &&
+                                                     bot->IsValidAttackTarget(p) && bot->IsWithinLOSInMap(p))
+                        if (float const d = p->GetExactDist2d(charge); d < bestDist)
+                        {
+                            bestDist = d;
+                            best = p;
+                        }
+            if (best)
+                return best;
+        }
+        // SAEscort: an enemy hitting the escorted demolisher (within 40 yd of it), else the nearest within 15 yd
+        if (Unit* v = EscortedSiege(bot, bg))
+        {
+            Unit* pick = nullptr;
+            float pickDist = 1000.0f;
+            bool onIt = false;
             for (auto const& ref : bg->GetBgMap()->GetPlayers())
-                if (Player* p = ref.GetSource(); p && p->IsAlive() && p->GetTeamId() != bot->GetTeamId() &&
-                                                 bot->IsValidAttackTarget(p) && bot->IsWithinLOSInMap(p))
-                    if (float const d = p->GetExactDist2d(charge); d < bestDist)
-                    {
-                        bestDist = d;
-                        best = p;
-                    }
-        return best;
+            {
+                Player* p = ref.GetSource();
+                if (!p || !p->IsAlive() || p->GetTeamId() == bot->GetTeamId())
+                    continue;
+                bool const hits = p->GetVictim() == v;
+                float const d = p->GetExactDist2d(v);
+                if (d > (hits ? 40.0f : 15.0f) || (onIt && !hits) || !bot->IsValidAttackTarget(p) ||
+                    !bot->IsWithinLOSInMap(p))
+                    continue;
+                if ((hits && !onIt) || d < pickDist)
+                {
+                    pick = p;
+                    pickDist = d;
+                    onIt = hits;
+                }
+            }
+            if (pick)
+            {
+                Stat(onIt ? "escort_pick_hitter" : "escort_pick_near", bot);
+                return pick;
+            }
+        }
+        return nullptr;
     }
     // SADefPack: an attacker just thrown out of a destroyed demolisher, then (once the relic door is down) the attacker
     // nearest the relic

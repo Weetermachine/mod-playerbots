@@ -61,6 +61,8 @@ namespace BGStrand
     bool DefenseObjective(Player* bot, Battleground* bg, Order& out);
     // SADefense: a defender on its way out of the gate or to a charge (moves like a flag carrier).
     bool DefenseMoving(Player* bot, Battleground* bg);
+    // SAEscort: an escort more than 25 yd from its demolisher (moves like a flag carrier, above combat).
+    bool EscortMoving(Player* bot, Battleground* bg);
     // SAWarmup: an allocator defender during the warmup (the round has not started: attackers are on the boats).
     bool WarmupDefender(Player* bot, Battleground* bg);
     // SAWarmup diagnostics: kind 0 a warmup move was triggered, 1 it ran (Server.log per 5 min, by 20 s steps).
