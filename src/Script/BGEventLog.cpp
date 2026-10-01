@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <map>
 #include <mutex>
+#include <cmath>
 #include <set>
 #include <sstream>
 #include <string>
@@ -923,6 +924,52 @@ private:
     uint64 dmg = 0;
 };
 
+// SotA: damage by ranged players standing on a gate's wall spot (within 8 yd of a SOTADefPortalDest, 4 yd in height),
+// to demolishers and to players (Server.log, per 5 min)
+class PlayerbotsSAWallShotsScript : public UnitScript
+{
+public:
+    PlayerbotsSAWallShotsScript() : UnitScript("PlayerbotsSAWallShotsScript") {}
+
+    void OnDamage(Unit* attacker, Unit* victim, uint32& damage) override
+    {
+        Player* p = attacker ? attacker->ToPlayer() : nullptr;
+        if (!p || !victim || damage == 0 || p->GetMapId() != 607 || p->GetVehicle() || !PlayerbotAI::IsRanged(p))
+            return;
+        bool onWall = false;
+        for (auto const& w : SOTADefPortalDest)
+            onWall = onWall || (std::hypot(p->GetPositionX() - w[0], p->GetPositionY() - w[1]) < 8.0f &&
+                                std::fabs(p->GetPositionZ() - w[2]) < 4.0f);
+        if (!onWall)
+            return;
+        uint32 const k = victim->IsPlayer() ? 1 : victim->IsVehicle() && victim->GetEntry() != 27894 ? 0 : 2;
+        if (k == 2)
+            return;
+        std::lock_guard<std::mutex> guard(lock);
+        ++hits[k];
+        dmg[k] += damage;
+        shooters.insert(p->GetGUID().GetCounter());
+        uint32 const now = getMSTime();
+        if (!logMs)
+            logMs = now;
+        else if (getMSTimeDiff(logMs, now) > 5 * MINUTE * IN_MILLISECONDS)
+        {
+            LOG_INFO("module", "SA wall shooters (5 min): {} ranged on wall spots | vs demolishers hits {} damage {} | vs players hits {} damage {}",
+                     shooters.size(), hits[0], dmg[0], hits[1], dmg[1]);
+            hits[0] = hits[1] = 0;
+            dmg[0] = dmg[1] = 0;
+            shooters.clear();
+            logMs = now;
+        }
+    }
+
+private:
+    std::mutex lock;
+    uint32 hits[2] = {}, logMs = 0;
+    uint64 dmg[2] = {};
+    std::set<ObjectGuid::LowType> shooters;
+};
+
 class PlayerbotsBGEventLogPlayerScript : public PlayerScript
 {
 public:
@@ -1002,5 +1049,6 @@ void AddPlayerbotsBGEventLogScripts()
     new PlayerbotsSACannonDamageScript();
     new PlayerbotsSAPassengerScript();
     new PlayerbotsSADemolisherHitsScript();
+    new PlayerbotsSAWallShotsScript();
     new PlayerbotsSASlowAuraScript();
 }

@@ -572,7 +572,8 @@ bool GoOut(Player* bot, Battleground* bg, GameObject* gate, uint32 gateIdx, floa
 
 void HoldAt(Player* bot, Battleground* bg, Position const& pos, Order& out);
 
-// SAWallRanged: a ranged dps defender takes the wall above this gate while a driven demolisher is within 70 yd of it
+// SAWallRanged: every ranged dps defender of this gate (holders and out front) takes the wall above it while a driven
+// demolisher is within 70 yd of it
 bool WallRanged(Player* bot, Battleground* bg, GameObject* gate, uint32 gateIdx, BGStrand::Order& out)
 {
     if (!BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAWallRanged) || PlayerbotAI::IsHeal(bot) ||
@@ -826,7 +827,7 @@ bool DefenseObjective(Player* bot, Battleground* bg, Order& out)
             WallHeal(bot, bg, BG_SA_YELLOW_GATE, out);
             return true;
         }
-        if (!(outRole && idx % 3 == 0) && WallRanged(bot, bg, yellow, BG_SA_YELLOW_GATE, out))
+        if (WallRanged(bot, bg, yellow, BG_SA_YELLOW_GATE, out))
         {
             DefenseStage(bot, 2);
             return true;
@@ -891,7 +892,7 @@ bool DefenseObjective(Player* bot, Battleground* bg, Order& out)
     GameObject* gate = bg->GetBGObject(gateIdx);
     if (!gate)
         return false;
-    if (!goOut && WallRanged(bot, bg, gate, gateIdx, out))
+    if (WallRanged(bot, bg, gate, gateIdx, out))
     {
         DefenseStage(bot, 2);
         return true;

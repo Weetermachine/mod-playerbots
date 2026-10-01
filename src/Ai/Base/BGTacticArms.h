@@ -141,7 +141,7 @@ enum class BGTactic : uint8
     SAWallPortals = 118,    // SotA: defenders take a gate's portal up to its wall to jump out or heal from there
     SABeachAmbush = 119,    // SotA: defenders wait at the beach demolishers in the warmup and fight the landing until they die
     SACannonCrewPlus = 120,  // SotA: a second quarter of the non-healer defenders crews cannons while siege is in their reach
-    SAWallRanged = 121,      // SotA: ranged dps holders take their gate's wall while siege is near; demolisher reach 60 yd
+    SAWallRanged = 121,      // SotA: a gate's ranged dps take its wall while siege is near; demolisher reach 60 yd
     TacticCount          // one past the last value; must stay at or below the mask width (128)
 };
 static_assert(uint32(BGTactic::TacticCount) <= 128, "BGTactic values must fit the 128-bit masks in BGTacticArms.cpp");
