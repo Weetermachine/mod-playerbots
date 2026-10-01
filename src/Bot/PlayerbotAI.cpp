@@ -6,6 +6,7 @@
 #include "PlayerbotAI.h"
 
 #include "BGCastLog.h"
+#include "BGStrand.h"
 #include "BGTacticArms.h"
 
 #include <cmath>
@@ -3363,6 +3364,7 @@ bool PlayerbotAI::CanCastSpell(uint32 spellid, Unit* target, bool checkHasSpell,
             LOG_DEBUG("playerbots", "Casting time and bot is moving - target name: {}, spellid: {}, bot name: {}",
                       target->GetName(), spellid, bot->GetName());
         }
+        BGStrand::PaxCast(bot, "can_moving");
         return false;
     }
 
@@ -3378,6 +3380,7 @@ bool PlayerbotAI::CanCastSpell(uint32 spellid, Unit* target, bool checkHasSpell,
                     LOG_DEBUG("playerbots", "target is immuned to spell - target name: {}, spellid: {}, bot name: {}",
                               target->GetName(), spellid, bot->GetName());
                 }
+                BGStrand::PaxCast(bot, "can_immune");
                 return false;
             }
             // Otherwise, allow Deep Freeze even if immune
@@ -3423,6 +3426,7 @@ bool PlayerbotAI::CanCastSpell(uint32 spellid, Unit* target, bool checkHasSpell,
     if (oldSel)
         bot->SetSelection(oldSel->GetGUID());
 
+    BGStrand::PaxCast(bot, "check_" + std::to_string(int(result)));
     switch (result)
     {
         case SPELL_FAILED_NOT_INFRONT:
@@ -3624,6 +3628,7 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget)
     // aiObjectContext->GetValue<LastMovement&>("last movement")->Get().Set(nullptr);
     // aiObjectContext->GetValue<time_t>("stay time")->Set(0);
 
+    BGStrand::PaxCast(bot, "cast_try");
     if (bot->IsFlying() || bot->HasUnitState(UNIT_STATE_IN_FLIGHT))
     {
         // if (!sPlayerbotAIConfig.logInGroupOnly || (bot->GetGroup() && HasRealPlayerMaster()))
@@ -3737,6 +3742,7 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget)
         SetNextCheckDelay(sPlayerbotAIConfig.reactDelay);
         spell->cancel();
         delete spell;
+        BGStrand::PaxCast(bot, "cast_moving");
         return false;
     }
 
@@ -3751,6 +3757,7 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget)
     //     return false;
 
     SpellCastResult result = spell->prepare(&targets);
+    BGStrand::PaxCast(bot, "prepare_" + std::to_string(int(result)));
 
     if (result != SPELL_CAST_OK)
     {

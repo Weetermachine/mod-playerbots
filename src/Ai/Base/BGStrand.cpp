@@ -16,6 +16,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "AiObjectContext.h"
 #include "BGTacticArms.h"
 #include "BattlegroundSA.h"
 #include "Creature.h"
@@ -917,6 +918,69 @@ void SiegeKill(Unit* vehicle)
         tag += "_esc";
     bool const courtyard = Destroyed(bg, BG_SA_YELLOW_GATE) && !Destroyed(bg, BG_SA_ANCIENT_GATE);
     StatAdd(std::string(courtyard ? "demo_kill_courtyard" : "demo_kill") + tag, "");
+}
+
+// Passenger casting diagnostics: a bot in a SotA demolisher's passenger seat
+namespace
+{
+std::mutex paxLock;
+std::map<std::string, uint32> paxCounts;
+std::unordered_map<ObjectGuid::LowType, uint32> paxSampled;
+uint32 paxLogMs = 0;
+
+bool IsPassenger(Player* bot)
+{
+    if (!bot || bot->GetMapId() != 607)
+        return false;
+    Vehicle* v = bot->GetVehicle();
+    if (!v || !v->GetBase() || (v->GetBase()->GetEntry() != NPC_DEMOLISHER_SA && v->GetBase()->GetEntry() != 32796))
+        return false;
+    VehicleSeatEntry const* seat = v->GetSeatForPassenger(bot);
+    return seat && !seat->CanControl();
+}
+}  // namespace
+
+void PaxCast(Player* bot, std::string const& what)
+{
+    if (!IsPassenger(bot))
+        return;
+    std::lock_guard<std::mutex> guard(paxLock);
+    ++paxCounts[what];
+    uint32 const now = getMSTime();
+    if (!paxLogMs)
+        paxLogMs = now;
+    else if (getMSTimeDiff(paxLogMs, now) > 5 * MINUTE * IN_MILLISECONDS)
+    {
+        std::ostringstream o;
+        for (auto const& [k, n] : paxCounts)
+            o << ' ' << k << '=' << n;
+        LOG_INFO("module", "SA passenger casting (5 min):{}", o.str());
+        paxCounts.clear();
+        paxLogMs = now;
+    }
+}
+
+void PaxSample(PlayerbotAI* botAI)
+{
+    Player* bot = botAI->GetBot();
+    if (!IsPassenger(bot))
+        return;
+    {
+        std::lock_guard<std::mutex> guard(paxLock);
+        uint32& last = paxSampled[bot->GetGUID().GetCounter()];
+        if (last && getMSTimeDiff(last, getMSTime()) < 5000)
+            return;
+        last = getMSTime();
+    }
+    Unit* target = botAI->GetAiObjectContext()->GetValue<Unit*>("current target")->Get();
+    Unit* enemy = botAI->GetAiObjectContext()->GetValue<Unit*>("enemy player target")->Get();
+    BotState const state = botAI->GetState();
+    PaxCast(bot, state == BOT_STATE_COMBAT ? "state_combat" : state == BOT_STATE_NON_COMBAT ? "state_noncombat" : "state_dead");
+    PaxCast(bot, bot->IsInCombat() ? "incombat_yes" : "incombat_no");
+    float const d = target ? bot->GetExactDist(target) : 0.0f;
+    PaxCast(bot, !target ? "target_none" : d < 30.0f ? "target_lt30" : d < 40.0f ? "target_30_40" : "target_40plus");
+    PaxCast(bot, enemy ? "enemy_player_yes" : "enemy_player_no");
+    PaxCast(bot, bot->isMoving() ? "moving_yes" : "moving_no");
 }
 
 bool WarmupDefender(Player* bot, Battleground* bg)
