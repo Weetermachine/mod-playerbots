@@ -1159,6 +1159,32 @@ void PaxCast(Player* bot, std::string const& what)
     }
 }
 
+// Ram diagnostics (Server.log per 5 min): steps of a demolisher's Ram on SotA, by key
+namespace
+{
+std::mutex ramLock;
+std::map<std::string, uint32> ramCounts;
+uint32 ramLogMs = 0;
+}  // namespace
+
+void RamCount(std::string const& key)
+{
+    std::lock_guard<std::mutex> guard(ramLock);
+    ++ramCounts[key];
+    uint32 const now = getMSTime();
+    if (!ramLogMs)
+        ramLogMs = now;
+    else if (getMSTimeDiff(ramLogMs, now) > 5 * MINUTE * IN_MILLISECONDS)
+    {
+        std::ostringstream o;
+        for (auto const& [k, n] : ramCounts)
+            o << ' ' << k << '=' << n;
+        LOG_INFO("module", "SA ram (5 min):{}", o.str());
+        ramCounts.clear();
+        ramLogMs = now;
+    }
+}
+
 void PaxSample(PlayerbotAI* botAI)
 {
     Player* bot = botAI->GetBot();

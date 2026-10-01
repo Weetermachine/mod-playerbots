@@ -87,6 +87,8 @@ namespace BGStrand
     // passenger casting diagnostics (Server.log per 5 min): a step of a passenger's spell casting, and its state (5 s)
     void PaxCast(Player* bot, std::string const& what);
     void PaxSample(PlayerbotAI* botAI);
+    // Ram diagnostics (Server.log per 5 min): one step of a demolisher's Ram
+    void RamCount(std::string const& key);
     // a driven siege vehicle died (demo_kill / demo_kill_courtyard, tagged like KillStat)
     void SiegeKill(Unit* vehicle);
     // SADefense diagnostics: a disarm was sent (defused: the charge went away).

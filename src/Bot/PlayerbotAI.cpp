@@ -4045,10 +4045,21 @@ bool PlayerbotAI::CanCastVehicleSpell(uint32 spellId, Unit* target)
     // ICSiegeFix: a vehicle with a siege position (the enemy gate, set by the IoC tactics) fires its location spells
     // (Hurl Boulder, Glaive Throw) at the gate, with or without a target. Stock required a valid target first, so the
     // no-target gate shot below could never run, and with a target the shot went at the target instead of the gate.
+    bool const ramDiag = spellId == 60206 && bot->GetMapId() == 607;
     if (SiegeShot(bot, aiObjectContext, spellId))
+    {
         target = nullptr;
+        if (ramDiag)
+            BGStrand::RamCount("can_gate_shot");
+    }
     else if (!IsValidUnit(target))
+    {
+        if (ramDiag)
+            BGStrand::RamCount("can_no_target");
         return false;
+    }
+    else if (ramDiag)
+        BGStrand::RamCount("can_unit_target");
 
     Vehicle* vehicle = bot->GetVehicle();
     if (!vehicle)
@@ -4069,7 +4080,11 @@ bool PlayerbotAI::CanCastVehicleSpell(uint32 spellId, Unit* target)
         return false;
 
     if (vehicleBase->HasSpellCooldown(spellId))
+    {
+        if (ramDiag && !target)
+            BGStrand::RamCount("can_gate_shot_on_cooldown");
         return false;
+    }
 
     SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
     if (!spellInfo)
@@ -4253,7 +4268,21 @@ bool PlayerbotAI::CastVehicleSpell(uint32 spellId, Unit* target)
         targets.SetUnitTarget(spellTarget);
     }
 
-    spell->prepare(&targets);
+    SpellCastResult const prepared = spell->prepare(&targets);
+    if (spellId == 60206 && bot->GetMapId() == 607)
+    {
+        // Ram diagnostics: at the gate or at a unit, distance to the gate's center, the gate ahead or not, the result
+        std::string key = target ? "cast_at_unit" : "cast_at_gate";
+        if (siegePos.isSet())
+        {
+            float const d = vehicleBase->GetExactDist2d(siegePos.x, siegePos.y);
+            Position const gate(siegePos.x, siegePos.y, siegePos.z);
+            key += d < 5.0f ? "_d<5" : d < 10.0f ? "_d5-10" : d < 15.0f ? "_d10-15" : "_d15+";
+            key += vehicleBase->HasInArc(float(M_PI) / 2.0f, &gate) ? "_ahead" : "_notahead";
+        }
+        key += "_res" + std::to_string(int(prepared));
+        BGStrand::RamCount(key);
+    }
 
     if (seat->CanControl() && vehicleBase->isMoving() && spell->GetCastTime())
     {
