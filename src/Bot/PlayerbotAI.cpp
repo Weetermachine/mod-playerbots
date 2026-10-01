@@ -4093,7 +4093,11 @@ bool PlayerbotAI::CanCastVehicleSpell(uint32 spellId, Unit* target)
     // check BG siege position set in BG Tactics
     PositionInfo siegePos = GetAiObjectContext()->GetValue<PositionMap&>("position")->Get()["bg siege"];
     if (SiegeTooFar(bot, vehicleBase, spellInfo, siegePos))
+    {
+        if (ramDiag)
+            BGStrand::RamCount("can_too_far");
         return false;
+    }
 
     // do not cast spell on self if spell is location based
     if (!(siegePos.isSet() || spellTarget != vehicleBase) && spellInfo->Targets & TARGET_FLAG_DEST_LOCATION)
@@ -4127,6 +4131,8 @@ bool PlayerbotAI::CanCastVehicleSpell(uint32 spellId, Unit* target)
 
     SpellCastResult result = spell->CheckCast(true);
     delete spell;
+    if (ramDiag)
+        BGStrand::RamCount(std::string(target ? "can_unit_check_" : "can_gate_check_") + std::to_string(int(result)));
 
     switch (result)
     {
