@@ -4100,6 +4100,15 @@ static bool SiegeTooFar(Player* bot, Unit* vehicleBase, SpellInfo const* spellIn
     return on && vehicleBase->GetExactDist2d(siegePos.x, siegePos.y) > 50.0f;
 }
 
+// IoC turret diagnostics key: team, aim_ when ICTurretAim is on for it, the weapon (Fire Cannon or Napalm)
+static std::string TurretDiagKey(Player* bot, uint32 spellId)
+{
+    Battleground* bg = bot->GetBattleground();
+    return std::string(bot->GetTeamId() == TEAM_HORDE ? "H_" : "A_") +
+           (bg && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::ICTurretAim) ? "aim_" : "") +
+           (spellId == 67461 ? "cannon_" : "napalm_");
+}
+
 bool PlayerbotAI::CanCastVehicleSpell(uint32 spellId, Unit* target)
 {
     if (!spellId)
@@ -4111,8 +4120,8 @@ bool PlayerbotAI::CanCastVehicleSpell(uint32 spellId, Unit* target)
     bool const ramDiag = spellId == 60206 && bot->GetMapId() == 607;
     // the Siege Turret's Fire Cannon and the Flame Turret's Napalm
     bool const cannonDiag = (spellId == 67461 || spellId == 66186 || spellId == 68832) && bot->GetMapId() == 628;
-    std::string const ck = cannonDiag ? std::string(bot->GetTeamId() == TEAM_HORDE ? "H_" : "A_") +
-                                            (spellId == 67461 ? "cannon_" : "napalm_") : "";
+    // keys: aim_ when ICTurretAim is on for this bot's team, then the weapon
+    std::string const ck = cannonDiag ? TurretDiagKey(bot, spellId) : "";
     if (SiegeShot(bot, aiObjectContext, spellId))
     {
         target = nullptr;
@@ -4392,8 +4401,7 @@ bool PlayerbotAI::CastVehicleSpell(uint32 spellId, Unit* target)
 
     SpellCastResult const prepared = spell->prepare(&targets);
     if ((spellId == 67461 || spellId == 66186 || spellId == 68832) && bot->GetMapId() == 628)
-        BGIsle::CrewCount(std::string(bot->GetTeamId() == TEAM_HORDE ? "H_" : "A_") + (spellId == 67461 ? "cannon_" : "napalm_") +
-                          (target ? "cast_unit_" : "cast_gate_") + std::to_string(int(prepared)));
+        BGIsle::CrewCount(TurretDiagKey(bot, spellId) + (target ? "cast_unit_" : "cast_gate_") + std::to_string(int(prepared)));
     if (spellId == 60206 && bot->GetMapId() == 607)
     {
         // Ram diagnostics: at the gate or at a unit, distance to the gate's center, the gate ahead or not, the result
