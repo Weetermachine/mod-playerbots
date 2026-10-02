@@ -75,6 +75,15 @@ bool EnterVehicleAction::Execute(Event event)
         std::string const dk = diag ? std::string(bot->GetTeamId() == TEAM_HORDE ? "H_" : "A_") + std::to_string(diagEntry) : "";
         if (diag)
             BGIsle::CrewCount(dk + "_seen");
+        if (diag && (diagEntry == NPC_SIEGE_ENGINE_A || diagEntry == NPC_SIEGE_ENGINE_H) && vehicleBase->GetVehicleKit())
+            for (int8 seat : {int8(1), int8(2), int8(7)})
+            {
+                Unit* acc = vehicleBase->GetVehicleKit()->GetPassenger(seat);
+                BGIsle::CrewCount(std::to_string(diagEntry) + "_seat" + std::to_string(seat) + "_" +
+                                  (acc ? std::to_string(acc->GetEntry()) + (acc->IsVehicle() ? "" : "_novehicle") +
+                                             "_faction" + std::to_string(acc->GetFaction())
+                                       : std::string("empty")));
+            }
         if (vehicleBase->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE))
         {
             if (diag)
@@ -131,7 +140,7 @@ bool EnterVehicleAction::Execute(Event event)
         float const diagDist = bot->GetExactDist2d(vehicleBase);
         bool const entered = EnterVehicle(vehicleBase, true);
         if (diag)
-            BGIsle::CrewCount(dk + (diagDist > 40.0f ? "_too_far" : diagDist > INTERACTION_DISTANCE
+            BGIsle::CrewCount(dk + (diagDist > 40.0f ? "_too_far" : diagDist > INTERACTION_DISTANCE && !bot->IsOnVehicle(vehicleBase)
                                         ? (entered ? "_walking_to" : "_walk_failed")
                                         : bot->IsOnVehicle(vehicleBase) ? "_boarded" : "_click_failed"));
         if (entered)
@@ -147,10 +156,15 @@ bool EnterVehicleAction::EnterVehicle(Unit* vehicleBase, bool moveIfFar)
     if (dist > 40.0f)
         return false;
 
-    if (dist > INTERACTION_DISTANCE && !moveIfFar)
+    // ICSiegeCrew: a Siege Engine's center is out of reach on foot (the model is large): board it from up to 15 yd
+    Battleground* reachBg = bot->GetBattleground();
+    bool const farClick = dist <= 15.0f && reachBg && bot->GetMapId() == 628 &&
+                          (vehicleBase->GetEntry() == NPC_SIEGE_ENGINE_A || vehicleBase->GetEntry() == NPC_SIEGE_ENGINE_H) &&
+                          BGTacticArms::IsOn(reachBg, bot->GetTeamId(), BGTactic::ICSiegeCrew);
+    if (dist > INTERACTION_DISTANCE && !moveIfFar && !farClick)
         return false;
 
-    if (dist > INTERACTION_DISTANCE)
+    if (dist > INTERACTION_DISTANCE && !farClick)
         return MoveTo(vehicleBase);
     // Use HandleSpellClick instead of Unit::EnterVehicle to handle special vehicle script (ulduar)
     vehicleBase->HandleSpellClick(bot);

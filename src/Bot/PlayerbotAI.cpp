@@ -4109,7 +4109,11 @@ bool PlayerbotAI::CanCastVehicleSpell(uint32 spellId, Unit* target)
     // do not allow if no spells
     VehicleSeatEntry const* seat = vehicle->GetSeatForPassenger(bot);
     if (!seat || !(seat->m_flags & VEHICLE_SEAT_FLAG_CAN_CAST))
+    {
+        if (cannonDiag)
+            BGIsle::CrewCount(ck + "exit_seat_cannot_cast");
         return false;
+    }
 
     Unit* vehicleBase = vehicle->GetBase();
     Unit* spellTarget = target;
@@ -4124,11 +4128,15 @@ bool PlayerbotAI::CanCastVehicleSpell(uint32 spellId, Unit* target)
     {
         if (ramDiag && !target)
             BGStrand::RamCount("can_gate_shot_on_cooldown");
+        if (cannonDiag)
+            BGIsle::CrewCount(ck + "exit_cooldown");
         return false;
     }
     if (!target && YieldsToRam(bot, aiObjectContext, vehicleBase, spellId))
     {
         BGStrand::RamCount("gate_shot_yields_to_ram");
+        if (cannonDiag)
+            BGIsle::CrewCount(ck + "exit_yields_to_ram");
         return false;
     }
 
@@ -4142,16 +4150,26 @@ bool PlayerbotAI::CanCastVehicleSpell(uint32 spellId, Unit* target)
     {
         if (ramDiag)
             BGStrand::RamCount("can_too_far");
+        if (cannonDiag)
+            BGIsle::CrewCount(ck + "exit_siege_too_far");
         return false;
     }
 
     // do not cast spell on self if spell is location based
     if (!(siegePos.isSet() || spellTarget != vehicleBase) && spellInfo->Targets & TARGET_FLAG_DEST_LOCATION)
+    {
+        if (cannonDiag)
+            BGIsle::CrewCount(ck + "exit_no_dest");
         return false;
+    }
 
     uint32 CastingTime = !spellInfo->IsChanneled() ? spellInfo->CalcCastTime(vehicleBase) : spellInfo->GetDuration();
     if (CastingTime && vehicleBase->isMoving())
+    {
+        if (cannonDiag)
+            BGIsle::CrewCount(ck + "exit_cast_time_moving");
         return false;
+    }
 
     if (vehicleBase != spellTarget && ServerFacade::instance().GetDistance2d(vehicleBase, spellTarget) > 120.0f)
         return false;
@@ -4159,7 +4177,11 @@ bool PlayerbotAI::CanCastVehicleSpell(uint32 spellId, Unit* target)
     if (!target && siegePos.isSet())
     {
         if (ServerFacade::instance().GetDistance2d(vehicleBase, siegePos.x, siegePos.y) > 120.0f)
+        {
+            if (cannonDiag)
+                BGIsle::CrewCount(ck + "exit_gate_over_120");
             return false;
+        }
     }
 
     Spell* spell = new Spell(vehicleBase, spellInfo, TRIGGERED_NONE);
