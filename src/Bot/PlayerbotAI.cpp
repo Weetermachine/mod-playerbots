@@ -10,6 +10,7 @@
 #include "BGStrand.h"
 #include "BGTacticArms.h"
 
+#include <atomic>
 #include <cmath>
 #include <mutex>
 #include <sstream>
@@ -4179,7 +4180,21 @@ bool PlayerbotAI::CanCastVehicleSpell(uint32 spellId, Unit* target)
         if (ServerFacade::instance().GetDistance2d(vehicleBase, siegePos.x, siegePos.y) > 120.0f)
         {
             if (cannonDiag)
+            {
                 BGIsle::CrewCount(ck + "exit_gate_over_120");
+                static std::atomic<uint32> lastLog{0};
+                uint32 const nowMs = getMSTime();
+                if (getMSTimeDiff(lastLog.exchange(nowMs), nowMs) > 20000)
+                {
+                    Unit* carrier = vehicleBase->GetVehicleBase();
+                    LOG_INFO("module", "ICDIAG over120: bot {} at {:.0f} {:.0f} {:.0f}, turret {} at {:.0f} {:.0f} {:.0f}, carrier {} at {:.0f} {:.0f}, siege {:.0f} {:.0f}, bg {}",
+                             bot->GetName(), bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), vehicleBase->GetEntry(),
+                             vehicleBase->GetPositionX(), vehicleBase->GetPositionY(), vehicleBase->GetPositionZ(),
+                             carrier ? carrier->GetEntry() : 0, carrier ? carrier->GetPositionX() : 0.0f,
+                             carrier ? carrier->GetPositionY() : 0.0f, siegePos.x, siegePos.y,
+                             bot->GetBattleground() ? bot->GetBattleground()->GetInstanceID() : 0);
+                }
+            }
             return false;
         }
     }
