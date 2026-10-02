@@ -3942,6 +3942,32 @@ bool BGTactics::selectObjective(bool reset)
             bool controlsVehicle = botAI->IsInVehicle(true);
             uint32 vehicleId = inVehicle ? bot->GetVehicleBase()->GetEntry() : 0;
 
+            // ICSiegeCrew: a Siege Engine's driver waits for a gunner in the main turret (seat 7), up to 15 s after it
+            // first drove this engine: turrets are boarded from 5 yd, which a moving engine never allows
+            if (controlsVehicle && (vehicleId == NPC_SIEGE_ENGINE_A || vehicleId == NPC_SIEGE_ENGINE_H) &&
+                BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::ICSiegeCrew))
+            {
+                static std::mutex crewLock;
+                static std::unordered_map<ObjectGuid, std::pair<ObjectGuid, uint32>> boarded;  // driver -> (engine, since)
+                Unit* engine = bot->GetVehicleBase();
+                Unit* turret = engine->GetVehicleKit() ? engine->GetVehicleKit()->GetPassenger(7) : nullptr;
+                bool wait = false;
+                {
+                    std::lock_guard<std::mutex> guard(crewLock);
+                    auto& rec = boarded[bot->GetGUID()];
+                    if (rec.first != engine->GetGUID())
+                        rec = {engine->GetGUID(), getMSTime()};
+                    wait = turret && turret->GetVehicleKit() && !turret->GetVehicleKit()->IsVehicleInUse() &&
+                           getMSTimeDiff(rec.second, getMSTime()) < 15000;
+                }
+                if (wait)
+                {
+                    pos.Set(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), bot->GetMapId());
+                    posMap["bg objective"] = pos;
+                    return true;
+                }
+            }
+
             // Allocator tactic: the team plan decides for bots on foot (vehicle crews and floaters keep the stock picks)
             if (!inVehicle && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::Allocator) && allocatorObjective(pos))
             {
