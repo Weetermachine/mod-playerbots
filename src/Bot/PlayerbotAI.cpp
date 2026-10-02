@@ -4110,9 +4110,9 @@ bool PlayerbotAI::CanCastVehicleSpell(uint32 spellId, Unit* target)
     // no-target gate shot below could never run, and with a target the shot went at the target instead of the gate.
     bool const ramDiag = spellId == 60206 && bot->GetMapId() == 607;
     // the Siege Turret's Fire Cannon and the Flame Turret's Napalm
-    bool const cannonDiag = (spellId == 67461 || spellId == 66186) && bot->GetMapId() == 628;
+    bool const cannonDiag = (spellId == 67461 || spellId == 66186 || spellId == 68832) && bot->GetMapId() == 628;
     std::string const ck = cannonDiag ? std::string(bot->GetTeamId() == TEAM_HORDE ? "H_" : "A_") +
-                                            (spellId == 66186 ? "napalm_" : "cannon_") : "";
+                                            (spellId == 67461 ? "cannon_" : "napalm_") : "";
     if (SiegeShot(bot, aiObjectContext, spellId))
     {
         target = nullptr;
@@ -4391,8 +4391,8 @@ bool PlayerbotAI::CastVehicleSpell(uint32 spellId, Unit* target)
     }
 
     SpellCastResult const prepared = spell->prepare(&targets);
-    if ((spellId == 67461 || spellId == 66186) && bot->GetMapId() == 628)
-        BGIsle::CrewCount(std::string(bot->GetTeamId() == TEAM_HORDE ? "H_" : "A_") + (spellId == 66186 ? "napalm_" : "cannon_") +
+    if ((spellId == 67461 || spellId == 66186 || spellId == 68832) && bot->GetMapId() == 628)
+        BGIsle::CrewCount(std::string(bot->GetTeamId() == TEAM_HORDE ? "H_" : "A_") + (spellId == 67461 ? "cannon_" : "napalm_") +
                           (target ? "cast_unit_" : "cast_gate_") + std::to_string(int(prepared)));
     if (spellId == 60206 && bot->GetMapId() == 607)
     {
