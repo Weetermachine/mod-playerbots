@@ -136,6 +136,16 @@ Unit* EnemyPlayerValue::Calculate()
             controllingCannon = true;
         else
             controllingVehicle = true;
+        // ICTurretAim: a Siege Engine turret's seat counts as driving a mobile vehicle (5 yd); it can't move, so it
+        // picks enemies as a cannon does
+        uint32 const baseEntry = vehicle->GetBase()->GetEntry();
+        if (controllingVehicle && bot->GetMapId() == 628 && bot->GetBattleground() &&
+            (baseEntry == 34777 || baseEntry == 36355 || baseEntry == 34778 || baseEntry == 36356) &&
+            BGTacticArms::IsOn(bot->GetBattleground(), bot->GetTeamId(), BGTactic::ICTurretAim))
+        {
+            controllingVehicle = false;
+            controllingCannon = true;
+        }
     }
 
     // 1. Check units we are currently in PvP combat with.

@@ -4012,7 +4012,9 @@ bool BGTactics::selectObjective(bool reset)
             // the gate as siege position, which made the Siege Turret's only shot a gate shot at any distance. The
             // gunner gets it within 65 yd of the gate (Fire Cannon reaches 70 yd, 4242 to buildings), else shoots players.
             if (inVehicle && (vehicleId == 34777 || vehicleId == 36355 || vehicleId == 34778 || vehicleId == 36356) &&
-                BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::ICSiegeCrew))
+                (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::ICSiegeCrew) ||
+                 BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::ICCannonCrew) ||
+                 BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::ICTurretAim)))
             {
                 GameObject* gate = bg->GetBGObject(bot->GetTeamId() == TEAM_HORDE ? BG_IC_GO_ALLIANCE_GATE_3 : BG_IC_GO_HORDE_GATE_1);
                 PositionInfo siegePos = posMap["bg siege"];

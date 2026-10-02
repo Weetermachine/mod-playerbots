@@ -4051,7 +4051,10 @@ static bool SiegeDestAtMinRange(Player* bot, Unit* base, SpellInfo const* info, 
 {
     Battleground* bg = bot->GetBattleground();
     float const minRange = info->GetMinRange(false);
-    if (!bg || minRange <= 0.0f || !siege.isSet() || !BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::ICSiegeCrew))
+    if (!bg || minRange <= 0.0f || !siege.isSet() ||
+        !(BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::ICSiegeCrew) ||
+          BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::ICCannonCrew) ||
+          BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::ICTurretAim)))
         return false;
     float const reach = minRange + base->GetObjectSize() + 1.0f;
     if (base->GetExactDist(siege.x, siege.y, siege.z) > reach)
@@ -4106,8 +4109,10 @@ bool PlayerbotAI::CanCastVehicleSpell(uint32 spellId, Unit* target)
     // (Hurl Boulder, Glaive Throw) at the gate, with or without a target. Stock required a valid target first, so the
     // no-target gate shot below could never run, and with a target the shot went at the target instead of the gate.
     bool const ramDiag = spellId == 60206 && bot->GetMapId() == 607;
-    bool const cannonDiag = spellId == 67461 && bot->GetMapId() == 628;  // the Siege Turret's Fire Cannon
-    std::string const ck = cannonDiag ? std::string(bot->GetTeamId() == TEAM_HORDE ? "H_cannon_" : "A_cannon_") : "";
+    // the Siege Turret's Fire Cannon and the Flame Turret's Napalm
+    bool const cannonDiag = (spellId == 67461 || spellId == 66186) && bot->GetMapId() == 628;
+    std::string const ck = cannonDiag ? std::string(bot->GetTeamId() == TEAM_HORDE ? "H_" : "A_") +
+                                            (spellId == 66186 ? "napalm_" : "cannon_") : "";
     if (SiegeShot(bot, aiObjectContext, spellId))
     {
         target = nullptr;
@@ -4386,8 +4391,8 @@ bool PlayerbotAI::CastVehicleSpell(uint32 spellId, Unit* target)
     }
 
     SpellCastResult const prepared = spell->prepare(&targets);
-    if (spellId == 67461 && bot->GetMapId() == 628)
-        BGIsle::CrewCount(std::string(bot->GetTeamId() == TEAM_HORDE ? "H_cannon_" : "A_cannon_") +
+    if ((spellId == 67461 || spellId == 66186) && bot->GetMapId() == 628)
+        BGIsle::CrewCount(std::string(bot->GetTeamId() == TEAM_HORDE ? "H_" : "A_") + (spellId == 66186 ? "napalm_" : "cannon_") +
                           (target ? "cast_unit_" : "cast_gate_") + std::to_string(int(prepared)));
     if (spellId == 60206 && bot->GetMapId() == 607)
     {

@@ -110,8 +110,14 @@ bool EnterVehicleAction::Execute(Event event)
         // ICSiegeCrew: a Siege Engine counts as in use once a turret has a gunner, so engines whose turrets were boarded
         // first never got a driver. The driver's seat goes first; a turret is boarded only on a driven engine.
         Battleground* crewBg = bot->GetBattleground();
-        bool const crew = crewBg && bot->GetMapId() == 628 && BGTacticArms::IsOn(crewBg, bot->GetTeamId(), BGTactic::ICSiegeCrew);
+        // ICCannonCrew: the same order, but only the main turret gets a gunner: flame turrets stay empty
+        bool const cannonCrew = crewBg && bot->GetMapId() == 628 &&
+                                BGTacticArms::IsOn(crewBg, bot->GetTeamId(), BGTactic::ICCannonCrew);
+        bool const crew = cannonCrew || (crewBg && bot->GetMapId() == 628 &&
+                                         BGTacticArms::IsOn(crewBg, bot->GetTeamId(), BGTactic::ICSiegeCrew));
         uint32 const vehEntry = vehicleBase->GetEntry();
+        if (cannonCrew && (vehEntry == 34778 || vehEntry == 36356))
+            continue;
         bool const engine = vehEntry == NPC_SIEGE_ENGINE_A || vehEntry == NPC_SIEGE_ENGINE_H;
         bool const turret = vehEntry == 34777 || vehEntry == 36355 || vehEntry == 34778 || vehEntry == 36356;
         if (crew && engine)
@@ -160,7 +166,8 @@ bool EnterVehicleAction::EnterVehicle(Unit* vehicleBase, bool moveIfFar)
     Battleground* reachBg = bot->GetBattleground();
     bool const farClick = dist <= 15.0f && reachBg && bot->GetMapId() == 628 &&
                           (vehicleBase->GetEntry() == NPC_SIEGE_ENGINE_A || vehicleBase->GetEntry() == NPC_SIEGE_ENGINE_H) &&
-                          BGTacticArms::IsOn(reachBg, bot->GetTeamId(), BGTactic::ICSiegeCrew);
+                          (BGTacticArms::IsOn(reachBg, bot->GetTeamId(), BGTactic::ICSiegeCrew) ||
+                           BGTacticArms::IsOn(reachBg, bot->GetTeamId(), BGTactic::ICCannonCrew));
     if (dist > INTERACTION_DISTANCE && !moveIfFar && !farClick)
         return false;
 
