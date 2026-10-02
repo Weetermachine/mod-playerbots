@@ -10,7 +10,6 @@
 #include "BGStrand.h"
 #include "BGTacticArms.h"
 
-#include <atomic>
 #include <cmath>
 #include <mutex>
 #include <sstream>
@@ -4046,6 +4045,36 @@ static bool SiegeShot(Player* bot, AiObjectContext* context, uint32 spellId)
     return base->GetExactDist2d(siege.x, siege.y) < 15.0f;
 }
 
+// ICSiegeCrew: Fire Cannon has a 10 yd minimum range and a turret on an engine at the gate is closer than that: aim
+// at the point at minimum range nearest the gate that keeps the gate within the Cannon's 10 yd building radius
+static bool SiegeDestAtMinRange(Player* bot, Unit* base, SpellInfo const* info, PositionInfo siege, Position& dest)
+{
+    Battleground* bg = bot->GetBattleground();
+    float const minRange = info->GetMinRange(false);
+    if (!bg || minRange <= 0.0f || !siege.isSet() || !BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::ICSiegeCrew))
+        return false;
+    float const reach = minRange + base->GetObjectSize() + 1.0f;
+    if (base->GetExactDist(siege.x, siege.y, siege.z) > reach)
+        return false;
+    GameObject* gate = base->FindNearestGameObjectOfType(GAMEOBJECT_TYPE_DESTRUCTIBLE_BUILDING, 40.0f);
+    if (!gate || gate->GetExactDist2d(siege.x, siege.y) > 8.0f)
+        return false;
+    float best = 0.0f;
+    bool found = false;
+    for (uint8 i = 0; i < 16; ++i)
+    {
+        float const x = base->GetPositionX() + reach * std::cos(i * float(M_PI) / 8.0f);
+        float const y = base->GetPositionY() + reach * std::sin(i * float(M_PI) / 8.0f);
+        float const d = (x - siege.x) * (x - siege.x) + (y - siege.y) * (y - siege.y);
+        if ((found && d >= best) || !gate->IsInRange3d(x, y, siege.z, 7.0f))
+            continue;
+        best = d;
+        found = true;
+        dest.Relocate(x, y, siege.z);
+    }
+    return found;
+}
+
 // SARam: the gate within 45 degrees of straight ahead, so a shot needs no turn
 static bool RamGateAhead(Unit* vehicleBase, PositionInfo siegePos)
 {
@@ -4180,21 +4209,7 @@ bool PlayerbotAI::CanCastVehicleSpell(uint32 spellId, Unit* target)
         if (ServerFacade::instance().GetDistance2d(vehicleBase, siegePos.x, siegePos.y) > 120.0f)
         {
             if (cannonDiag)
-            {
                 BGIsle::CrewCount(ck + "exit_gate_over_120");
-                static std::atomic<uint32> lastLog{0};
-                uint32 const nowMs = getMSTime();
-                if (getMSTimeDiff(lastLog.exchange(nowMs), nowMs) > 20000)
-                {
-                    Unit* carrier = vehicleBase->GetVehicleBase();
-                    LOG_INFO("module", "ICDIAG over120: bot {} at {:.0f} {:.0f} {:.0f}, turret {} at {:.0f} {:.0f} {:.0f}, carrier {} at {:.0f} {:.0f}, siege {:.0f} {:.0f}, bg {}",
-                             bot->GetName(), bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), vehicleBase->GetEntry(),
-                             vehicleBase->GetPositionX(), vehicleBase->GetPositionY(), vehicleBase->GetPositionZ(),
-                             carrier ? carrier->GetEntry() : 0, carrier ? carrier->GetPositionX() : 0.0f,
-                             carrier ? carrier->GetPositionY() : 0.0f, siegePos.x, siegePos.y,
-                             bot->GetBattleground() ? bot->GetBattleground()->GetInstanceID() : 0);
-                }
-            }
             return false;
         }
     }
@@ -4202,7 +4217,14 @@ bool PlayerbotAI::CanCastVehicleSpell(uint32 spellId, Unit* target)
     Spell* spell = new Spell(vehicleBase, spellInfo, TRIGGERED_NONE);
 
     WorldLocation dest;
-    if (siegePos.isSet())
+    Position minRangeDest;
+    if (!target && SiegeDestAtMinRange(bot, vehicleBase, spellInfo, siegePos, minRangeDest))
+    {
+        dest = WorldLocation(bot->GetMapId(), minRangeDest.GetPositionX(), minRangeDest.GetPositionY(), siegePos.z, 0);
+        if (cannonDiag)
+            BGIsle::CrewCount(ck + "gate_at_min_range");
+    }
+    else if (siegePos.isSet())
         dest = WorldLocation(bot->GetMapId(), siegePos.x, siegePos.y, siegePos.z, 0);
     else if (spellTarget != vehicleBase)
         dest = WorldLocation(spellTarget->GetMapId(), spellTarget->GetPosition());
@@ -4335,8 +4357,12 @@ bool PlayerbotAI::CastVehicleSpell(uint32 spellId, Unit* target)
             // ICSiegeFix: +-2 yd (Glaive's building damage reaches 5 yd from the impact, Boulder's 10 yd; +-5 yd sent
             // a good share of glaives past the gate)
             float const jitter = SiegeShot(bot, aiObjectContext, spellId) ? 2.0f : 5.0f;
-            dest = WorldLocation(bot->GetMapId(), siegePos.x + frand(-jitter, jitter), siegePos.y + frand(-jitter, jitter),
-                                 siegePos.z, 0.0f);
+            Position minRangeDest;
+            if (SiegeDestAtMinRange(bot, vehicleBase, spellInfo, siegePos, minRangeDest))
+                dest = WorldLocation(bot->GetMapId(), minRangeDest.GetPositionX(), minRangeDest.GetPositionY(), siegePos.z, 0.0f);
+            else
+                dest = WorldLocation(bot->GetMapId(), siegePos.x + frand(-jitter, jitter), siegePos.y + frand(-jitter, jitter),
+                                     siegePos.z, 0.0f);
         }
         else
             return false;
