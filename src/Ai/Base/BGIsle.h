@@ -34,6 +34,8 @@ namespace BGIsle
     bool Drop(Player* bot, Battleground* bg);
     // ICCannons: what a keep cannon gunner shoots: enemy siege vehicles first, then players; nullptr otherwise.
     Unit* GunnerTarget(Player* bot, Battleground* bg);
+    // ICSiegeCrew diagnostics (Server.log per 5 min): one step of boarding or firing a Siege Engine's seats, by key
+    void CrewCount(std::string const& key);
 }
 
 #endif

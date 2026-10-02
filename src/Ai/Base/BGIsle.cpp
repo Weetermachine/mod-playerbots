@@ -7,6 +7,10 @@
 #include "BGIsle.h"
 
 #include <cmath>
+#include <map>
+#include <mutex>
+#include <sstream>
+#include <string>
 
 #include "BGTacticArms.h"
 #include "BattlegroundIC.h"
@@ -241,3 +245,28 @@ bool Drop(Player* bot, Battleground* bg)
     return true;
 }
 }  // namespace BGIsle
+
+namespace
+{
+std::mutex crewLock;
+std::map<std::string, uint32> crewCounts;
+uint32 crewLogMs = 0;
+}  // namespace
+
+void BGIsle::CrewCount(std::string const& key)
+{
+    std::lock_guard<std::mutex> guard(crewLock);
+    ++crewCounts[key];
+    uint32 const now = getMSTime();
+    if (!crewLogMs)
+        crewLogMs = now;
+    else if (getMSTimeDiff(crewLogMs, now) > 5 * MINUTE * IN_MILLISECONDS)
+    {
+        std::ostringstream o;
+        for (auto const& [k, n] : crewCounts)
+            o << ' ' << k << '=' << n;
+        LOG_INFO("module", "IC siege crew (5 min):{}", o.str());
+        crewCounts.clear();
+        crewLogMs = now;
+    }
+}

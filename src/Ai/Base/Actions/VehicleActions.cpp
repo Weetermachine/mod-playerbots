@@ -7,6 +7,7 @@
 #include "VehicleActions.h"
 
 #include "BGStrand.h"
+#include "BGIsle.h"
 #include "BGTacticArms.h"
 #include "BattlegroundIC.h"
 #include "BattlegroundSA.h"
@@ -66,8 +67,20 @@ bool EnterVehicleAction::Execute(Event event)
         if (sabg && BGStrand::LeaveToMelee(bot, sabg, vehicleBase))
             continue;
 
+        // ICSiegeCrew diagnostics: every Siege Engine and turret a bot on foot considers, and why it passes it by
+        uint32 const diagEntry = vehicleBase->GetEntry();
+        bool const diag = bot->GetMapId() == 628 && (diagEntry == NPC_SIEGE_ENGINE_A || diagEntry == NPC_SIEGE_ENGINE_H ||
+                                                     diagEntry == 34777 || diagEntry == 36355 || diagEntry == 34778 ||
+                                                     diagEntry == 36356);
+        std::string const dk = diag ? std::string(bot->GetTeamId() == TEAM_HORDE ? "H_" : "A_") + std::to_string(diagEntry) : "";
+        if (diag)
+            BGIsle::CrewCount(dk + "_seen");
         if (vehicleBase->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE))
+        {
+            if (diag)
+                BGIsle::CrewCount(dk + "_not_selectable");
             continue;
+        }
 
         // dont let them get in the cannons as they'll stay forever and do nothing useful
         // dont let them in catapult they cant use them at all
@@ -76,7 +89,11 @@ bool EnterVehicleAction::Execute(Event event)
             continue;
 
         if (!vehicleBase->IsFriendlyTo(bot))
+        {
+            if (diag)
+                BGIsle::CrewCount(dk + "_not_friendly");
             continue;
+        }
 
         if (!vehicleBase->GetVehicleKit()->GetAvailableSeatCount())
             continue;
@@ -91,20 +108,33 @@ bool EnterVehicleAction::Execute(Event event)
         if (crew && engine)
         {
             if (vehicleBase->GetCharmerGUID().IsPlayer())
+            {
+                BGIsle::CrewCount(dk + "_has_driver");
                 continue;  // it has its driver
+            }
         }
         else if (crew && turret)
         {
             Unit* carrier = vehicleBase->GetVehicleBase();
             if (!carrier || !carrier->GetCharmerGUID().IsPlayer() || vehicleBase->GetVehicleKit()->IsVehicleInUse())
+            {
+                BGIsle::CrewCount(dk + (!carrier ? "_no_carrier" : !carrier->GetCharmerGUID().IsPlayer() ? "_engine_no_driver"
+                                                                                                        : "_has_gunner"));
                 continue;  // no driver yet, or this turret has its gunner
+            }
         }
         // this will avoid adding passengers (which dont really do much for the IOC vehicles which is the only place
         // this code is used)
         else if (vehicleBase->GetVehicleKit()->IsVehicleInUse())
             continue;
 
-        if (EnterVehicle(vehicleBase, true))
+        float const diagDist = bot->GetExactDist2d(vehicleBase);
+        bool const entered = EnterVehicle(vehicleBase, true);
+        if (diag)
+            BGIsle::CrewCount(dk + (diagDist > 40.0f ? "_too_far" : diagDist > INTERACTION_DISTANCE
+                                        ? (entered ? "_walking_to" : "_walk_failed")
+                                        : bot->IsOnVehicle(vehicleBase) ? "_boarded" : "_click_failed"));
+        if (entered)
             return true;
     }
 
