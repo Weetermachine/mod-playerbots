@@ -3982,6 +3982,19 @@ bool BGTactics::selectObjective(bool reset)
                 }
             }
 
+            // ICSiegeCrew: the Siege Turret's gunner gets the enemy gate as its siege position within 65 yd of it (Fire
+            // Cannon reaches 70 yd and does 4242 to buildings); farther away it shoots players as before
+            if (inVehicle && !controlsVehicle && (vehicleId == 34777 || vehicleId == 36355) &&
+                BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::ICSiegeCrew))
+            {
+                GameObject* gate = bg->GetBGObject(bot->GetTeamId() == TEAM_HORDE ? BG_IC_GO_ALLIANCE_GATE_3 : BG_IC_GO_HORDE_GATE_1);
+                PositionInfo siegePos = posMap["bg siege"];
+                if (gate && gate->GetDestructibleState() != GO_DESTRUCTIBLE_DESTROYED && bot->GetExactDist2d(gate) < 65.0f)
+                    siegePos.Set(gate->GetPositionX(), gate->GetPositionY(), gate->GetPositionZ(), bot->GetMapId());
+                else
+                    siegePos.Reset();
+                posMap["bg siege"] = siegePos;
+            }
             // skip if not the driver
             if (inVehicle && !controlsVehicle)
                 return false;

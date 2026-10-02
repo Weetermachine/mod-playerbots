@@ -736,6 +736,11 @@ public:
     {
         if (!unit || unit->GetMapId() != 607 || !unit->IsVehicle())
             return;
+        if (unit->GetEntry() == 27894)
+        {
+            BGStrand::CannonDestroyed();
+            return;
+        }
         {
             std::lock_guard<std::mutex> guard(lock);
             auto const it = lastDriven.find(unit->GetGUID().GetCounter());

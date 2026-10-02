@@ -1107,6 +1107,8 @@ void KillStat(Player* victim)
 
 void SiegeKill(Unit* vehicle)
 {
+    if (vehicle->GetEntry() == NPC_ANTI_PERSONNAL_CANNON)
+        return;
     Map* map = vehicle->GetMap();
     Battleground* bg = map && map->IsBattleground() ? ((BattlegroundMap*)map)->GetBG() : nullptr;
     if (!bg || Attackers(bg) == TEAM_NEUTRAL)
@@ -1166,6 +1168,8 @@ std::mutex ramLock;
 std::map<std::string, uint32> ramCounts;
 uint32 ramLogMs = 0;
 }  // namespace
+
+void CannonDestroyed() { StatAdd("cannon_destroyed", ""); }
 
 void RamCount(std::string const& key)
 {
@@ -1651,6 +1655,26 @@ Unit* HuntTarget(PlayerbotAI* botAI)
                         }
             if (best)
                 return best;
+        }
+        // SACannonKill: a ranged attacker destroys the nearest manned cannon within 40 yd (cannons deal about a third of
+        // all demolisher damage)
+        if (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SACannonKill) && PlayerbotAI::IsRanged(bot))
+        {
+            Unit* gun = nullptr;
+            float gunDist = 40.0f;
+            for (uint32 i = BG_SA_GUN_1; i <= BG_SA_GUN_10; ++i)
+                if (Creature* c = bg->GetBgMap()->GetCreature(bg->BgCreatures[i]);
+                    c && c->IsAlive() && c->GetVehicleKit() && c->GetVehicleKit()->IsVehicleInUse() &&
+                    bot->GetExactDist2d(c) < gunDist && bot->IsValidAttackTarget(c) && bot->IsWithinLOSInMap(c))
+                {
+                    gunDist = bot->GetExactDist2d(c);
+                    gun = c;
+                }
+            if (gun)
+            {
+                Stat("cannon_target", bot);
+                return gun;
+            }
         }
         // SAEscort: an enemy hitting the escorted demolisher (within 40 yd of it), else the nearest within 15 yd
         if (Unit* v = EscortedSiege(bot, bg))

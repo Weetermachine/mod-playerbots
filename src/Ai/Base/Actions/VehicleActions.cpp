@@ -81,9 +81,27 @@ bool EnterVehicleAction::Execute(Event event)
         if (!vehicleBase->GetVehicleKit()->GetAvailableSeatCount())
             continue;
 
+        // ICSiegeCrew: a Siege Engine counts as in use once a turret has a gunner, so engines whose turrets were boarded
+        // first never got a driver. The driver's seat goes first; a turret is boarded only on a driven engine.
+        Battleground* crewBg = bot->GetBattleground();
+        bool const crew = crewBg && bot->GetMapId() == 628 && BGTacticArms::IsOn(crewBg, bot->GetTeamId(), BGTactic::ICSiegeCrew);
+        uint32 const vehEntry = vehicleBase->GetEntry();
+        bool const engine = vehEntry == NPC_SIEGE_ENGINE_A || vehEntry == NPC_SIEGE_ENGINE_H;
+        bool const turret = vehEntry == 34777 || vehEntry == 36355 || vehEntry == 34778 || vehEntry == 36356;
+        if (crew && engine)
+        {
+            if (vehicleBase->GetCharmerGUID().IsPlayer())
+                continue;  // it has its driver
+        }
+        else if (crew && turret)
+        {
+            Unit* carrier = vehicleBase->GetVehicleBase();
+            if (!carrier || !carrier->GetCharmerGUID().IsPlayer() || vehicleBase->GetVehicleKit()->IsVehicleInUse())
+                continue;  // no driver yet, or this turret has its gunner
+        }
         // this will avoid adding passengers (which dont really do much for the IOC vehicles which is the only place
         // this code is used)
-        if (vehicleBase->GetVehicleKit()->IsVehicleInUse())
+        else if (vehicleBase->GetVehicleKit()->IsVehicleInUse())
             continue;
 
         if (EnterVehicle(vehicleBase, true))

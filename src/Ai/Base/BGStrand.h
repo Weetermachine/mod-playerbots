@@ -89,6 +89,8 @@ namespace BGStrand
     void PaxSample(PlayerbotAI* botAI);
     // Ram diagnostics (Server.log per 5 min): one step of a demolisher's Ram
     void RamCount(std::string const& key);
+    // SACannonKill diagnostics: a defender cannon was destroyed
+    void CannonDestroyed();
     // a driven siege vehicle died (demo_kill / demo_kill_courtyard, tagged like KillStat)
     void SiegeKill(Unit* vehicle);
     // SADefense diagnostics: a disarm was sent (defused: the charge went away).

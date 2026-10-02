@@ -143,6 +143,8 @@ enum class BGTactic : uint8
     SACannonCrewPlus = 120,  // SotA: a second quarter of the non-healer defenders crews cannons while siege is in their reach
     SAWallRanged = 121,      // SotA: a gate's ranged dps take its wall while siege is near; demolisher reach 60 yd
     RamFirst = 122,          // SotA / IoC: a vehicle at a gate rams when the Ram will connect; its gate shot yields to it
+    ICSiegeCrew = 123,       // IoC: a Siege Engine gets its driver first, then gunners; the main turret shells the gate
+    SACannonKill = 124,      // SotA: ranged attackers destroy manned cannons near them
     TacticCount          // one past the last value; must stay at or below the mask width (128)
 };
 static_assert(uint32(BGTactic::TacticCount) <= 128, "BGTactic values must fit the 128-bit masks in BGTacticArms.cpp");
