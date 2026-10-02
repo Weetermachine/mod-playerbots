@@ -3942,6 +3942,24 @@ bool BGTactics::selectObjective(bool reset)
             bool controlsVehicle = botAI->IsInVehicle(true);
             uint32 vehicleId = inVehicle ? bot->GetVehicleBase()->GetEntry() : 0;
 
+            // boarding diagnostics, one count per tactics tick: an engine's driver, and a turret gunner by whether its
+            // engine has a driver, split by the team's boarding rule (df = driver first: ICDriverFirst or a crew tactic)
+            if (inVehicle)
+            {
+                bool const engineSeat = vehicleId == NPC_SIEGE_ENGINE_A || vehicleId == NPC_SIEGE_ENGINE_H;
+                bool const turretSeat = vehicleId == 34777 || vehicleId == 36355 || vehicleId == 34778 || vehicleId == 36356;
+                if (engineSeat || turretSeat)
+                {
+                    bool const df = BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::ICDriverFirst) ||
+                                    BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::ICSiegeCrew) ||
+                                    BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::ICCannonCrew);
+                    Unit* carrier = turretSeat ? bot->GetVehicleBase()->GetVehicleBase() : nullptr;
+                    BGIsle::CrewCount(std::string("tick_") + (df ? "df_" : "stock_") +
+                                      (engineSeat ? "driver" : carrier && carrier->GetCharmerGUID().IsPlayer() ? "gunner_on_driven"
+                                                                                                            : "gunner_on_parked"));
+                }
+            }
+
             // ICSiegeCrew: a Siege Engine's driver waits for a gunner in the main turret (seat 7), up to 15 s after it
             // first drove this engine: turrets are boarded from 5 yd, which a moving engine never allows
             if (controlsVehicle && (vehicleId == NPC_SIEGE_ENGINE_A || vehicleId == NPC_SIEGE_ENGINE_H) &&
