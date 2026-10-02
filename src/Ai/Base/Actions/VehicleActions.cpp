@@ -75,6 +75,16 @@ bool EnterVehicleAction::Execute(Event event)
         std::string const dk = diag ? std::string(bot->GetTeamId() == TEAM_HORDE ? "H_" : "A_") + std::to_string(diagEntry) : "";
         if (diag)
             BGIsle::CrewCount(dk + "_seen");
+        // whether a seen engine has a driver, by its own team's boarding rule (df = ICDriverFirst or a crew tactic on)
+        if (diag && (diagEntry == NPC_SIEGE_ENGINE_A || diagEntry == NPC_SIEGE_ENGINE_H) && bot->GetBattleground())
+        {
+            TeamId const owner = diagEntry == NPC_SIEGE_ENGINE_A ? TEAM_ALLIANCE : TEAM_HORDE;
+            Battleground* dbg = bot->GetBattleground();
+            bool const df = BGTacticArms::IsOn(dbg, owner, BGTactic::ICDriverFirst) || BGTacticArms::IsOn(dbg, owner, BGTactic::ICSiegeCrew) ||
+                            BGTacticArms::IsOn(dbg, owner, BGTactic::ICCannonCrew);
+            BGIsle::CrewCount(std::string("engine_") + (df ? "df_" : "stock_") +
+                              (vehicleBase->GetCharmerGUID().IsPlayer() ? "driven" : "undriven"));
+        }
         if (diag && (diagEntry == NPC_SIEGE_ENGINE_A || diagEntry == NPC_SIEGE_ENGINE_H) && vehicleBase->GetVehicleKit())
             for (int8 seat : {int8(1), int8(2), int8(7)})
             {
@@ -113,8 +123,10 @@ bool EnterVehicleAction::Execute(Event event)
         // ICCannonCrew: the same order, but only the main turret gets a gunner: flame turrets stay empty
         bool const cannonCrew = crewBg && bot->GetMapId() == 628 &&
                                 BGTacticArms::IsOn(crewBg, bot->GetTeamId(), BGTactic::ICCannonCrew);
+        // ICDriverFirst: only this boarding order, nothing else
         bool const crew = cannonCrew || (crewBg && bot->GetMapId() == 628 &&
-                                         BGTacticArms::IsOn(crewBg, bot->GetTeamId(), BGTactic::ICSiegeCrew));
+                                         (BGTacticArms::IsOn(crewBg, bot->GetTeamId(), BGTactic::ICSiegeCrew) ||
+                                          BGTacticArms::IsOn(crewBg, bot->GetTeamId(), BGTactic::ICDriverFirst)));
         uint32 const vehEntry = vehicleBase->GetEntry();
         if (cannonCrew && (vehEntry == 34778 || vehEntry == 36356))
             continue;
@@ -167,7 +179,8 @@ bool EnterVehicleAction::EnterVehicle(Unit* vehicleBase, bool moveIfFar)
     bool const farClick = dist <= 15.0f && reachBg && bot->GetMapId() == 628 &&
                           (vehicleBase->GetEntry() == NPC_SIEGE_ENGINE_A || vehicleBase->GetEntry() == NPC_SIEGE_ENGINE_H) &&
                           (BGTacticArms::IsOn(reachBg, bot->GetTeamId(), BGTactic::ICSiegeCrew) ||
-                           BGTacticArms::IsOn(reachBg, bot->GetTeamId(), BGTactic::ICCannonCrew));
+                           BGTacticArms::IsOn(reachBg, bot->GetTeamId(), BGTactic::ICCannonCrew) ||
+                           BGTacticArms::IsOn(reachBg, bot->GetTeamId(), BGTactic::ICDriverFirst));
     if (dist > INTERACTION_DISTANCE && !moveIfFar && !farClick)
         return false;
 

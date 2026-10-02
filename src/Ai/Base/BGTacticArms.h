@@ -147,6 +147,7 @@ enum class BGTactic : uint8
     SACannonKill = 124,      // SotA: ranged attackers destroy manned cannons near them
     ICCannonCrew = 125,      // IoC: a Siege Engine gets its driver first, then one gunner for the main turret only
     ICTurretAim = 126,       // IoC: turret gunners pick enemy players at weapon range (a turret seat counted as driving: 5 yd)
+    ICDriverFirst = 127,     // IoC: a Siege Engine with a manned turret still gets a driver; turrets only on a driven engine
     TacticCount          // one past the last value; must stay at or below the mask width (128)
 };
 static_assert(uint32(BGTactic::TacticCount) <= 128, "BGTactic values must fit the 128-bit masks in BGTacticArms.cpp");
