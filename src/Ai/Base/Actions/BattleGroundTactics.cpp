@@ -55,6 +55,15 @@
 #include "SpellInfo.h"
 #include "Vehicle.h"
 
+// a game from the random queue records BATTLEGROUND_RB as the player's type: use the rolled map
+static BattlegroundTypeId RealBgType(Player* bot)
+{
+    BattlegroundTypeId bgType = bot->GetBattlegroundTypeId();
+    if (bgType == BATTLEGROUND_RB && bot->GetBattleground())
+        bgType = bot->GetBattleground()->GetBgTypeID(true);
+    return bgType;
+}
+
 bool SkipMinesThisGame(Battleground* bg, TeamId team);
 
 // Comeback mode: plans made while behind, per BG [WS, AB, EY] (EotS counts stock strategy picks)
@@ -79,6 +88,8 @@ void IcGuardLog()
     }
     if (getMSTimeDiff(last, now) <= 5 * MINUTE * IN_MILLISECONDS || !icGuardLogMs.compare_exchange_strong(last, now))
         return;
+    if (uint32 const se = siegeEscortPicks.exchange(0))
+        LOG_INFO("module", "ICSiegeEscort (5 min): escort picks {}", se);
     static char const* const rows[3] = {"Alliance stock", "Alliance fixed", "Horde"};
     for (uint32 r = 0; r < 3; ++r)
     {
@@ -87,9 +98,6 @@ void IcGuardLog()
             v[k] = icGuard[r][k].exchange(0);
         if (!v[0])
             continue;
-        if (r == 0)
-            if (uint32 const se = siegeEscortPicks.exchange(0))
-                LOG_INFO("module", "ICSiegeEscort (5 min): escort picks {}", se);
         LOG_INFO("module", "IoC guard step {} (5 min): objective picks {}, reached the guard step {} ({:.1f}%): to a node "
                  "we hold {}, to one they hold {}, to one being captured/neutral {}, none {}",
                  rows[r], v[0], v[1], 100.0 * v[1] / v[0], v[2], v[3], v[4], v[5]);
@@ -1647,8 +1655,6 @@ bool BGTactics::Execute(Event /*event*/)
 
     if (bg->GetStatus() == STATUS_IN_PROGRESS)
         botAI->ChangeStrategy("-buff", BOT_STATE_NON_COMBAT);
-    if (getName() == "check flag")
-        buffSample();
 
     std::vector<BattleBotPath*> const* vPaths;
     std::vector<uint32> const* vFlagIds;
@@ -2042,12 +2048,11 @@ bool BGTactics::isleMove()
         if (t)
         {
             context->GetValue<Unit*>("current target")->Set(t);
-            for (uint32 spell : {66541u, 67452u})  // the keep cannon's two shots
-                if (botAI->CanCastVehicleSpell(spell, t) && botAI->CastVehicleSpell(spell, t))
-                {
+            Creature* gun = bot->GetVehicleBase() ? bot->GetVehicleBase()->ToCreature() : nullptr;
+            for (uint32 i = 0; gun && i < MAX_CREATURE_SPELLS && !shot; ++i)  // the keep cannon's own shots
+                if (uint32 const spell = gun->m_spells[i];
+                    spell && botAI->CanCastVehicleSpell(spell, t) && botAI->CastVehicleSpell(spell, t))
                     shot = true;
-                    break;
-                }
         }
         GunCount(bot, "IC", t, shot);
         return true;
@@ -2373,17 +2378,21 @@ static float EYGroundZ(Player* bot, float x, float y, float z, bool fix)
     return h > INVALID_HEIGHT ? h : z;
 }
 
-// AVBossForce: the team has waited at the boss wait point for 90 s (since its first bot got there this push)
+// AVBossForce: the team has waited for the boss for 90 s this push (since its first bot picked the wait point; a push
+// ends 60 s after the last pick)
 static bool BossForceWaitedOut(Battleground* bg, TeamId team)
 {
     static std::mutex lock;
-    static std::map<std::pair<uint32, uint32>, uint32> since;  // (instance, team) -> first wait this push
+    static std::map<std::pair<uint32, uint32>, std::pair<uint32, uint32>> since;  // (instance, team) -> (first, last)
     std::lock_guard<std::mutex> guard(lock);
+    if (since.size() > 400)
+        since.clear();
     uint32 const now = getMSTime();
-    uint32& t = since[{bg->GetInstanceID(), uint32(team)}];
-    if (!t || getMSTimeDiff(t, now) > 150 * IN_MILLISECONDS)  // a new push (the last one ended 60 s+ ago)
-        t = now;
-    return getMSTimeDiff(t, now) > 90 * IN_MILLISECONDS;
+    auto& [first, last] = since[{bg->GetInstanceID(), uint32(team)}];
+    if (!first || getMSTimeDiff(last, now) > 60 * IN_MILLISECONDS)
+        first = now;
+    last = now;
+    return getMSTimeDiff(first, now) > 90 * IN_MILLISECONDS;
 }
 
 // GroundZFix: the stock objective code kept a failed height lookup (writing an invalid z) and dropped a good one
@@ -2851,9 +2860,9 @@ bool BGTactics::selectObjective(bool reset)
                 if (radius > 0.0f)
                 {
                     bot->GetRandomPoint(origin, radius, rx, ry, rz);
-                    // WSGFixes: GetRandomPoint keeps z on a failed lookup, so this was never true and the spread
-                    // never applied (every defender stacked on the exact spot)
-                    if (wsgFixes ? rz != VMAP_INVALID_HEIGHT_VALUE : rz == VMAP_INVALID_HEIGHT_VALUE)
+                    // WSGFixes: stock checked rz == VMAP_INVALID_HEIGHT_VALUE before using the point, but GetRandomPoint
+                    // keeps z on a failed lookup, so the spread never applied (every defender stacked on the exact spot)
+                    if (wsgFixes)
                         target.Relocate(rx, ry, rz);
                     else
                         target.Relocate(origin);
@@ -5731,103 +5740,6 @@ void TripLog(uint32 now)  // needs tripLock
 }
 }  // namespace
 
-// Buff log: living bots in running WSG/AB/EotS games, sampled about every 2 s each. Per buff, the share of samples carrying it,
-// counted only when the bot's team has a living member of the class that provides it (Intellect only for mana users).
-// Per 5 minutes, per BG and per team kind (Rebuff on / off).
-namespace
-{
-std::mutex buffLock;
-std::unordered_map<ObjectGuid, uint32> buffSampledMs;
-uint32 buffStat[3][2][5][2];  // [WS, AB, EY][rebuff off, on][stamina, stats, intellect, blessing, kings][has, available]
-uint32 buffLogMs = 0;
-
-bool HasBuffNamed(Unit* u, std::initializer_list<char const*> names)
-{
-    for (auto const& [id, app] : u->GetAppliedAuras())
-    {
-        SpellInfo const* info = app->GetBase()->GetSpellInfo();
-        char const* n = info ? info->SpellName[0] : nullptr;
-        if (!n)
-            continue;
-        for (char const* want : names)
-            if (std::strstr(n, want))
-                return true;
-    }
-    return false;
-}
-}  // namespace
-
-void BGTactics::buffSample()
-{
-    Battleground* bg = bot->GetBattleground();
-    // every living bot in a running game (the battleground strategies run in the non-combat engine only, so this is
-    // called between fights, not during them)
-    if (!bg || bg->GetStatus() != STATUS_IN_PROGRESS || !bot->IsAlive())
-        return;
-    BattlegroundTypeId type = bg->GetBgTypeID();
-    if (type == BATTLEGROUND_RB)
-        type = bg->GetBgTypeID(true);
-    if (type != BATTLEGROUND_WS && type != BATTLEGROUND_AB && type != BATTLEGROUND_EY)
-        return;
-    uint32 const now = getMSTime();
-    {
-        std::lock_guard<std::mutex> guard(buffLock);
-        uint32& last = buffSampledMs[bot->GetGUID()];
-        if (last && getMSTimeDiff(last, now) < 2000)
-            return;
-        last = now;
-    }
-    bool priest = false, druid = false, mage = false, paladin = false;
-    for (auto const& ref : bg->GetBgMap()->GetPlayers())
-    {
-        Player* p = ref.GetSource();
-        if (!p || !p->IsAlive() || p->GetTeamId() != bot->GetTeamId())
-            continue;
-        uint8 const c = p->getClass();
-        priest |= c == CLASS_PRIEST;
-        druid |= c == CLASS_DRUID;
-        mage |= c == CLASS_MAGE;
-        paladin |= c == CLASS_PALADIN;
-    }
-    bool const manaUser = bot->getPowerType() == POWER_MANA;
-    bool const has[5] = {HasBuffNamed(bot, {"Fortitude"}), HasBuffNamed(bot, {"of the Wild"}),
-                         HasBuffNamed(bot, {"Arcane Intellect", "Arcane Brilliance", "Dalaran Intellect", "Dalaran Brilliance"}),
-                         HasBuffNamed(bot, {"Blessing of"}), HasBuffNamed(bot, {"Blessing of Kings"})};
-    bool const avail[5] = {priest, druid, mage && manaUser, paladin, paladin};
-    uint32 const b = type == BATTLEGROUND_WS ? 0 : type == BATTLEGROUND_AB ? 1 : 2;
-    uint32 const m = BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::Rebuff) ? 1 : 0;
-    std::lock_guard<std::mutex> guard(buffLock);
-    for (uint32 k = 0; k < 5; ++k)
-        if (avail[k])
-        {
-            ++buffStat[b][m][k][1];
-            buffStat[b][m][k][0] += has[k];
-        }
-    if (buffSampledMs.size() > 20000)
-        buffSampledMs.clear();
-    if (!buffLogMs)
-        buffLogMs = now;
-    else if (getMSTimeDiff(buffLogMs, now) > 5 * MINUTE * IN_MILLISECONDS)
-    {
-        buffLogMs = now;
-        static char const* const names[3] = {"WS", "AB", "EY"};
-        auto pct = [](uint32 const* v) { return v[1] ? 100.0 * v[0] / v[1] : 0.0; };
-        for (uint32 bb = 0; bb < 3; ++bb)
-            for (uint32 mm = 0; mm < 2; ++mm)
-            {
-                auto const& v = buffStat[bb][mm];
-                if (!v[0][1] && !v[1][1] && !v[3][1])
-                    continue;
-                LOG_INFO("module", "Buffs {} {} (5 min, living bots in running games, where the team has the class): Fortitude {:.0f}% "
-                         "of {}, Wild {:.0f}% of {}, Intellect {:.0f}% of {}, any Blessing {:.0f}% of {}, Kings {:.0f}%",
-                         names[bb], mm ? "rebuff" : "stock", pct(v[0]), v[0][1], pct(v[1]), v[1][1], pct(v[2]), v[2][1],
-                         pct(v[3]), v[3][1], pct(v[4]));
-                for (uint32 k = 0; k < 5; ++k)
-                    buffStat[bb][mm][k][0] = buffStat[bb][mm][k][1] = 0;
-            }
-    }
-}
-
 // Graveyard wave (arm GYWave): battleground respawns come in waves, but bots walked out one by one and arrived alone.
 // After a respawn a bot waits (up to 10 s) until 3 living teammates are within 25 yd, then leaves with them.
 namespace
@@ -6296,234 +6208,246 @@ int BGTactics::moveDirectRoute(bool evade)
         return 0;  // the stock code resets it
 
     uint32 const now = getMSTime();
-    std::lock_guard<std::mutex> guard(directRouteLock);
-    DirectRoute& r = directRoutes[bot->GetGUID()];
-
-    bool const sameObjective = r.instanceId == bg->GetInstanceID() && std::abs(r.ox - pos.x) < 5.0f &&
-                               std::abs(r.oy - pos.y) < 5.0f;
-    // off the route (a fight, a knockback, a death): more than 20 yd from every leg of the current hop. Not the
-    // distance to the next corner, which on open ground is often 100+ yd on a good route (that rebuilt 3 in 4
-    // routes every tick and kept resetting the stall timer).
-    bool offRoute = false;
-    if (sameObjective && r.complete && r.next < r.pts.size())
+    // the route is this bot's own: taken out of the shared map under the lock, then searched and followed without it
+    // (the lock covered the navmesh search and the move for every bot on every map thread)
+    DirectRoute r;
     {
-        float best = FLT_MAX;
-        for (size_t i = r.hopFrom ? r.hopFrom - 1 : 0; i < r.next; ++i)
-        {
-            G3D::Vector3 const& a = r.pts[i];
-            G3D::Vector3 const& b = r.pts[i + 1];
-            float const dx = b.x - a.x, dy = b.y - a.y, len2 = dx * dx + dy * dy;
-            float t = len2 > 0.0f ? ((bot->GetPositionX() - a.x) * dx + (bot->GetPositionY() - a.y) * dy) / len2
-                                  : 0.0f;
-            t = std::clamp(t, 0.0f, 1.0f);
-            best = std::min(best, bot->GetExactDist2d(a.x + t * dx, a.y + t * dy));
-        }
-        offRoute = best > 20.0f;
+        std::lock_guard<std::mutex> guard(directRouteLock);
+        r = std::move(directRoutes[bot->GetGUID()]);
     }
-
-    // an evasive carrier re-plans every 2.5 s as the enemies move
-    bool const timeCost = BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::DirectTime);
-    bool const safe = !evade && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::DirectSafe);
-    uint32 const rebuildMs = evade ? 2500u : safe ? 10u * IN_MILLISECONDS : 30u * IN_MILLISECONDS;
-    if (!sameObjective || offRoute || getMSTimeDiff(r.builtMs, now) > rebuildMs)
+    int const result = [&]() -> int
     {
-        // no complete route: the result is kept for 10 s (the stock waypoints run meanwhile), not searched
-        // again every tick
-        if (sameObjective && !r.complete && getMSTimeDiff(r.builtMs, now) < 10 * IN_MILLISECONDS)
-            return 0;
-        uint32 const b = DirectBgIdx(bgType);
-        bool const sameGame = r.instanceId == bg->GetInstanceID();
-        float px = r.px, py = r.py;
-        uint32 changedMs = r.changedMs;
-        if (!sameGame)
-            ++directRebuilds[b][RB_FIRST];
-        else if (!sameObjective)
+        bool const sameObjective = r.instanceId == bg->GetInstanceID() && std::abs(r.ox - pos.x) < 5.0f &&
+                                   std::abs(r.oy - pos.y) < 5.0f;
+        // off the route (a fight, a knockback, a death): more than 20 yd from every leg of the current hop. Not the
+        // distance to the next corner, which on open ground is often 100+ yd on a good route (that rebuilt 3 in 4
+        // routes every tick and kept resetting the stall timer).
+        bool offRoute = false;
+        if (sameObjective && r.complete && r.next < r.pts.size())
         {
-            float const moved = std::hypot(pos.x - r.ox, pos.y - r.oy);
-            if (moved < 30.0f)
-                ++directRebuilds[b][RB_NUDGE];
-            else
+            float best = FLT_MAX;
+            for (size_t i = r.hopFrom ? r.hopFrom - 1 : 0; i < r.next; ++i)
             {
-                ++directRebuilds[b][RB_NEW];
-                if (r.complete && bot->GetExactDist2d(r.ox, r.oy) > 20.0f)
-                    ++directRebuilds[b][RB_ABANDON];
-                if (changedMs && getMSTimeDiff(changedMs, now) < 60 * IN_MILLISECONDS &&
-                    std::hypot(pos.x - r.px, pos.y - r.py) < 5.0f)
-                    ++directRebuilds[b][RB_FLIPBACK];
-                px = r.ox;
-                py = r.oy;
-                changedMs = now;
+                G3D::Vector3 const& a = r.pts[i];
+                G3D::Vector3 const& b = r.pts[i + 1];
+                float const dx = b.x - a.x, dy = b.y - a.y, len2 = dx * dx + dy * dy;
+                float t = len2 > 0.0f ? ((bot->GetPositionX() - a.x) * dx + (bot->GetPositionY() - a.y) * dy) / len2
+                                      : 0.0f;
+                t = std::clamp(t, 0.0f, 1.0f);
+                best = std::min(best, bot->GetExactDist2d(a.x + t * dx, a.y + t * dy));
             }
+            offRoute = best > 20.0f;
         }
-        else if (offRoute)
-            ++directRebuilds[b][RB_OFFROUTE];
-        else if (!r.complete)
-            ++directRebuilds[b][RB_RETRY];
-        else
-            ++directRebuilds[b][RB_TIMER];
-        r = DirectRoute();
-        r.instanceId = bg->GetInstanceID();
-        r.ox = pos.x;
-        r.oy = pos.y;
-        r.px = px;
-        r.py = py;
-        r.changedMs = changedMs;
-        r.builtMs = r.progressMs = now;
-        r.bestDist = dist;
-        ThreatFilter threat;
-        bool const custom = evade || safe || timeCost;
-        if (custom)
+
+        // an evasive carrier re-plans every 2.5 s as the enemies move
+        bool const timeCost = BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::DirectTime);
+        bool const safe = !evade && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::DirectSafe);
+        uint32 const rebuildMs = evade ? 2500u : safe ? 10u * IN_MILLISECONDS : 30u * IN_MILLISECONDS;
+        if (!sameObjective || offRoute || getMSTimeDiff(r.builtMs, now) > rebuildMs)
         {
-            threat.setIncludeFlags(NAV_GROUND | NAV_WATER | NAV_MAGMA);
-            threat.setExcludeFlags(0);
-            threat.threatWeight = evade ? 3.0f : safe ? 0.7f : 0.0f;
-            threat.timeMap = timeCost ? bot->GetMap() : nullptr;
-            if (evade || safe)
-                for (auto const& ref : bg->GetBgMap()->GetPlayers())
+            // no complete route: the result is kept for 10 s (the stock waypoints run meanwhile), not searched
+            // again every tick
+            if (sameObjective && !r.complete && getMSTimeDiff(r.builtMs, now) < 10 * IN_MILLISECONDS)
+                return 0;
+            uint32 const b = DirectBgIdx(bgType);
+            bool const sameGame = r.instanceId == bg->GetInstanceID();
+            float px = r.px, py = r.py;
+            uint32 changedMs = r.changedMs;
+            if (!sameGame)
+                ++directRebuilds[b][RB_FIRST];
+            else if (!sameObjective)
+            {
+                float const moved = std::hypot(pos.x - r.ox, pos.y - r.oy);
+                if (moved < 30.0f)
+                    ++directRebuilds[b][RB_NUDGE];
+                else
                 {
-                    Player* p = ref.GetSource();
-                    if (!p || p == bot || !p->IsAlive())
-                        continue;
-                    G3D::Vector3 const v(p->GetPositionX(), p->GetPositionY(), p->GetPositionZ());
-                    if (p->GetTeamId() == bot->GetTeamId())
-                    {
-                        if (evade)
-                            threat.friends.push_back(v);
-                    }
-                    else if (bot->GetExactDist2d(p) > 15.0f)  // chasers right behind: the route cannot avoid them
-                        threat.enemies.push_back(v);
+                    ++directRebuilds[b][RB_NEW];
+                    if (r.complete && bot->GetExactDist2d(r.ox, r.oy) > 20.0f)
+                        ++directRebuilds[b][RB_ABANDON];
+                    if (changedMs && getMSTimeDiff(changedMs, now) < 60 * IN_MILLISECONDS &&
+                        std::hypot(pos.x - r.px, pos.y - r.py) < 5.0f)
+                        ++directRebuilds[b][RB_FLIPBACK];
+                    px = r.ox;
+                    py = r.oy;
+                    changedMs = now;
                 }
-        }
-        auto const t0 = std::chrono::steady_clock::now();
-        r.complete = BuildDirectRoute(bot->GetMap(),
-                                      G3D::Vector3(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()),
-                                      G3D::Vector3(pos.x, pos.y, pos.z), r.pts, custom ? &threat : nullptr);
-        uint32 const us = uint32(
-            std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t0).count());
-        directSearchUs += us;
-        for (uint32 m = directSearchMaxUs.load(); us > m && !directSearchMaxUs.compare_exchange_weak(m, us);)
-        {
-        }
-        // the route has to end at the objective, not somewhere near it
-        if (r.complete && (r.pts.back() - G3D::Vector3(pos.x, pos.y, pos.z)).length() > 6.0f)
-            r.complete = false;
-        r.next = r.pts.size() > 1 ? 1 : 0;
-        DirectStat(bgType, r.complete ? 0 : 1);
-        if (evade && r.complete)  // escorts walk ahead on it
-        {
-            std::lock_guard<std::mutex> cg(carrierRouteLock);
-            carrierRoutes[CarrierKey(bg, bot->GetTeamId())] = {r.pts, now};
-        }
-    }
-    if (!r.complete || r.pts.empty())
-        return 0;
-
-    // no progress toward the objective for 15 s: stalled, let the stock waypoints run for a while
-    if (dist < r.bestDist - 2.0f)
-    {
-        r.bestDist = dist;
-        r.progressMs = now;
-    }
-    else if (getMSTimeDiff(r.progressMs, now) > 15 * IN_MILLISECONDS)
-    {
-        DirectStat(bgType, 2);
-        r.complete = false;
-        r.builtMs = now;
-        return 0;
-    }
-
-    // Evasive carrier alone with danger ahead: hold up to 5 s for the escort (not with an enemy on it already)
-    if (evade)
-    {
-        bool alone = true, pressed = false;
-        uint32 ahead = 0;
-        for (auto const& ref : bg->GetBgMap()->GetPlayers())
-        {
-            Player* p = ref.GetSource();
-            if (!p || p == bot || !p->IsAlive())
-                continue;
-            float const d = bot->GetExactDist2d(p);
-            if (p->GetTeamId() == bot->GetTeamId())
-            {
-                if (d < 25.0f)
-                    alone = false;
-                continue;
             }
-            if (d < 20.0f)
-                pressed = true;
+            else if (offRoute)
+                ++directRebuilds[b][RB_OFFROUTE];
+            else if (!r.complete)
+                ++directRebuilds[b][RB_RETRY];
             else
-                for (size_t i = r.next; i < r.pts.size() && i < r.next + 6; ++i)
-                    if (std::hypot(r.pts[i].x - p->GetPositionX(), r.pts[i].y - p->GetPositionY()) < 30.0f)
+                ++directRebuilds[b][RB_TIMER];
+            r = DirectRoute();
+            r.instanceId = bg->GetInstanceID();
+            r.ox = pos.x;
+            r.oy = pos.y;
+            r.px = px;
+            r.py = py;
+            r.changedMs = changedMs;
+            r.builtMs = r.progressMs = now;
+            r.bestDist = dist;
+            ThreatFilter threat;
+            bool const custom = evade || safe || timeCost;
+            if (custom)
+            {
+                threat.setIncludeFlags(NAV_GROUND | NAV_WATER | NAV_MAGMA);
+                threat.setExcludeFlags(0);
+                threat.threatWeight = evade ? 3.0f : safe ? 0.7f : 0.0f;
+                threat.timeMap = timeCost ? bot->GetMap() : nullptr;
+                if (evade || safe)
+                    for (auto const& ref : bg->GetBgMap()->GetPlayers())
                     {
-                        ++ahead;
-                        break;
+                        Player* p = ref.GetSource();
+                        if (!p || p == bot || !p->IsAlive())
+                            continue;
+                        G3D::Vector3 const v(p->GetPositionX(), p->GetPositionY(), p->GetPositionZ());
+                        if (p->GetTeamId() == bot->GetTeamId())
+                        {
+                            if (evade)
+                                threat.friends.push_back(v);
+                        }
+                        else if (bot->GetExactDist2d(p) > 15.0f)  // chasers right behind: the route cannot avoid them
+                            threat.enemies.push_back(v);
                     }
-        }
-        if (alone && !pressed && ahead >= 2)
-        {
-            if (!r.holdMs)
-            {
-                r.holdMs = now;
-                std::lock_guard<std::mutex> sg(carrierStatLock);
-                ++carrierHolds[bgType == BATTLEGROUND_WS ? 0 : bgType == BATTLEGROUND_AB ? 1 : 2];
             }
-            if (getMSTimeDiff(r.holdMs, now) < 5 * IN_MILLISECONDS)
+            auto const t0 = std::chrono::steady_clock::now();
+            r.complete = BuildDirectRoute(bot->GetMap(),
+                                          G3D::Vector3(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()),
+                                          G3D::Vector3(pos.x, pos.y, pos.z), r.pts, custom ? &threat : nullptr);
+            uint32 const us = uint32(
+                std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t0).count());
+            directSearchUs += us;
+            for (uint32 m = directSearchMaxUs.load(); us > m && !directSearchMaxUs.compare_exchange_weak(m, us);)
             {
-                r.progressMs = now;  // waiting is not a stall
+            }
+            // the route has to end at the objective, not somewhere near it
+            if (r.complete && (r.pts.back() - G3D::Vector3(pos.x, pos.y, pos.z)).length() > 6.0f)
+                r.complete = false;
+            r.next = r.pts.size() > 1 ? 1 : 0;
+            DirectStat(bgType, r.complete ? 0 : 1);
+            if (evade && r.complete)  // escorts walk ahead on it
+            {
+                std::lock_guard<std::mutex> cg(carrierRouteLock);
+                carrierRoutes[CarrierKey(bg, bot->GetTeamId())] = {r.pts, now};
+            }
+        }
+        if (!r.complete || r.pts.empty())
+            return 0;
+
+        // no progress toward the objective for 15 s: stalled, let the stock waypoints run for a while
+        if (dist < r.bestDist - 2.0f)
+        {
+            r.bestDist = dist;
+            r.progressMs = now;
+        }
+        else if (getMSTimeDiff(r.progressMs, now) > 15 * IN_MILLISECONDS)
+        {
+            DirectStat(bgType, 2);
+            r.complete = false;
+            r.builtMs = now;
+            return 0;
+        }
+
+        // Evasive carrier alone with danger ahead: hold up to 5 s for the escort (not with an enemy on it already)
+        if (evade)
+        {
+            bool alone = true, pressed = false;
+            uint32 ahead = 0;
+            for (auto const& ref : bg->GetBgMap()->GetPlayers())
+            {
+                Player* p = ref.GetSource();
+                if (!p || p == bot || !p->IsAlive())
+                    continue;
+                float const d = bot->GetExactDist2d(p);
+                if (p->GetTeamId() == bot->GetTeamId())
+                {
+                    if (d < 25.0f)
+                        alone = false;
+                    continue;
+                }
+                if (d < 20.0f)
+                    pressed = true;
+                else
+                    for (size_t i = r.next; i < r.pts.size() && i < r.next + 6; ++i)
+                        if (std::hypot(r.pts[i].x - p->GetPositionX(), r.pts[i].y - p->GetPositionY()) < 30.0f)
+                        {
+                            ++ahead;
+                            break;
+                        }
+            }
+            if (alone && !pressed && ahead >= 2)
+            {
+                if (!r.holdMs)
+                {
+                    r.holdMs = now;
+                    std::lock_guard<std::mutex> sg(carrierStatLock);
+                    ++carrierHolds[bgType == BATTLEGROUND_WS ? 0 : bgType == BATTLEGROUND_AB ? 1 : 2];
+                }
+                if (getMSTimeDiff(r.holdMs, now) < 5 * IN_MILLISECONDS)
+                {
+                    r.progressMs = now;  // waiting is not a stall
+                    return -1;
+                }
+            }
+            else if (r.holdMs && getMSTimeDiff(r.holdMs, now) > 15 * IN_MILLISECONDS)
+                r.holdMs = 0;  // a new hold is possible again
+        }
+
+        // Leave room for the mount: a bot that is casting (the 1.5 s mount) is not moved, and a dismounted bot out of
+        // combat with 60+ yd to go gets one tick in 8 s without a move, so the mount action can start its cast (every
+        // tick went to the next hop, and on direct routes WSG bots were mounted 35% of the time against 58%).
+        if (bot->IsNonMeleeSpellCast(false))
+            return -1;
+        if (!evade && !bot->IsMounted() && !bot->IsInCombat() && bot->IsOutdoors() &&
+            getMSTimeDiff(r.mountWaitMs, now) > 8 * IN_MILLISECONDS)
+        {
+            float remaining = bot->GetExactDist2d(r.pts[r.next].x, r.pts[r.next].y);
+            for (size_t i = r.next; i + 1 < r.pts.size(); ++i)
+                remaining += (r.pts[i + 1] - r.pts[i]).length();
+            if (remaining > 60.0f)
+            {
+                r.mountWaitMs = now;
+                r.progressMs = now;
                 return -1;
             }
         }
-        else if (r.holdMs && getMSTimeDiff(r.holdMs, now) > 15 * IN_MILLISECONDS)
-            r.holdMs = 0;  // a new hold is possible again
-    }
 
-    // Leave room for the mount: a bot that is casting (the 1.5 s mount) is not moved, and a dismounted bot out of
-    // combat with 60+ yd to go gets one tick in 8 s without a move, so the mount action can start its cast (every
-    // tick went to the next hop, and on direct routes WSG bots were mounted 35% of the time against 58%).
-    if (bot->IsNonMeleeSpellCast(false))
-        return -1;
-    if (!evade && !bot->IsMounted() && !bot->IsInCombat() && bot->IsOutdoors() &&
-        getMSTimeDiff(r.mountWaitMs, now) > 8 * IN_MILLISECONDS)
-    {
-        float remaining = bot->GetExactDist2d(r.pts[r.next].x, r.pts[r.next].y);
-        for (size_t i = r.next; i + 1 < r.pts.size(); ++i)
-            remaining += (r.pts[i + 1] - r.pts[i]).length();
-        if (remaining > 60.0f)
+        // skip corners already reached, then aim for the furthest corner up to ~40 yd along the route
+        size_t const reached = r.next;
+        while (r.next + 1 < r.pts.size() && bot->GetExactDist2d(r.pts[r.next].x, r.pts[r.next].y) < 3.0f)
+            ++r.next;
+        if (r.next != reached)
+            r.hopFrom = r.next;  // a new hop starts here (a resumed hop keeps its start)
+        size_t target = r.next;
+        float along = bot->GetExactDist(r.pts[r.next].x, r.pts[r.next].y, r.pts[r.next].z);
+        while (target + 1 < r.pts.size())
         {
-            r.mountWaitMs = now;
-            r.progressMs = now;
-            return -1;
+            float const leg = (r.pts[target] - r.pts[target + 1]).length();
+            if (along + leg > 40.0f)
+                break;
+            along += leg;
+            ++target;
         }
-    }
-
-    // skip corners already reached, then aim for the furthest corner up to ~40 yd along the route
-    size_t const reached = r.next;
-    while (r.next + 1 < r.pts.size() && bot->GetExactDist2d(r.pts[r.next].x, r.pts[r.next].y) < 3.0f)
-        ++r.next;
-    if (r.next != reached)
-        r.hopFrom = r.next;  // a new hop starts here (a resumed hop keeps its start)
-    size_t target = r.next;
-    float along = bot->GetExactDist(r.pts[r.next].x, r.pts[r.next].y, r.pts[r.next].z);
-    while (target + 1 < r.pts.size())
+        // the corners before the hop target are passed on the way: the next call starts from the target (without
+        // this, a bot standing on the target picked it again, the move was refused as a duplicate and the bot
+        // stood still until the stall check)
+        r.next = target;
+        bool moved;
+        if (target + 1 == r.pts.size())
+            moved = MoveNear(bot->GetMapId(), pos.x, pos.y, pos.z, 1.5f);  // last hop: the objective itself, as stock
+        else
+            moved = MoveTo(bot->GetMapId(), r.pts[target].x, r.pts[target].y, r.pts[target].z);
+        // a refused move (still waiting for the last one) is retried next tick, and meanwhile other actions run;
+        // standing on the hop target with the move refused would stall, so the stock code runs instead
+        return moved ? 1 : bot->GetExactDist2d(r.pts[target].x, r.pts[target].y) > 3.0f ? -1 : 0;
+    }();
     {
-        float const leg = (r.pts[target] - r.pts[target + 1]).length();
-        if (along + leg > 40.0f)
-            break;
-        along += leg;
-        ++target;
+        std::lock_guard<std::mutex> guard(directRouteLock);
+        directRoutes[bot->GetGUID()] = std::move(r);
     }
-    // the corners before the hop target are passed on the way: the next call starts from the target (without
-    // this, a bot standing on the target picked it again, the move was refused as a duplicate and the bot
-    // stood still until the stall check)
-    r.next = target;
-    bool moved;
-    if (target + 1 == r.pts.size())
-        moved = MoveNear(bot->GetMapId(), pos.x, pos.y, pos.z, 1.5f);  // last hop: the objective itself, as stock
-    else
-        moved = MoveTo(bot->GetMapId(), r.pts[target].x, r.pts[target].y, r.pts[target].z);
-    // a refused move (still waiting for the last one) is retried next tick, and meanwhile other actions run;
-    // standing on the hop target with the move refused would stall, so the stock code runs instead
-    return moved ? 1 : bot->GetExactDist2d(r.pts[target].x, r.pts[target].y) > 3.0f ? -1 : 0;
+    return result;
 }
 
 // Smooth movement (SmoothMove): a bot moving along a direct route within 8 yd of its hop target gets the next hop
@@ -7444,7 +7368,7 @@ static char const* const FC_SLOWS[] = {"hamstring", "chains of ice", "wing clip"
 
 static bool FCChaseOn(Player* bot)
 {
-    return (bot->GetBattlegroundTypeId() == BATTLEGROUND_WS || bot->GetBattlegroundTypeId() == BATTLEGROUND_EY) &&
+    return (RealBgType(bot) == BATTLEGROUND_WS || RealBgType(bot) == BATTLEGROUND_EY) &&
            BGTacticArms::IsOn(bot->GetBattleground(), bot->GetBgTeamId(), BGTactic::FCChase);
 }
 

@@ -137,7 +137,6 @@ private:
     // SmoothMove: while moving along a direct route, send the next hop before the current one ends
     bool smoothContinue();
     void tripSample();
-    void buffSample();
     bool gyWaveHold();
     bool backOff();
     int moveGraphRoute(std::vector<BattleBotPath*> const& paths);

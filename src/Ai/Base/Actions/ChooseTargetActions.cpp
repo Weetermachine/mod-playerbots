@@ -34,6 +34,15 @@
 #include "Spell.h"
 #include "SpellInfo.h"
 
+// a game from the random queue records BATTLEGROUND_RB as the player's type: use the rolled map
+static BattlegroundTypeId RealBgType(Player* bot)
+{
+    BattlegroundTypeId bgType = bot->GetBattlegroundTypeId();
+    if (bgType == BATTLEGROUND_RB && bot->GetBattleground())
+        bgType = bot->GetBattleground()->GetBgTypeID(true);
+    return bgType;
+}
+
 bool AttackEnemyPlayerAction::isUseful()
 {
     if (PlayerHasFlag::IsCapturingFlag(bot))
@@ -56,7 +65,7 @@ bool AttackEnemyFlagCarrierAction::isUseful()
     // it. This runs above every heal and attack, and switching whenever the FC was near made melee
     // drop fights they were winning to run after a carrier they couldn't catch (v1 went 4-13).
     // Stock target selection already prefers the FC when a bot picks a new target.
-    if ((bot->GetBattlegroundTypeId() != BATTLEGROUND_WS && bot->GetBattlegroundTypeId() != BATTLEGROUND_EY) ||
+    if ((RealBgType(bot) != BATTLEGROUND_WS && RealBgType(bot) != BATTLEGROUND_EY) ||
         !BGTacticArms::IsOn(bot->GetBattleground(), bot->GetBgTeamId(), BGTactic::FCChase))
         return false;
 
@@ -268,7 +277,7 @@ Unit* AttackFCAttackerAction::FindAttacker()
 
 bool AttackFCAttackerAction::isUseful()
 {
-    return (bot->GetBattlegroundTypeId() == BATTLEGROUND_WS || bot->GetBattlegroundTypeId() == BATTLEGROUND_EY) &&
+    return (RealBgType(bot) == BATTLEGROUND_WS || RealBgType(bot) == BATTLEGROUND_EY) &&
            !PlayerbotAI::IsHeal(bot) &&
            BGTacticArms::IsOn(bot->GetBattleground(), bot->GetBgTeamId(), BGTactic::FCEscort2) && FindAttacker();
 }
@@ -436,9 +445,9 @@ static Unit* FindICSiegeTarget(PlayerbotAI* botAI)
             continue;
         switch (veh->GetEntry())
         {
-            case NPC_DEMOLISHER: case 35415:                           // Demolisher (1)
-            case NPC_SIEGE_ENGINE_A: case NPC_SIEGE_ENGINE_H: case 35431: case 35433:  // Siege Engine (1)
-            case NPC_GLAIVE_THROWER_A: case NPC_GLAIVE_THROWER_H: case 35419:  // Glaive Thrower (1)
+            case NPC_DEMOLISHER:
+            case NPC_SIEGE_ENGINE_A: case NPC_SIEGE_ENGINE_H:
+            case NPC_GLAIVE_THROWER_A: case NPC_GLAIVE_THROWER_H:
                 break;
             default:
                 continue;
@@ -718,7 +727,7 @@ bool AttackCarrierHealerAction::Execute(Event /*event*/)
 
 bool AttackBannerCapperAction::isUseful()
 {
-    return bot->GetBattlegroundTypeId() == BATTLEGROUND_AB &&
+    return RealBgType(bot) == BATTLEGROUND_AB &&
            BGTacticArms::IsOn(bot->GetBattleground(), bot->GetBgTeamId(), BGTactic::NodeGuard2) &&
            FindBannerCapper(botAI, 30.0f);
 }
