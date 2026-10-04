@@ -279,16 +279,21 @@ bool AoeTrigger::IsActive()
     // PvPAoE (battleground arm): "attackers" come from threat lists, which only NPCs keep, so enemy players never
     // counted and area spells never fired at player packs. With the arm, living enemy players within range of the
     // target (the target included) count too.
+    // PvPAoEFix: players already in "attackers" (PvPAttackers puts them there) were counted a second time
     if (attackers_count < amount)
         if (Battleground* bg = bot->GetBattleground())
             if (bg->GetStatus() == STATUS_IN_PROGRESS && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::PvPAoE))
+            {
+                bool const once = BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::PvPAoEFix);
                 for (auto const& ref : bg->GetBgMap()->GetPlayers())
                 {
                     Player* p = ref.GetSource();
                     if (p && p->IsInWorld() && p->IsAlive() && p->GetTeamId() != bot->GetTeamId() &&
-                        p->GetDistance(current_target->GetPosition()) <= range)
+                        p->GetDistance(current_target->GetPosition()) <= range &&
+                        !(once && std::find(attackers.begin(), attackers.end(), p->GetGUID()) != attackers.end()))
                         attackers_count++;
                 }
+            }
     bool const active = attackers_count >= amount;
     BGCastLog::AoeCheck(bot, amount, active);
     return active;
