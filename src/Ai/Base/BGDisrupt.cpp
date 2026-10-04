@@ -79,9 +79,19 @@ void Build(Battleground* bg, TeamId team, Site& s, uint32 now)
     ++statPlans;
     BattlegroundAV* av = static_cast<BattlegroundAV*>(bg);
     Creature* general = bg->GetBGCreature(team == TEAM_ALLIANCE ? AV_CPLACE_A_BOSS : AV_CPLACE_H_BOSS);
-    Creature* captain = av->IsCaptainAlive(team)
-                            ? bg->GetBGCreature(team == TEAM_ALLIANCE ? AV_CPLACE_TRIGGER16 : AV_CPLACE_TRIGGER18)
-                            : nullptr;
+    // the captain itself (the trigger at its spot never fights, so it had no victim to read)
+    Creature* captain = nullptr;
+    if (av->IsCaptainAlive(team))
+    {
+        uint32 const entry = BG_AV_CreatureInfo[team == TEAM_ALLIANCE ? AV_NPC_A_CAPTAIN : AV_NPC_H_CAPTAIN];
+        for (ObjectGuid const& guid : bg->BgCreatures)
+            if (guid.GetEntry() == entry)
+                if (Creature* c = bg->GetBgMap()->GetCreature(guid); c && c->IsAlive())
+                {
+                    captain = c;
+                    break;
+                }
+    }
     std::vector<Player*> enemies, ours;
     for (auto const& ref : bg->GetBgMap()->GetPlayers())
     {

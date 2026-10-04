@@ -242,9 +242,12 @@ Unit* BGBossRaid::Target(PlayerbotAI* botAI)
         // tank 2: the guard hitting someone else (or the nearest)
         Creature* best = nullptr;
         for (Creature* c : adds)
-            if (!best || (c->GetVictim() != bot && best->GetVictim() == bot) ||
-                bot->GetExactDist2d(c) < bot->GetExactDist2d(best))
+        {
+            bool const loose = c->GetVictim() != bot, bestLoose = best && best->GetVictim() != bot;
+            if (!best || (loose && !bestLoose) ||
+                (loose == bestLoose && bot->GetExactDist2d(c) < bot->GetExactDist2d(best)))
                 best = c;
+        }
         return best;
     }
     if (r->phase != ENGAGE)

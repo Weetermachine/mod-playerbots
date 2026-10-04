@@ -6,6 +6,8 @@
 
 #include "BGHealerGuard.h"
 
+#include <algorithm>
+
 #include <atomic>
 #include <map>
 #include <mutex>
@@ -73,12 +75,13 @@ void Build(Battleground* bg, TeamId team, Guards& g)
     }
     std::map<ObjectGuid, ObjectGuid> next;
     std::map<ObjectGuid, bool> guarded, taken;
-    // keep pairs whose members are both alive and within 60 yd
+    // keep pairs whose members are both still eligible this pass (alive, no flag, not in a vehicle) and within 60 yd
+    auto listed = [](std::vector<Player*> const& v, Player* p) { return std::find(v.begin(), v.end(), p) != v.end(); };
     for (auto const& [guard, healer] : g.healerOf)
     {
         Player* gp = ObjectAccessor::FindPlayer(guard);
         Player* hp = ObjectAccessor::FindPlayer(healer);
-        if (gp && hp && gp->IsAlive() && hp->IsAlive() && gp->GetTeamId() == team && gp->GetMap() == hp->GetMap() &&
+        if (gp && hp && listed(melee, gp) && listed(healers, hp) && gp->GetMap() == hp->GetMap() &&
             gp->GetExactDist2d(hp) < 60.0f && !guarded[healer])
         {
             next[guard] = healer;
