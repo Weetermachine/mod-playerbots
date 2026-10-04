@@ -28,7 +28,7 @@ namespace BGIsle
         bool leave = false;             // ICCannons: get out of this cannon (no siege near the keep, or not crew)
     };
 
-    // This bot's bomb or gunship errand; false: the stock objective.
+    // This bot's bomb or gunship errand, or boarding and leaving a keep cannon (ICCannons); false: the stock objective.
     bool Objective(Player* bot, Battleground* bg, Order& out);
     // ICGunship: a bot on its gunship jumps when it is over the enemy keep; true while it rides or falls.
     bool Drop(Player* bot, Battleground* bg);

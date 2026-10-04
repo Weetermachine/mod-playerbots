@@ -608,8 +608,6 @@ public:
     }
 };
 
-// Level changes, logouts and teleports off the BG map: catches bots being reset (e.g. by
-// mod-player-bot-reset), logged out, or teleported out (which removes them from the BG) mid-game.
 // SotA gate damage by source (Server.log, per 5 min): charge blasts, boulders, rams, other; the attacker's distance
 class PlayerbotsSAGateDamageScript : public AllGameObjectScript
 {
@@ -1013,6 +1011,8 @@ private:
     std::set<ObjectGuid::LowType> shooters;
 };
 
+// Level changes, logouts and teleports off the BG map: catches bots being reset (e.g. by
+// mod-player-bot-reset), logged out, or teleported out (which removes them from the BG) mid-game.
 class PlayerbotsBGEventLogPlayerScript : public PlayerScript
 {
 public:

@@ -107,7 +107,7 @@ enum class BGTactic : uint8
     SACharges = 84,      // SotA attackers: a third carry Seaforium charges from the piles and plant them at the gate
     SABombHunt = 85,     // SotA defenders: focus enemy players carrying a Seaforium charge near their gate
     SAPortals = 86,      // SotA defenders: take a Defender's Portal when it saves 40+ yd to their post
-    ICBombs = 87,        // IoC: a fifth of the attackers carry (Huge) Seaforium bombs to the weakest enemy gate
+    ICBombs = 87,        // IoC: a fifth of the attackers carry Seaforium bombs to the weakest enemy gate (Huge: ICHugeBombs)
     ICGunship = 88,      // IoC: once the Hangar is ours and an enemy gate is down, a fifth drop in from the gunship
     EYFlagHold = 89,     // EotS: the carrier holds the flag at our tower until we hold 3 towers or holding gets risky
     VehicleTargetFix = 90,  // BG bug fix: enemy vehicles skip the world-mob tap rule (bots dropped every siege vehicle they targeted)
@@ -173,9 +173,6 @@ namespace BGTacticArms
     // Drop a destroyed game's assignment.
     void Forget(Battleground* bg);
 
-    // Eye of the Storm arms (AiPlayerbot.BGTactics.EY.Arms) live here rather than in PlayerbotAIConfig;
-    // the experiment hot reload sets them.
-    void SetEYArms(std::string const& arms);
 
     // Arms of the BGs kept here (EY, AV, IC: AiPlayerbot.BGTactics.<EY|AV|IC>.Arms), set by the hot reload.
     void SetArms(BattlegroundTypeId type, std::string const& arms);

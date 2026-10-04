@@ -500,11 +500,6 @@ std::string BGTacticArms::ArmName(Battleground* bg)
     return Assign(bg)->name;
 }
 
-void BGTacticArms::SetEYArms(std::string const& arms)
-{
-    SetArms(BATTLEGROUND_EY, arms);
-}
-
 void BGTacticArms::SetArms(BattlegroundTypeId type, std::string const& arms)
 {
     std::lock_guard<std::mutex> guard(armsLock);

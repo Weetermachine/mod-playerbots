@@ -52,14 +52,13 @@ public:
         struct stat st;
         if (stat(path.c_str(), &st) != 0)
             return;
-        if (_mtime == 0)
-        {
-            _mtime = st.st_mtime;  // the startup load already has these values
+        // nanosecond mtime and size: a second write within the same second still counts; the first check applies the
+        // file, which catches edits made while the server was starting
+        if (st.st_mtim.tv_sec == _sec && st.st_mtim.tv_nsec == _nsec && st.st_size == _size)
             return;
-        }
-        if (st.st_mtime == _mtime)
-            return;
-        _mtime = st.st_mtime;
+        _sec = st.st_mtim.tv_sec;
+        _nsec = st.st_mtim.tv_nsec;
+        _size = st.st_size;
         Reload(path);
     }
 
@@ -73,7 +72,7 @@ private:
         std::map<std::string, std::function<void(std::string const&)>> const keys = {
             {"AiPlayerbot.BGTactics.WSG.Arms", text(c.wsgTacticArms)},
             {"AiPlayerbot.BGTactics.AB.Arms", text(c.abTacticArms)},
-            {"AiPlayerbot.BGTactics.EY.Arms", [](std::string const& s) { BGTacticArms::SetEYArms(s); }},
+            {"AiPlayerbot.BGTactics.EY.Arms", [](std::string const& s) { BGTacticArms::SetArms(BATTLEGROUND_EY, s); }},
             {"AiPlayerbot.BGTactics.WSG.Baseline", [](std::string const& s) { BGTacticArms::SetBaseline(BATTLEGROUND_WS, s); }},
             {"AiPlayerbot.BGTactics.AB.Baseline", [](std::string const& s) { BGTacticArms::SetBaseline(BATTLEGROUND_AB, s); }},
             {"AiPlayerbot.BGTactics.EY.Baseline", [](std::string const& s) { BGTacticArms::SetBaseline(BATTLEGROUND_EY, s); }},
@@ -127,7 +126,9 @@ private:
     }
 
     uint32 _timer = 0;
-    time_t _mtime = 0;
+    time_t _sec = 0;
+    long _nsec = 0;
+    off_t _size = 0;
 };
 }  // namespace
 
