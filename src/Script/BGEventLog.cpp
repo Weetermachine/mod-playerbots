@@ -46,7 +46,7 @@
 
 namespace
 {
-bool BGEventLogEnabled() { return sConfigMgr->GetOption<bool>("AiPlayerbot.BGEventLog", false); }
+bool BGEventLogEnabled() { return sConfigMgr->GetOption<bool>("AiPlayerbot.BGEventLog", false, false); }
 
 char const* StatusName(BattlegroundStatus status)
 {
@@ -88,7 +88,7 @@ void LogBG(char const* event, Battleground* bg)
 {
     std::string const arm = BGTacticArms::ArmName(bg);
     LOG_INFO("playerbots.bgevents", "event={} bg={} type={} name=\"{}\" levels={}-{} status={} bg_ms={} A={} H={}{}",
-             event, bg->GetInstanceID(), uint32(bg->GetBgTypeID()), bg->GetName(), uint32(bg->GetMinLevel()),
+             event, bg->GetInstanceID(), uint32(bg->GetBgTypeID(true)), bg->GetName(), uint32(bg->GetMinLevel()),
              uint32(bg->GetMaxLevel()), StatusName(bg->GetStatus()), bg->GetStartTime(),
              bg->GetPlayersCountByTeam(TEAM_ALLIANCE), bg->GetPlayersCountByTeam(TEAM_HORDE),
              arm.empty() ? "" : " arm=" + arm);
@@ -98,13 +98,12 @@ void LogPlayer(char const* event, Battleground* bg, Player* player, std::string 
 {
     LOG_INFO("playerbots.bgevents",
              "event={} bg={} type={} status={} bg_ms={} guid={} name={} kind={} team={} level={} alive={} A={} H={}{}",
-             event, bg->GetInstanceID(), uint32(bg->GetBgTypeID()), StatusName(bg->GetStatus()), bg->GetStartTime(),
+             event, bg->GetInstanceID(), uint32(bg->GetBgTypeID(true)), StatusName(bg->GetStatus()), bg->GetStartTime(),
              player->GetGUID().GetCounter(), player->GetName(), PlayerKind(player), TeamName(player->GetBgTeamId()),
              uint32(player->GetLevel()), player->IsAlive() ? 1 : 0, bg->GetPlayersCountByTeam(TEAM_ALLIANCE),
              bg->GetPlayersCountByTeam(TEAM_HORDE), extra);
 }
-// Last logged WSG objective state per BG instance. BG updates run on their map's thread, so
-// different instances can update concurrently; the lock only guards this small map.
+// Last logged WSG objective state per BG instance; the lock guards this small map.
 struct WSGState
 {
     // Indexed by the flag's owning team: flagState[TEAM_ALLIANCE] is the Alliance flag, and
@@ -154,10 +153,10 @@ public:
     void OnBattlegroundUpdate(Battleground* bg, uint32 /*diff*/) override
     {
         // SotA: its warmups (boats sailing) are logged too
-        bool const saWarmup = bg->GetBgTypeID() == BATTLEGROUND_SA && bg->GetStatus() == STATUS_WAIT_JOIN;
+        bool const saWarmup = bg->GetBgTypeID(true) == BATTLEGROUND_SA && bg->GetStatus() == STATUS_WAIT_JOIN;
         if ((bg->GetStatus() != STATUS_IN_PROGRESS && !saWarmup) || !BGEventLogEnabled())
             return;
-        if (bg->GetBgTypeID() != BATTLEGROUND_WS)
+        if (bg->GetBgTypeID(true) != BATTLEGROUND_WS)
         {
             LogObjectives(bg);
             LogPositions(bg);
@@ -186,7 +185,7 @@ public:
         LOG_INFO("playerbots.bgevents",
                  "event=wsg bg={} type={} bg_ms={} a_flag={} h_flag={} a_keeper={} h_keeper={} score_a={} score_h={} "
                  "A={} H={}",
-                 bg->GetInstanceID(), uint32(bg->GetBgTypeID()), bg->GetStartTime(), WSFlagStateName(now.flagState[0]),
+                 bg->GetInstanceID(), uint32(bg->GetBgTypeID(true)), bg->GetStartTime(), WSFlagStateName(now.flagState[0]),
                  WSFlagStateName(now.flagState[1]), now.keeper[0], now.keeper[1], now.score[0], now.score[1],
                  bg->GetPlayersCountByTeam(TEAM_ALLIANCE), bg->GetPlayersCountByTeam(TEAM_HORDE));
     }
@@ -224,7 +223,7 @@ private:
             LOG_INFO("playerbots.bgevents",
                      "event=wsg bg={} type={} bg_ms={} a_flag={} h_flag={} a_keeper={} h_keeper={} score_a={} "
                      "score_h={} A={} H={} final=1",
-                     bg->GetInstanceID(), uint32(bg->GetBgTypeID()), bg->GetStartTime(),
+                     bg->GetInstanceID(), uint32(bg->GetBgTypeID(true)), bg->GetStartTime(),
                      WSFlagStateName(ws->GetFlagState(TEAM_ALLIANCE)), WSFlagStateName(ws->GetFlagState(TEAM_HORDE)),
                      ws->GetFlagPickerGUID(TEAM_ALLIANCE).GetCounter(), ws->GetFlagPickerGUID(TEAM_HORDE).GetCounter(),
                      ws->GetTeamScore(TEAM_ALLIANCE), ws->GetTeamScore(TEAM_HORDE),
@@ -236,7 +235,7 @@ private:
         if (!DescribeObjectives(bg, objectives, score))
             return;
         LOG_INFO("playerbots.bgevents", "event=obj bg={} type={} bg_ms={} score_a={} score_h={}{} A={} H={} final=1",
-                 bg->GetInstanceID(), uint32(bg->GetBgTypeID()), bg->GetStartTime(), score[0], score[1], objectives,
+                 bg->GetInstanceID(), uint32(bg->GetBgTypeID(true)), bg->GetStartTime(), score[0], score[1], objectives,
                  bg->GetPlayersCountByTeam(TEAM_ALLIANCE), bg->GetPlayersCountByTeam(TEAM_HORDE));
     }
 
@@ -353,7 +352,7 @@ private:
         }
         std::string demo;
         for (uint32 i = BG_SA_DEMOLISHER_1; i <= BG_SA_DEMOLISHER_8; ++i)
-            if (Creature* d = bg->GetBGCreature(i); d && d->IsAlive() && d->IsVisible())
+            if (Creature* d = bg->GetBgMap()->GetCreature(bg->BgCreatures[i]); d && d->IsAlive() && d->IsVisible())
                 demo += (demo.empty() ? "" : ",") + std::to_string(uint32(d->GetHealthPct()));
         s << " demo=" << (demo.empty() ? "-" : demo);
         std::string drv;  // attacker-driven siege (workshop demolishers are not in the slots above)
@@ -387,7 +386,7 @@ private:
     static constexpr uint32 POS_MS = 30000;
     void LogPositions(Battleground* bg)
     {
-        BattlegroundTypeId const type = bg->GetBgTypeID();
+        BattlegroundTypeId const type = bg->GetBgTypeID(true);
         if (type != BATTLEGROUND_AV && type != BATTLEGROUND_IC && type != BATTLEGROUND_SA)
             return;
         uint32 const now = getMSTime();
@@ -418,7 +417,7 @@ private:
     void LogSamples(Battleground* bg, uint32 now)
     {
         char const* event = nullptr;
-        BattlegroundTypeId type = bg->GetBgTypeID();
+        BattlegroundTypeId type = bg->GetBgTypeID(true);
         if (type == BATTLEGROUND_AV)
             event = "avgen";
         else if (type == BATTLEGROUND_IC)
@@ -460,7 +459,7 @@ private:
     static bool DescribeObjectives(Battleground* bg, std::string& out, int32 score[2])
     {
         std::ostringstream s;
-        switch (bg->GetBgTypeID())
+        switch (bg->GetBgTypeID(true))
         {
             case BATTLEGROUND_AB:
             {
@@ -571,7 +570,7 @@ private:
         }
 
         LOG_INFO("playerbots.bgevents", "event=obj bg={} type={} bg_ms={} score_a={} score_h={}{} A={} H={}",
-                 bg->GetInstanceID(), uint32(bg->GetBgTypeID()), bg->GetStartTime(), score[0], score[1], objectives,
+                 bg->GetInstanceID(), uint32(bg->GetBgTypeID(true)), bg->GetStartTime(), score[0], score[1], objectives,
                  bg->GetPlayersCountByTeam(TEAM_ALLIANCE), bg->GetPlayersCountByTeam(TEAM_HORDE));
     }
 
@@ -604,7 +603,7 @@ public:
         // the final objective state here (final=1) before the end line.
         LogFinalState(bg);
         LOG_INFO("playerbots.bgevents", "event=end bg={} type={} bg_ms={} winner={} A={} H={}",
-                     bg->GetInstanceID(), uint32(bg->GetBgTypeID()), bg->GetStartTime(), TeamName(winnerTeam),
+                     bg->GetInstanceID(), uint32(bg->GetBgTypeID(true)), bg->GetStartTime(), TeamName(winnerTeam),
                      bg->GetPlayersCountByTeam(TEAM_ALLIANCE), bg->GetPlayersCountByTeam(TEAM_HORDE));
     }
 };

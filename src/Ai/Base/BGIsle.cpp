@@ -60,7 +60,7 @@ GameObject* NearestOwn(Player* bot, Battleground* bg, uint32 from, uint32 to, Te
     GameObject* best = nullptr;
     for (uint32 i = from; i <= to; ++i)
     {
-        GameObject* go = bg->GetBGObject(i);
+        GameObject* go = bg->GetBgMap()->GetGameObject(bg->BgObjects[i]);  // GetBGObject logs every empty slot
         if (!go || !go->isSpawned() || go->GetUInt32Value(GAMEOBJECT_FACTION) != BG_IC_Factions[team] ||
             go->HasFlag(GAMEOBJECT_FLAGS, GO_FLAG_NOT_SELECTABLE))
             continue;
@@ -86,9 +86,9 @@ bool SiegeVehicle(uint32 entry)
 {
     switch (entry)
     {
-        case NPC_DEMOLISHER: case 35415:
-        case NPC_SIEGE_ENGINE_A: case NPC_SIEGE_ENGINE_H: case 35431: case 35433:
-        case NPC_GLAIVE_THROWER_A: case NPC_GLAIVE_THROWER_H: case 35419:
+        case NPC_DEMOLISHER:
+        case NPC_SIEGE_ENGINE_A: case NPC_SIEGE_ENGINE_H:
+        case NPC_GLAIVE_THROWER_A: case NPC_GLAIVE_THROWER_H:
             return true;
         default:
             return false;
@@ -214,10 +214,10 @@ Unit* GunnerTarget(Player* bot, Battleground* bg)
             if (!p || !p->IsAlive() || p->GetBgTeamId() == bot->GetBgTeamId())
                 continue;
             Unit* t = siege ? p->GetVehicleBase() : (p->GetVehicle() ? nullptr : p);
-            if (!t || !t->IsAlive() || (siege && !SiegeVehicle(t->GetEntry())) || !gun->IsWithinLOSInMap(t) ||
-                !bot->CanSeeOrDetect(t))
+            if (!t || !t->IsAlive() || (siege && !SiegeVehicle(t->GetEntry())))
                 continue;
-            if (float const dist = gun->GetExactDist2d(t); dist < bestDist)
+            float const dist = gun->GetExactDist2d(t);
+            if (dist < bestDist && gun->IsWithinLOSInMap(t) && bot->CanSeeOrDetect(t))
             {
                 bestDist = dist;
                 best = t;

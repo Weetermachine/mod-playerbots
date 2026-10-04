@@ -324,8 +324,6 @@ bool Outside(Player* bot, GameObject* gate)
     return bot->GetExactDist2d(BEACH_X, BEACH_Y) + 4.0f < gate->GetExactDist2d(BEACH_X, BEACH_Y);
 }
 
-uint32 DefenderLane(Player* bot, Battleground* bg);
-
 // SASortie: 3+ attackers on foot within 40 yd outside the gate (charges take the gates, not siege).
 bool Massing(Battleground* bg, GameObject* gate)
 {
@@ -380,8 +378,6 @@ Creature* BusiestGun(Battleground* bg, bool follow)
             }
     return best;
 }
-
-bool SortieRole(Player* bot);
 
 // SACannons: a quarter of the non-healer defenders (not sortie bots) crew the cannons.
 bool GunCrew(Player* bot, Battleground* bg)
@@ -492,6 +488,8 @@ namespace BGStrand
 {
 TeamId Attackers(Battleground* bg)
 {
+    if (bg->GetMapId() != 607)  // BG_SA_TITAN_RELIC is a SotA slot: other maps' object vectors differ or are shorter
+        return TEAM_NEUTRAL;
     GameObject* relic = bg->GetBGObject(BG_SA_TITAN_RELIC);
     if (!relic)
         return TEAM_NEUTRAL;
@@ -608,8 +606,6 @@ Creature* IdleDemolisherNear(Player* bot, WorldObject const* post, float radius)
     return nearest;
 }
 
-void HoldAt(Player* bot, Battleground* bg, Position const& pos, Order& out);
-
 // SAWorkshopGuard / SAWorkshopKill: the workshop banner this defender holds: the first 4 non-healers (by guid), two
 // per workshop the attackers hold (its demolishers have spawned), for the rest of the round; nullptr otherwise
 GameObject* GuardedWorkshop(Player* bot, Battleground* bg)
@@ -668,6 +664,13 @@ std::unordered_map<ObjectGuid::LowType, uint64> ambushOver;
 std::unordered_map<uint64, uint32> ambushStart;
 
 uint64 AmbushRound(Battleground* bg) { return (uint64(bg->GetInstanceID()) << 2) | uint64(Attackers(bg)); }
+
+void ForgetAmbush(uint32 instanceId)
+{
+    std::lock_guard<std::mutex> guard(ambushLock);
+    for (uint64 team = 0; team < 3; ++team)
+        ambushStart.erase((uint64(instanceId) << 2) | team);
+}
 
 void AmbushDied(Player* victim)
 {
@@ -1107,8 +1110,6 @@ void KillStat(Player* victim)
 
 void SiegeKill(Unit* vehicle)
 {
-    if (vehicle->GetEntry() == NPC_ANTI_PERSONNAL_CANNON)
-        return;
     Map* map = vehicle->GetMap();
     Battleground* bg = map && map->IsBattleground() ? ((BattlegroundMap*)map)->GetBG() : nullptr;
     if (!bg || Attackers(bg) == TEAM_NEUTRAL)
@@ -1306,7 +1307,7 @@ std::unordered_map<ObjectGuid::LowType, std::pair<bool, bool>> supplyRoll;  // g
 
 bool SupplyClaims(Player* p)
 {
-    int32 const pct = sConfigMgr->GetOption<int32>("AiPlayerbot.BGTactics.SA.SupplyClaimPct", 100, false);
+    static int32 const pct = sConfigMgr->GetOption<int32>("AiPlayerbot.BGTactics.SA.SupplyClaimPct", 100, false);
     std::lock_guard<std::mutex> guard(supplyLock);
     auto& roll = supplyRoll[p->GetGUID().GetCounter()];
     if (!p->IsAlive() || p->GetVehicle())
@@ -1634,7 +1635,7 @@ Unit* HuntTarget(PlayerbotAI* botAI)
 {
     Player* bot = botAI->GetBot();
     Battleground* bg = bot->GetBattleground();
-    if (!bg || !bot->IsAlive() || bot->GetVehicle() || PlayerbotAI::IsHeal(bot))
+    if (!bg || bg->GetMapId() != 607 || !bot->IsAlive() || bot->GetVehicle() || PlayerbotAI::IsHeal(bot))
         return nullptr;
     // SAAttack: an enemy at one of our planted charges is disarming it
     if (bot->GetTeamId() == Attackers(bg))
@@ -2054,3 +2055,15 @@ bool Ride(Player* bot, Battleground* bg)
     return true;
 }
 }  // namespace BGStrand
+
+void BGStrand::Forget(Battleground* bg)
+{
+    uint32 const id = bg->GetInstanceID();
+    {
+        std::lock_guard<std::mutex> guard(laneLock);
+        lanes.erase(id);
+        focusLanes.erase(id);
+        defendLanes.erase(id);
+    }
+    ForgetAmbush(id);
+}

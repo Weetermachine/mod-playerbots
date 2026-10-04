@@ -7,7 +7,7 @@
 // Hot reload of the battleground experiment settings, for A/B testing without restarts.
 // With AiPlayerbot.ExperimentHotReload = 1, playerbots.conf is checked every few seconds and, when it
 // changed, these keys are re-read (nothing else):
-//   AiPlayerbot.BGTactics.<WSG|AB|EY>.Arms, the per-faction BGTactics switches, and
+//   AiPlayerbot.BGTactics.<WSG|AB|EY|AV|IC|SA>.Arms and .Baseline, the per-faction BGTactics switches, and
 //   AiPlayerbot.RandomBotAutoJoinBG<WS|AB|AV|EY|IC|SA>Count (0 drains a BG: running games finish, no new ones).
 // Running games keep their arm; new games use the new settings. The file is parsed here directly
 // instead of reloading ConfigMgr, so nothing else changes under running code.
@@ -45,7 +45,7 @@ public:
             return;
         _timer = 0;
 
-        if (!sConfigMgr->GetOption<bool>("AiPlayerbot.ExperimentHotReload", false))
+        if (!sConfigMgr->GetOption<bool>("AiPlayerbot.ExperimentHotReload", false, false))
             return;
 
         std::string const path = sConfigMgr->GetConfigPath() + "modules/playerbots.conf";

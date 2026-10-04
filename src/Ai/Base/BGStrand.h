@@ -99,6 +99,8 @@ namespace BGStrand
     Unit* SlowTarget(Player* bot, Battleground* bg);
     // SASortie diagnostics: a jump was made (the rest of the stages are counted in Objective).
     void SortieJumped(Player* bot);
+    // drops this game's per-game state (lanes, ambush rounds) when it is destroyed
+    void Forget(Battleground* bg);
 }
 
 #endif

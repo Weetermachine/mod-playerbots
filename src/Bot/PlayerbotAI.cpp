@@ -4178,7 +4178,8 @@ bool PlayerbotAI::CanCastVehicleSpell(uint32 spellId, Unit* target)
     }
     if (!target && YieldsToRam(bot, aiObjectContext, vehicleBase, spellId))
     {
-        BGStrand::RamCount("gate_shot_yields_to_ram");
+        if (bot->GetMapId() == 607)
+            BGStrand::RamCount("gate_shot_yields_to_ram");
         if (cannonDiag)
             BGIsle::CrewCount(ck + "exit_yields_to_ram");
         return false;

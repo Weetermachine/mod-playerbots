@@ -1317,8 +1317,11 @@ AiPlayerbot.BGTactics.AB.NodeGuard.Horde = 0
 # Default: "" (off)
 AiPlayerbot.BGTactics.WSG.Arms = ""
 AiPlayerbot.BGTactics.AB.Arms = ""
-# Eye of the Storm (arms only): NodeGuard = defenders hold an assigned tower, nearest threatened first.
+# Eye of the Storm: NodeGuard = defenders hold an assigned tower, nearest threatened first.
 AiPlayerbot.BGTactics.EY.Arms = ""
+AiPlayerbot.BGTactics.AV.Arms = ""
+AiPlayerbot.BGTactics.IC.Arms = ""
+AiPlayerbot.BGTactics.SA.Arms = ""
 
 # Baseline: accepted tactics, on for both teams in every game of the battleground (names without a faction,
 # separated by commas). Arms add their tactics on top, so a test measures a new tactic against the current best.
@@ -1328,6 +1331,9 @@ AiPlayerbot.BGTactics.EY.Arms = ""
 AiPlayerbot.BGTactics.WSG.Baseline = ""
 AiPlayerbot.BGTactics.AB.Baseline = ""
 AiPlayerbot.BGTactics.EY.Baseline = ""
+AiPlayerbot.BGTactics.AV.Baseline = ""
+AiPlayerbot.BGTactics.IC.Baseline = ""
+AiPlayerbot.BGTactics.SA.Baseline = ""
 
 # Re-read the experiment settings above and the RandomBotAutoJoinBG*Count values when this file changes
 # (checked every 5 s), without a restart. Running games keep their arm; a count of 0 drains that BG.

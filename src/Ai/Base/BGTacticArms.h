@@ -175,7 +175,7 @@ namespace BGTacticArms
     // Arms of the BGs kept here (EY, AV, IC: AiPlayerbot.BGTactics.<EY|AV|IC>.Arms), set by the hot reload.
     void SetArms(BattlegroundTypeId type, std::string const& arms);
 
-    // Baseline (AiPlayerbot.BGTactics.<WSG|AB|EY>.Baseline, e.g. "FCEscort, FCChase"): accepted tactics, on for
+    // Baseline (AiPlayerbot.BGTactics.<WSG|AB|EY|AV|IC|SA>.Baseline, e.g. "FCEscort, FCChase"): accepted tactics, on for
     // both teams in every game of that BG; arms add their tactics on top. A game keeps the baseline it started
     // with. The experiment hot reload sets it.
     void SetBaseline(BattlegroundTypeId type, std::string const& tactics);

@@ -25,6 +25,12 @@ constexpr uint32 ARTISAN_RIDING = 34091;
 std::once_flag loaded;
 std::unordered_map<uint32, uint32> trainerLevel;  // riding spell -> lowest trainer level
 
+uint32 Find(uint32 spell, uint32 fallback)
+{
+    auto it = trainerLevel.find(spell);
+    return it == trainerLevel.end() ? fallback : it->second;
+}
+
 void Load()
 {
     if (!sConfigMgr->GetOption<bool>("AiPlayerbot.MountLevelsFromTrainers", true))
@@ -40,15 +46,18 @@ void Load()
         Field* fields = result->Fetch();
         trainerLevel[fields[0].Get<uint32>()] = fields[1].Get<uint32>();
     } while (result->NextRow());
+    // read the table directly: the getters would call_once on the flag Load is running under (a deadlock)
     LOG_INFO("playerbots", "Bot riding levels from trainers: ground {}, fast ground {}, flying {}, fast flying {}",
-             MountLevels::Ground(), MountLevels::FastGround(), MountLevels::Fly(), MountLevels::FastFly());
+             Find(APPRENTICE_RIDING, sPlayerbotAIConfig.useGroundMountAtMinLevel),
+             Find(JOURNEYMAN_RIDING, sPlayerbotAIConfig.useFastGroundMountAtMinLevel),
+             Find(EXPERT_RIDING, sPlayerbotAIConfig.useFlyMountAtMinLevel),
+             Find(ARTISAN_RIDING, sPlayerbotAIConfig.useFastFlyMountAtMinLevel));
 }
 
 uint32 Level(uint32 spell, uint32 fallback)
 {
     std::call_once(loaded, Load);
-    auto it = trainerLevel.find(spell);
-    return it == trainerLevel.end() ? fallback : it->second;
+    return Find(spell, fallback);
 }
 }  // namespace
 

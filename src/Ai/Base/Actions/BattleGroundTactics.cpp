@@ -2116,7 +2116,7 @@ bool BGTactics::strandMove()
     if (order.hasSiege)
         BGStrand::DriveFire(bot, bg, order.siege);
 
-    // SACannons: in a cannon, shoot the nearest enemy player (the vehicle attacks fire at the current target)
+    // out of the vehicle: nobody in reach, a passenger getting out to plant, or the relic (clicked on foot)
     if (order.leave || (order.use && bot->GetVehicle()))
     {
         WorldPacket exit;
@@ -2181,14 +2181,6 @@ bool BGTactics::strandMove()
     {
         ChargeCount(1, !bot->HasItemCount(39213, 1));
         BGStrand::CarryPlanted(bot);
-        return true;
-    }
-
-    // the relic is clicked on foot: a demolisher driver gets out
-    if (order.use && bot->GetVehicle())
-    {
-        WorldPacket exit;
-        bot->GetSession()->HandleRequestVehicleExit(exit);
         return true;
     }
 
