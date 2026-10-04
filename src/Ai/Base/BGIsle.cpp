@@ -55,13 +55,13 @@ bool EnemyGateDown(Battleground* bg, TeamId team)
 }
 
 // The nearest spawned object among BG object slots [from, to] with this team's faction (bomb piles, gunship portals).
-GameObject* NearestOwn(Player* bot, Battleground* bg, uint32 from, uint32 to, TeamId team, float maxDist)
+GameObject* NearestOwn(Player* bot, Battleground* bg, uint32 from, uint32 to, uint32 faction, float maxDist)
 {
     GameObject* best = nullptr;
     for (uint32 i = from; i <= to; ++i)
     {
         GameObject* go = bg->GetBgMap()->GetGameObject(bg->BgObjects[i]);  // GetBGObject logs every empty slot
-        if (!go || !go->isSpawned() || go->GetUInt32Value(GAMEOBJECT_FACTION) != BG_IC_Factions[team] ||
+        if (!go || !go->isSpawned() || go->GetUInt32Value(GAMEOBJECT_FACTION) != faction ||
             go->HasFlag(GAMEOBJECT_FLAGS, GO_FLAG_NOT_SELECTABLE))
             continue;
         if (float const d = bot->GetExactDist2d(go); d < maxDist)
@@ -175,9 +175,17 @@ bool Objective(Player* bot, Battleground* bg, Order& out)
         }
         if (WeakestEnemyGate(bg, team))
         {
-            uint32 const hugeFirst = team == TEAM_ALLIANCE ? BG_IC_GO_HUGE_SEAFORIUM_BOMBS_A_1 : BG_IC_GO_HUGE_SEAFORIUM_BOMBS_H_1;
-            GameObject* pile = NearestOwn(bot, bg, BG_IC_GO_SEAFORIUM_BOMBS_1, BG_IC_GO_SEAFORIUM_BOMBS_2, team, 400.0f);
-            GameObject* huge = NearestOwn(bot, bg, hugeFirst, hugeFirst + 3, team, 400.0f);
+            GameObject* pile =
+                NearestOwn(bot, bg, BG_IC_GO_SEAFORIUM_BOMBS_1, BG_IC_GO_SEAFORIUM_BOMBS_2, BG_IC_Factions[team], 400.0f);
+            // ICHugeBombs: our usable huge piles are in the enemy keep (faction 1997 for us as Alliance, 1995 as Horde),
+            // reachable once one of its gates is down (without it the old lookup never matched: wrong keep and faction)
+            GameObject* huge = nullptr;
+            if (BGTacticArms::IsOn(bg, team, BGTactic::ICHugeBombs) && EnemyGateDown(bg, team))
+            {
+                uint32 const hugeFirst =
+                    team == TEAM_ALLIANCE ? BG_IC_GO_HUGE_SEAFORIUM_BOMBS_H_1 : BG_IC_GO_HUGE_SEAFORIUM_BOMBS_A_1;
+                huge = NearestOwn(bot, bg, hugeFirst, hugeFirst + 3, team == TEAM_ALLIANCE ? 1997 : 1995, 400.0f);
+            }
             if (huge && (!pile || bot->GetExactDist2d(huge) < bot->GetExactDist2d(pile) + 100.0f))
                 pile = huge;  // the huge bombs do far more damage: worth a detour
             if (pile)
@@ -190,7 +198,8 @@ bool Objective(Player* bot, Battleground* bg, Order& out)
     }
 
     if (n % 5 == 1 && BGTacticArms::IsOn(bg, team, BGTactic::ICGunship) && EnemyGateDown(bg, team))
-        if (GameObject* portal = NearestOwn(bot, bg, BG_IC_GO_HANGAR_TELEPORTER_1, BG_IC_GO_HANGAR_TELEPORTER_3, team, 500.0f))
+        if (GameObject* portal =
+                NearestOwn(bot, bg, BG_IC_GO_HANGAR_TELEPORTER_1, BG_IC_GO_HANGAR_TELEPORTER_3, BG_IC_Factions[team], 500.0f))
         {
             out.move = portal->GetPosition();
             out.use = portal;

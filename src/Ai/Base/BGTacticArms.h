@@ -148,9 +148,14 @@ enum class BGTactic : uint8
     ICCannonCrew = 125,      // IoC: a Siege Engine gets its driver first, then one gunner for the main turret only
     ICTurretAim = 126,       // IoC: turret gunners pick enemy players at weapon range (a turret seat counted as driving: 5 yd)
     ICDriverFirst = 127,     // IoC: a Siege Engine with a manned turret still gets a driver; turrets only on a driven engine
-    TacticCount          // one past the last value; must stay at or below the mask width (128)
+    SAFocusFix = 128,        // SotA: SAGateFocus rolls its lane when the Alliance attacks first too (it always took lane 0)
+    SAUrgentMove = 129,      // SotA: urgent moves (charges, relic run, escort, supply) go on in combat on foot
+    SARelicCrew = 130,       // SotA: cannon crews leave their guns for the relic once its door falls
+    SABombHuntGate = 131,    // SotA: bomb hunters watch the nearest standing gate, not the one their guid picks
+    ICHugeBombs = 132,       // IoC: ICBombs uses the Huge Seaforium piles it can use (in the enemy keep, once a gate is down)
+    TacticCount          // one past the last value; must stay at or below the mask width (256)
 };
-static_assert(uint32(BGTactic::TacticCount) <= 128, "BGTactic values must fit the 128-bit masks in BGTacticArms.cpp");
+static_assert(uint32(BGTactic::TacticCount) <= 256, "BGTactic values must fit the 256-bit masks in BGTacticArms.cpp");
 
 // Per-game A/B arms. With AiPlayerbot.BGTactics.<BG>.Arms set (e.g.
 // "FCEscort.Alliance, FCEscort.Horde, FCChase.Alliance+FCChase.Horde, stock"), each game of that BG

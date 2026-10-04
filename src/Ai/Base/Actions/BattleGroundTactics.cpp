@@ -2054,6 +2054,11 @@ bool BGTactics::isleMove()
     }
     if (order.board && bot->IsWithinDistInMap(order.board, INTERACTION_DISTANCE))
     {
+        // a siege position left from an earlier vehicle would make the cannon fire at a far gate
+        PositionMap& siegeMap = context->GetValue<PositionMap&>("position")->Get();
+        PositionInfo siege = siegeMap["bg siege"];
+        siege.Reset();
+        siegeMap["bg siege"] = siege;
         order.board->HandleSpellClick(bot);
         return true;
     }
@@ -2212,8 +2217,11 @@ bool BGTactics::strandMove()
         exit(mover->isMoving() ? 3 : 4);
         return false;
     }
-    // drivers keep driving with enemies around (their weapons fire on the way), the others fight
-    if (!bot->GetVehicle() && bot->IsInCombat())
+    // drivers keep driving with enemies around (their weapons fire on the way), the others fight; SAUrgentMove: unless the
+    // move is urgent or the bot carries a charge
+    bool const urgentMove = BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SAUrgentMove) &&
+                            (order.urgent || PlayerHasFlag::IsCapturingFlag(bot));
+    if (!bot->GetVehicle() && bot->IsInCombat() && !urgentMove)
     {
         exit(5);
         return false;

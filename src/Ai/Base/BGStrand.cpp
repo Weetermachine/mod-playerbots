@@ -147,7 +147,13 @@ uint32 FocusLane(Battleground* bg, TeamId attackers)
     if (green != blue)
         return green ? 0 : 1;  // one outer gate open: its lane (the gate behind it is the only one reachable)
     std::lock_guard<std::mutex> guard(laneLock);
-    auto& f = focusLanes[bg->GetInstanceID()];
+    auto it = focusLanes.find(bg->GetInstanceID());
+    if (it == focusLanes.end())
+        it = focusLanes
+                 .emplace(bg->GetInstanceID(),
+                          std::make_pair(BGTacticArms::IsOn(bg, attackers, BGTactic::SAFocusFix) ? TEAM_NEUTRAL : TEAM_ALLIANCE, 0u))
+                 .first;
+    auto& f = it->second;
     if (f.first != attackers)
         f = {attackers, urand(0, 1)};
     return f.second;
@@ -753,7 +759,8 @@ bool DefenseObjective(Player* bot, Battleground* bg, Order& out)
 
     // SACannons: the cannon crew boards the busiest free cannon before anything else
     bool const extraCrew = !GunCrew(bot, bg) && ExtraCrew(bot, bg);
-    if (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SACannons) && (GunCrew(bot, bg) || extraCrew))
+    bool const relicPhase = Destroyed(bg, BG_SA_ANCIENT_GATE) && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SARelicCrew);
+    if (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SACannons) && (GunCrew(bot, bg) || extraCrew) && !relicPhase)
         if (Creature* gun = BusiestGun(bg, BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SACannonsFollow)))
         {
             out.move = gun->GetPosition();
@@ -1455,6 +1462,9 @@ bool Objective(Player* bot, Battleground* bg, Order& out)
         if (target == BG_SA_TITAN_RELIC)
         {
             out.move = Floor(go);
+            if (Unit* in = bot->GetVehicleBase(); in && in->GetEntry() == NPC_ANTI_PERSONNAL_CANNON &&
+                                                   BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SARelicCrew))
+                out.leave = true;
             return true;
         }
         if (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SACannons))
@@ -1812,6 +1822,10 @@ Unit* HuntTarget(PlayerbotAI* botAI)
     if (attackers == TEAM_NEUTRAL || bot->GetTeamId() == attackers)
         return nullptr;
     GameObject* gate = bg->GetBGObject(NextGate(bg, DefenderLane(bot, bg)));
+    if (bombs && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SABombHuntGate))
+        for (uint32 lane : {0u, 1u})
+            if (GameObject* g = bg->GetBGObject(NextGate(bg, lane)); g && (!gate || bot->GetExactDist2d(g) < bot->GetExactDist2d(gate)))
+                gate = g;
     if (!gate)
         return nullptr;
     // SABombHunt: an enemy carrying a charge near our gate is about to plant it

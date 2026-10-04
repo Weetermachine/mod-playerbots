@@ -19,7 +19,7 @@
 
 namespace
 {
-constexpr size_t TACTIC_BITS = 128;  // BGTactic values must stay below this (static_assert in the header)
+constexpr size_t TACTIC_BITS = 256;  // BGTactic values must stay below this (static_assert in the header)
 
 struct Assignment
 {
@@ -221,7 +221,12 @@ int TacticBit(std::string const& tactic)
          : tactic == "SACannonKill" ? int(BGTactic::SACannonKill)
          : tactic == "ICCannonCrew" ? int(BGTactic::ICCannonCrew)
          : tactic == "ICTurretAim" ? int(BGTactic::ICTurretAim)
-         : tactic == "ICDriverFirst" ? int(BGTactic::ICDriverFirst) : -1;
+         : tactic == "ICDriverFirst" ? int(BGTactic::ICDriverFirst)
+         : tactic == "SAFocusFix" ? int(BGTactic::SAFocusFix)
+         : tactic == "SAUrgentMove" ? int(BGTactic::SAUrgentMove)
+         : tactic == "SARelicCrew" ? int(BGTactic::SARelicCrew)
+         : tactic == "SABombHuntGate" ? int(BGTactic::SABombHuntGate)
+         : tactic == "ICHugeBombs" ? int(BGTactic::ICHugeBombs) : -1;
 }
 
 char const* BGName(BattlegroundTypeId type)
@@ -457,6 +462,11 @@ bool GlobalSwitch(BGTactic tactic, TeamId team, BattlegroundTypeId type)
         case BGTactic::ICCannonCrew:
         case BGTactic::ICTurretAim:
         case BGTactic::ICDriverFirst:
+        case BGTactic::SAFocusFix:
+        case BGTactic::SAUrgentMove:
+        case BGTactic::SARelicCrew:
+        case BGTactic::SABombHuntGate:
+        case BGTactic::ICHugeBombs:
         case BGTactic::TacticCount:
             return false;  // arms only
     }
