@@ -2081,3 +2081,11 @@ void BGStrand::Forget(Battleground* bg)
     }
     ForgetAmbush(id);
 }
+
+void BGStrand::RelicCannon(Player* bot, Battleground* bg, bool target, bool shot)
+{
+    if (!Destroyed(bg, BG_SA_ANCIENT_GATE))
+        return;
+    Stat("relic_gunner", bot);  // distinct gunners, at most once per 10 s each
+    StatAdd(shot ? "relic_shot" : target ? "relic_not_cast" : "relic_no_target", "");
+}

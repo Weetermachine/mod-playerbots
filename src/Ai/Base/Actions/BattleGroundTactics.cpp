@@ -2143,6 +2143,7 @@ bool BGTactics::strandMove()
             shot = botAI->CanCastVehicleSpell(49872, t) && botAI->CastVehicleSpell(49872, t);  // Rocket Blast
         }
         GunCount(bot, "SA", t, shot);
+        BGStrand::RelicCannon(bot, bg, t != nullptr, shot);
         return true;
     }
     if (order.board && bot->IsWithinDistInMap(order.board, INTERACTION_DISTANCE))
