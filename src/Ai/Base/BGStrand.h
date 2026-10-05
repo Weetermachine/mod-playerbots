@@ -101,7 +101,8 @@ namespace BGStrand
     void SortieJumped(Player* bot);
     // drops this game's per-game state (lanes, ambush rounds) when it is destroyed
     void Forget(Battleground* bg);
-    // relic phase diagnostics: a bot in a cannon after the relic door fell, per tick: shot, no target, or not cast
+    // relic phase and courtyard diagnostics: a bot in a cannon after the relic door / the Yellow gate fell, per tick: shot,
+    // no target, or not cast
     void RelicCannon(Player* bot, Battleground* bg, bool target, bool shot);
 }
 

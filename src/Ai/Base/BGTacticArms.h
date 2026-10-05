@@ -154,6 +154,8 @@ enum class BGTactic : uint8
     SABombHuntGate = 131,    // SotA: bomb hunters watch the nearest standing gate, not the one their guid picks
     ICHugeBombs = 132,       // IoC: ICBombs uses the Huge Seaforium piles it can use (in the enemy keep, once a gate is down)
     PvPAoEFix = 133,         // BG: PvPAoE stops counting enemy players already in "attackers" (with PvPAttackers: twice)
+    SARelicCrewYellow = 134,  // SotA: cannon crews leave their guns for the relic door once the Yellow gate falls
+    SARelicCrewHalf = 135,    // SotA: cannon crews leave their guns once the relic door is at half health
     TacticCount          // one past the last value; must stay at or below the mask width (256)
 };
 static_assert(uint32(BGTactic::TacticCount) <= 256, "BGTactic values must fit the 256-bit masks in BGTacticArms.cpp");

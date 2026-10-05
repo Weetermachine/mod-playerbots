@@ -43,6 +43,23 @@ bool Destroyed(Battleground* bg, uint32 gate)
     return go && go->GetDestructibleState() == GO_DESTRUCTIBLE_DESTROYED;
 }
 
+// Cannon crews leave their guns to join the defense: the relic door is down (SARelicCrew), the Yellow gate is down
+// (SARelicCrewYellow), or the relic door is at half health (SARelicCrewHalf).
+bool CrewToRelic(Player* bot, Battleground* bg)
+{
+    TeamId const team = bot->GetTeamId();
+    if (BGTacticArms::IsOn(bg, team, BGTactic::SARelicCrew) && Destroyed(bg, BG_SA_ANCIENT_GATE))
+        return true;
+    if (BGTacticArms::IsOn(bg, team, BGTactic::SARelicCrewYellow) && Destroyed(bg, BG_SA_YELLOW_GATE))
+        return true;
+    if (BGTacticArms::IsOn(bg, team, BGTactic::SARelicCrewHalf))
+        if (GameObject* door = bg->GetBGObject(BG_SA_ANCIENT_GATE); door && door->GetGOInfo() &&
+            (door->GetDestructibleState() == GO_DESTRUCTIBLE_DESTROYED ||
+             door->GetGOValue()->Building.Health * 2 <= door->GetGOValue()->Building.MaxHealth))
+            return true;
+    return false;
+}
+
 // The gate the attackers of this lane work on next (lane 0: Green/Purple, 1: Blue/Red), or the relic.
 uint32 NextGate(Battleground* bg, uint32 lane)
 {
@@ -759,8 +776,8 @@ bool DefenseObjective(Player* bot, Battleground* bg, Order& out)
 
     // SACannons: the cannon crew boards the busiest free cannon before anything else
     bool const extraCrew = !GunCrew(bot, bg) && ExtraCrew(bot, bg);
-    bool const relicPhase = Destroyed(bg, BG_SA_ANCIENT_GATE) && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SARelicCrew);
-    if (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SACannons) && (GunCrew(bot, bg) || extraCrew) && !relicPhase)
+    if (BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SACannons) && (GunCrew(bot, bg) || extraCrew) &&
+        !CrewToRelic(bot, bg))
         if (Creature* gun = BusiestGun(bg, BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SACannonsFollow)))
         {
             out.move = gun->GetPosition();
@@ -1462,8 +1479,7 @@ bool Objective(Player* bot, Battleground* bg, Order& out)
         if (target == BG_SA_TITAN_RELIC)
         {
             out.move = Floor(go);
-            if (Unit* in = bot->GetVehicleBase(); in && in->GetEntry() == NPC_ANTI_PERSONNAL_CANNON &&
-                                                   BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SARelicCrew))
+            if (Unit* in = bot->GetVehicleBase(); in && in->GetEntry() == NPC_ANTI_PERSONNAL_CANNON && CrewToRelic(bot, bg))
                 out.leave = true;
             return true;
         }
@@ -1472,8 +1488,9 @@ bool Objective(Player* bot, Battleground* bg, Order& out)
             Unit* in = bot->GetVehicleBase();
             if (in && in->GetEntry() == NPC_ANTI_PERSONNAL_CANNON)
             {
-                // nobody in its range: free the crew for another gun
-                out.leave = GunDraw(bg, in, BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SACannonsFollow)) == 0;
+                // nobody in its range: free the crew for another gun; or the crew goes to the relic early
+                out.leave = GunDraw(bg, in, BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::SACannonsFollow)) == 0 ||
+                            CrewToRelic(bot, bg);
                 out.move = in->GetPosition();
                 return true;
             }
@@ -2084,8 +2101,9 @@ void BGStrand::Forget(Battleground* bg)
 
 void BGStrand::RelicCannon(Player* bot, Battleground* bg, bool target, bool shot)
 {
-    if (!Destroyed(bg, BG_SA_ANCIENT_GATE))
+    std::string const phase = Destroyed(bg, BG_SA_ANCIENT_GATE) ? "relic_" : Destroyed(bg, BG_SA_YELLOW_GATE) ? "court_" : "";
+    if (phase.empty())
         return;
-    Stat("relic_gunner", bot);  // distinct gunners, at most once per 10 s each
-    StatAdd(shot ? "relic_shot" : target ? "relic_not_cast" : "relic_no_target", "");
+    Stat(phase == "relic_" ? "relic_gunner" : "court_gunner", bot);  // distinct gunners, at most once per 10 s each
+    StatAdd(phase + (shot ? "shot" : target ? "not_cast" : "no_target"), "");
 }
