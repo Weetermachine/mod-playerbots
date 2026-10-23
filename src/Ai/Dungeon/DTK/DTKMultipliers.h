@@ -12,19 +12,19 @@
 class NovosMultiplier : public Multiplier
 {
     public:
-        NovosMultiplier(PlayerbotAI* ai) : Multiplier(ai, "novos the summoner") {}
+        NovosMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "novos the summoner") {}
 
     public:
-        virtual float GetValue(Action* action);
+        float GetValue(Action* action) override;
 };
 
 class TharonjaMultiplier : public Multiplier
 {
     public:
-        TharonjaMultiplier(PlayerbotAI* ai) : Multiplier(ai, "the prophet tharon'ja") {}
+        TharonjaMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "the prophet tharon'ja") {}
 
     public:
-        virtual float GetValue(Action* action);
+        float GetValue(Action* action) override;
 };
 
 #endif

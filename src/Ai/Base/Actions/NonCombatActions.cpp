@@ -5,7 +5,6 @@
  */
 
 #include "NonCombatActions.h"
-
 #include "Event.h"
 #include "Playerbots.h"
 
@@ -47,11 +46,11 @@ bool DrinkAction::Execute(Event event)
         if (bot->isMoving())
         {
             bot->StopMoving();
-            // botAI->SetNextCheckDelay(sPlayerbotAIConfig->globalCoolDown);
+            // botAI->SetNextCheckDelay(sPlayerbotAIConfig->GlobalCoolDown);
             // return false;
         }
         bot->SetStandState(UNIT_STAND_STATE_SIT);
-        botAI->InterruptSpell();
+        bot->CastStop();
 
         // float hp = bot->GetHealthPercent();
         float mp = bot->GetPowerPct(POWER_MANA);
@@ -59,11 +58,11 @@ bool DrinkAction::Execute(Event event)
         float delay;
 
         if (!bot->InBattleground())
-            delay = 18000.0f * (100 - p) / 100.0f;
+            delay = 18.0f * IN_MILLISECONDS * (100 - p) / 100.0f;
         else
-            delay = 12000.0f * (100 - p) / 100.0f;
+            delay = 12.0f * IN_MILLISECONDS * (100 - p) / 100.0f;
 
-        botAI->SetNextCheckDelay(delay);
+        SetDuration((uint32)delay);
 
         bot->AddAura(25990, bot);
         return true;
@@ -76,7 +75,7 @@ bool DrinkAction::Execute(Event event)
 bool DrinkAction::isUseful()
 {
     return UseItemAction::isUseful() && AI_VALUE2(bool, "has mana", "self target") &&
-           AI_VALUE2(uint8, "mana", "self target") < 100;
+           AI_VALUE2(uint8, "mana", "self target") < 85;
 }
 
 bool DrinkAction::isPossible()
@@ -106,12 +105,12 @@ bool EatAction::Execute(Event event)
         if (bot->isMoving())
         {
             bot->StopMoving();
-            // botAI->SetNextCheckDelay(sPlayerbotAIConfig.globalCoolDown);
+            // botAI->SetNextCheckDelay(sPlayerbotAIConfig.GlobalCoolDown);
             // return false;
         }
 
         bot->SetStandState(UNIT_STAND_STATE_SIT);
-        botAI->InterruptSpell();
+        bot->CastStop();
 
         float hp = bot->GetHealthPct();
         // float mp = bot->HasMana() ? bot->GetPowerPercent() : 0.f;
@@ -119,11 +118,11 @@ bool EatAction::Execute(Event event)
         float delay;
 
         if (!bot->InBattleground())
-            delay = 18000.0f * (100 - p) / 100.0f;
+            delay = 18.0f * IN_MILLISECONDS * (100 - p) / 100.0f;
         else
-            delay = 12000.0f * (100 - p) / 100.0f;
+            delay = 12.0f * IN_MILLISECONDS * (100 - p) / 100.0f;
 
-        botAI->SetNextCheckDelay(delay);
+        SetDuration((uint32)delay);
 
         bot->AddAura(25990, bot);
         return true;
@@ -132,7 +131,11 @@ bool EatAction::Execute(Event event)
     return UseItemAction::Execute(event);
 }
 
-bool EatAction::isUseful() { return UseItemAction::isUseful() && AI_VALUE2(uint8, "health", "self target") < 100; }
+bool EatAction::isUseful()
+{
+    return UseItemAction::isUseful() &&
+           AI_VALUE2(uint8, "health", "self target") < sPlayerbotAIConfig.LowHealth;
+}
 
 bool EatAction::isPossible()
 {

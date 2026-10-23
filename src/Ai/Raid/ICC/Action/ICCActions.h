@@ -7,27 +7,26 @@
 #ifndef PLAYERBOTS_ICCACTIONS_H
 #define PLAYERBOTS_ICCACTIONS_H
 
-#include <set>
-
 #include "Action.h"
-#include "MovementActions.h"
-#include "PlayerbotAI.h"
-#include "Playerbots.h"
 #include "AttackAction.h"
-#include "LastMovementValue.h"
-#include "ObjectGuid.h"
-#include "PlayerbotAIConfig.h"
-#include "ICCStrategy.h"
-#include "ScriptedCreature.h"
-#include "SharedDefines.h"
-#include "Trigger.h"
 #include "CellImpl.h"
 #include "GridNotifiers.h"
 #include "GridNotifiersImpl.h"
-#include "Vehicle.h"
-#include "ICCTriggers.h"
 #include "ICCScripts.h"
 #include "ICCShared.h"
+#include "ICCStrategy.h"
+#include "ICCTriggers.h"
+#include "LastMovementValue.h"
+#include "MovementActions.h"
+#include "ObjectGuid.h"
+#include "PlayerbotAI.h"
+#include "PlayerbotAIConfig.h"
+#include "Playerbots.h"
+#include "ScriptedCreature.h"
+#include "SharedDefines.h"
+#include "Trigger.h"
+#include "Vehicle.h"
+#include <set>
 
 inline const Position ICC_LM_TANK_POSITION = Position(-391.0f, 2259.0f, 42.0f);
 inline const Position ICC_LM_BONE_STORM_AT_POSITION = Position(-390.02332f, 2179.3481f, 41.96729f);
@@ -345,7 +344,7 @@ public:
         bool hasLowestGuid = false;
     };
     SporeInfo FindSporedPlayers();
-    Position DetermineTargetPosition(bool hasSpore, const SporeInfo& sporeInfo, const Position& spreadRangedPos);
+    Position DetermineTargetPosition(bool hasSpore, SporeInfo const& sporeInfo, Position const& spreadRangedPos);
     bool CheckMainTankSpore();
     bool GooNear(Position const& pos);
 };
@@ -553,7 +552,7 @@ public:
 
     bool HandleTankPosition(Unit* boss, Aura* frenzyAura, Aura* shadowAura);
     bool HandleShadowsMovement();
-    Position AdjustControlPoint(const Position& wall, const Position& center, float factor);
+    Position AdjustControlPoint(Position const& wall, Position const& center, float factor);
     Position CalculateBezierPoint(float t, const Position path[4]);
     bool HandleGroupPosition(Unit* boss, Aura* frenzyAura, Aura* shadowAura);
 
@@ -578,8 +577,8 @@ public:
         : MovementAction(botAI, "icc bql pact of darkfallen") {}
     bool Execute(Event event) override;
 
-    bool CalculateCenterPosition(Position& targetPos, const std::vector<Player*>& playersWithAura);
-    bool MoveToTargetPosition(const Position& targetPos, int auraCount);
+    bool CalculateCenterPosition(Position& targetPos, std::vector<Player*> const& playersWithAura);
+    bool MoveToTargetPosition(Position const& targetPos, int auraCount);
 };
 
 class IccBqlVampiricBiteAction : public AttackAction
@@ -674,7 +673,7 @@ public:
 
     bool HandleTankPositioning(Unit* boss);
     bool HandleNonTankPositioning();
-    bool MoveIncrementallyToPosition(const Position& targetPos, float maxStep);
+    bool MoveIncrementallyToPosition(Position const& targetPos, float maxStep);
 };
 
 class IccSindragosaFrostBeaconAction : public MovementAction
@@ -685,11 +684,11 @@ public:
     bool Execute(Event event) override;
 
     bool HandleSupportActions();
-    bool HandleBeaconedPlayer(const Unit* boss);
-    bool HandleNonBeaconedPlayer(const Unit* boss);
-    bool MoveToPositionIfNeeded(const Position& position, float tolerance);
-    bool MoveToPosition(const Position& position);
-    bool IsBossFlying(const Unit* boss);
+    bool HandleBeaconedPlayer(Unit const* boss);
+    bool HandleNonBeaconedPlayer(Unit const* boss);
+    bool MoveToPositionIfNeeded(Position const& position, float tolerance);
+    bool MoveToPosition(Position const& position);
+    bool IsBossFlying(Unit const* boss);
     bool TryDropTombFlares(Unit const* boss);
 
     private:

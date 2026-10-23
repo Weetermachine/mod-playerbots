@@ -5,16 +5,14 @@
  */
 
 #include "ICCShared.h"
-
-#include <algorithm>
-#include <map>
-
 #include "ICCActions.h"
 #include "ICCScripts.h"
 #include "ICCTriggers.h"
 #include "Playerbots.h"
 #include "ThreatManager.h"
 #include "Timer.h"
+#include <algorithm>
+#include <map>
 
 namespace
 {
@@ -151,7 +149,7 @@ void IccEnsureIconOn(Player* bot, PlayerbotAI* botAI, int8 icon, Unit* target)
         group->SetTargetIcon(icon, bot->GetGUID(), target->GetGUID());
 }
 
-void IccApplyHeroicBuffToMember(PlayerbotAI* botAI, Player* member, bool applyPainSupp, bool applyNoThreat)
+void IccApplyHeroicBuffToMember(Player* member, bool applyPainSupp, bool applyNoThreat)
 {
     uint32 const now = getMSTime();
     uint32& last = IcecrownHelpers::IccState(member->GetInstanceId()).lastBuffMs[member->GetGUID()];
@@ -168,7 +166,7 @@ void IccApplyHeroicBuffToMember(PlayerbotAI* botAI, Player* member, bool applyPa
     if (applyPainSupp && !member->HasAura(SPELL_PAIN_SUPPRESION))
         member->AddAura(SPELL_PAIN_SUPPRESION, member);
 
-    if (applyNoThreat && !botAI->IsTank(member) && !member->HasAura(SPELL_NO_THREAT))
+    if (applyNoThreat && !PlayerbotAI::IsTank(member) && !member->HasAura(SPELL_NO_THREAT))
         member->AddAura(SPELL_NO_THREAT, member);
 }
 
@@ -239,7 +237,7 @@ bool IccAnyBloodPrincePresent(PlayerbotAI* botAI)
            AI_VALUE2(Unit*, "find target", "prince keleseth");
 }
 
-std::optional<bool> IccValithriaShouldHealRaid(Player* bot, PlayerbotAI* botAI)
+std::optional<bool> IccValithriaShouldHealRaid(Player* bot)
 {
     Group* group = bot->GetGroup();
     if (!group)
@@ -252,10 +250,10 @@ std::optional<bool> IccValithriaShouldHealRaid(Player* bot, PlayerbotAI* botAI)
     for (GroupReference* itr = group->GetFirstMember(); itr != nullptr; itr = itr->next())
     {
         Player* member = itr->GetSource();
-        if (!member || !member->IsAlive() || botAI->IsRealPlayer())
+        if (!member || !member->IsAlive() || IsSelfBot(bot))
             continue;
 
-        if (botAI->IsHeal(member) && !botAI->IsRealPlayer())
+        if (PlayerbotAI::IsHeal(member) && !IsSelfBot(bot))
         {
             healerCount++;
             healerGuids.push_back(member->GetGUID());

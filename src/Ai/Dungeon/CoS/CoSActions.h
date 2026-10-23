@@ -9,22 +9,22 @@
 
 #include "Action.h"
 #include "AttackAction.h"
+#include "CoSTriggers.h"
 #include "GenericSpellActions.h"
 #include "PlayerbotAI.h"
 #include "Playerbots.h"
-#include "CoSTriggers.h"
 
 class ExplodeGhoulSpreadAction : public MovementAction
 {
 public:
-    ExplodeGhoulSpreadAction(PlayerbotAI* ai) : MovementAction(ai, "explode ghoul spread") {}
+    ExplodeGhoulSpreadAction(PlayerbotAI* botAI) : MovementAction(botAI, "explode ghoul spread") {}
     bool Execute(Event event) override;
 };
 
 class EpochStackAction : public MovementAction
 {
 public:
-    EpochStackAction(PlayerbotAI* ai) : MovementAction(ai, "epoch stack") {}
+    EpochStackAction(PlayerbotAI* botAI) : MovementAction(botAI, "epoch stack") {}
     bool Execute(Event event) override;
     bool isUseful() override;
 };

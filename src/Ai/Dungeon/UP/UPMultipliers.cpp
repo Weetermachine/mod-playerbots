@@ -5,12 +5,11 @@
  */
 
 #include "UPMultipliers.h"
-#include "UPActions.h"
-#include "GenericSpellActions.h"
 #include "ChooseTargetActions.h"
 #include "MovementActions.h"
+#include "Playerbots.h"
+#include "UPActions.h"
 #include "UPTriggers.h"
-#include "Action.h"
 
 float SkadiMultiplier::GetValue(Action* action)
 {

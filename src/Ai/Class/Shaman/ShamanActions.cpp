@@ -5,10 +5,10 @@
  */
 
 #include "ShamanActions.h"
-#include "TotemsShamanStrategy.h"
-#include "Playerbots.h"
-#include "PlayerbotAI.h"
 #include "Action.h"
+#include "PlayerbotAI.h"
+#include "Playerbots.h"
+#include "TotemsShamanStrategy.h"
 
 bool CastTotemAction::isUseful()
 {
@@ -108,7 +108,7 @@ bool SetTotemAction::Execute(Event /*event*/)
     if (!totemSpell)
         return false;
 
-    if (const ActionButton* button = bot->GetActionButton(actionButtonId);
+    if (ActionButton const* button = bot->GetActionButton(actionButtonId);
         button && button->GetType() == ACTION_BUTTON_SPELL &&
         button->GetAction() == totemSpell)
     {

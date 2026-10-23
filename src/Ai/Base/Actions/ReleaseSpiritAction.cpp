@@ -1,6 +1,7 @@
 /*
- * Copyright (C) 2016+ AzerothCore <www.azerothcore.org>, released under GNU AGPL v3 license, you may redistribute it
- * and/or modify it under version 3 of the License, or (at your option), any later version.
+ * This file is part of the mod-playerbots module for AzerothCore. See AUTHORS file for Copyright
+ * information; released under GNU GPL v2 license, redistribute/modify under version 2 of the License,
+ * or (at your option) any later version.
  */
 
 #include "ReleaseSpiritAction.h"
@@ -8,16 +9,16 @@
 #include "BGTacticArms.h"
 #include "Battleground.h"
 #include "ServerFacade.h"
+#include "Corpse.h"
 #include "Event.h"
 #include "GameGraveyard.h"
+#include "Log.h"
 #include "NearestNpcsValue.h"
 #include "ObjectDefines.h"
 #include "ObjectGuid.h"
 #include "PlayerbotTextMgr.h"
 #include "Playerbots.h"
 #include "ServerFacade.h"
-#include "Corpse.h"
-#include "Log.h"
 
 // ReleaseSpiritAction implementation
 bool ReleaseSpiritAction::Execute(Event event)
@@ -43,7 +44,7 @@ bool ReleaseSpiritAction::Execute(Event event)
         return false;
     }
 
-    const WorldPacket& packet = event.getPacket();
+    WorldPacket const& packet = event.getPacket();
     const std::string message = !packet.empty() && packet.GetOpcode() == CMSG_REPOP_REQUEST
         ? PlayerbotTextMgr::instance().GetBotTextOrDefault("release_spirit_releasing", "Releasing...", {})
         : PlayerbotTextMgr::instance().GetBotTextOrDefault("release_spirit_meet_graveyard", "Meet me at the graveyard", {});
@@ -75,7 +76,7 @@ void ReleaseSpiritAction::IncrementDeathCount() const
     }
 }
 
-void ReleaseSpiritAction::LogRelease(const std::string& releaseMsg) const
+void ReleaseSpiritAction::LogRelease(std::string const& releaseMsg) const
 {
     const std::string teamPrefix = bot->GetTeamId() == TEAM_ALLIANCE ? "A" : "H";
 
@@ -138,22 +139,12 @@ bool AutoReleaseSpiritAction::HandleBattlegroundSpiritHealer()
     GuidVector npcs = NearestNpcsValue(botAI, bgRange);
     Unit* spiritHealer = nullptr;
 
-    // SpiritNearest (BG arm): the nearest spirit healer (the list is not sorted: stock took the first found)
-    Battleground* spiritBg = bot->GetBattleground();
-    bool const nearest = spiritBg && BGTacticArms::IsOn(spiritBg, bot->GetTeamId(), BGTactic::SpiritNearest);
     for (auto const& guid : npcs)
     {
         Unit* unit = botAI->GetUnit(guid);
-        if (unit && unit->IsFriendlyTo(bot) && unit->IsSpiritService())
-        {
-            if (!nearest)
-            {
-                spiritHealer = unit;
-                break;
-            }
-            if (!spiritHealer || bot->GetDistance(unit) < bot->GetDistance(spiritHealer))
-                spiritHealer = unit;
-        }
+        if (unit && unit->IsFriendlyTo(bot) && unit->IsSpiritService() &&
+            (!spiritHealer || bot->GetDistance(unit) < bot->GetDistance(spiritHealer)))
+            spiritHealer = unit;  // nearest: the list is not sorted
     }
 
     if (!spiritHealer)
@@ -170,7 +161,7 @@ bool AutoReleaseSpiritAction::HandleBattlegroundSpiritHealer()
         RESET_AI_VALUE(bool, "combat::self target");
         RESET_AI_VALUE(WorldPosition, "current position");
     }
-    else if (!botAI->IsRealPlayer())
+    else if (!IsSelfBot(bot))
     {
         m_bgGossipTime = now;
         WorldPacket packet(CMSG_GOSSIP_HELLO);
@@ -190,10 +181,10 @@ bool AutoReleaseSpiritAction::ShouldAutoRelease() const
     if (!groupLeader || groupLeader == bot)
         return true;
 
-    if (!botAI->HasActivePlayerMaster())
+    if (!IsRealPlayer(botAI->GetMaster()))
         return true;
 
-    if (botAI->HasActivePlayerMaster() &&
+    if (IsRealPlayer(botAI->GetMaster()) &&
         groupLeader->GetMapId() == bot->GetMapId() &&
         bot->GetMap() &&
         (bot->GetMap()->IsRaid() || bot->GetMap()->IsDungeon()))
@@ -203,7 +194,7 @@ bool AutoReleaseSpiritAction::ShouldAutoRelease() const
 
     return ServerFacade::instance().IsDistanceGreaterThan(
         AI_VALUE2(float, "distance", "group leader"),
-        sPlayerbotAIConfig.sightDistance);
+        sPlayerbotAIConfig.SightDistance);
 }
 
 bool AutoReleaseSpiritAction::ShouldDelayBattlegroundRelease() const
@@ -234,7 +225,7 @@ bool AutoReleaseSpiritAction::ShouldDelayBattlegroundRelease() const
 
 bool RepopAction::Execute(Event /*event*/)
 {
-    const GraveyardStruct* graveyard = GetGrave(
+    GraveyardStruct const* graveyard = GetGrave(
         AI_VALUE(uint32, "death count") > 10 ||
         CalculateDeadTime() > 30 * MINUTE
     );
@@ -259,7 +250,7 @@ int64 RepopAction::CalculateDeadTime() const
     return bot->isDead() ? 0 : 60 * MINUTE;
 }
 
-void RepopAction::PerformGraveyardTeleport(const GraveyardStruct* graveyard) const
+void RepopAction::PerformGraveyardTeleport(GraveyardStruct const* graveyard) const
 {
     bot->RemoveAurasWithInterruptFlags(AURA_INTERRUPT_FLAG_TELEPORTED | AURA_INTERRUPT_FLAG_CHANGE_MAP);
     bot->TeleportTo(graveyard->Map, graveyard->x, graveyard->y, graveyard->z, 0.f);

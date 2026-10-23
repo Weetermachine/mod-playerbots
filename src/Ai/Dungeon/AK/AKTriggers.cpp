@@ -4,14 +4,13 @@
  * or (at your option) any later version.
  */
 
-#include "Playerbots.h"
 #include "AKTriggers.h"
-#include "AiObject.h"
 #include "AiObjectContext.h"
+#include "Playerbots.h"
 
 bool NadoxGuardianTrigger::IsActive()
 {
-    if (botAI->IsHeal(bot)) { return false; }
+    if (PlayerbotAI::IsHeal(bot)) { return false; }
 
     Unit* boss = AI_VALUE2(Unit*, "find target", "elder nadox");
     Unit* guardian = AI_VALUE2(Unit*, "find target", "ahn'kahar guardian");
@@ -44,5 +43,5 @@ bool ShadowCrashTrigger::IsActive()
     Unit* unit = AI_VALUE2(Unit*, "find target", "forgotten one");
     if (!unit) { return false; }
 
-    return !botAI->IsMelee(bot);
+    return !PlayerbotAI::IsMelee(bot);
 }

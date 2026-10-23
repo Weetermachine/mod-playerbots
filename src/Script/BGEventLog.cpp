@@ -46,7 +46,7 @@
 
 namespace
 {
-bool BGEventLogEnabled() { return sConfigMgr->GetOption<bool>("AiPlayerbot.BGEventLog", false, false); }
+bool BGEventLogEnabled() { return sConfigMgr->GetOption<bool>("Playerbots.BGEventLog", false, false); }
 
 char const* StatusName(BattlegroundStatus status)
 {

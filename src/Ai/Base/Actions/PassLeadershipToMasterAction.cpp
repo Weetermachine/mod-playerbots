@@ -5,7 +5,6 @@
  */
 
 #include "PassLeadershipToMasterAction.h"
-
 #include "Event.h"
 #include "PlayerbotOperations.h"
 #include "PlayerbotWorldThreadProcessor.h"
@@ -40,5 +39,6 @@ bool PassLeadershipToMasterAction::isUseful()
 
 bool GiveLeaderAction::isUseful()
 {
-    return botAI->HasActivePlayerMaster() && bot->GetGroup() && bot->GetGroup()->IsLeader(bot->GetGUID());
+    return (IsRealPlayer(botAI->GetMaster()) || IsSelfBot(botAI->GetMaster())) && bot->GetGroup() &&
+           bot->GetGroup()->IsLeader(bot->GetGUID());
 }

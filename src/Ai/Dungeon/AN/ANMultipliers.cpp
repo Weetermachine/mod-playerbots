@@ -6,15 +6,15 @@
 
 #include "ANMultipliers.h"
 #include "ANActions.h"
-#include "GenericSpellActions.h"
-#include "ChooseTargetActions.h"
-#include "MovementActions.h"
 #include "ANTriggers.h"
 #include "Action.h"
+#include "ChooseTargetActions.h"
+#include "GenericSpellActions.h"
+#include "MovementActions.h"
 
 float KrikthirMultiplier::GetValue(Action* action)
 {
-    if (!botAI->IsDps(bot)) { return 1.0f; }
+    if (!PlayerbotAI::IsDps(bot)) { return 1.0f; }
 
     // Target is not findable from threat table using AI_VALUE2(),
     // therefore need to search manually for the unit name

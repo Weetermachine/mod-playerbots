@@ -9,35 +9,34 @@
 #include "BGCastLog.h"
 #include "BGTacticArms.h"
 #include "Battleground.h"
-
-#include <string>
-
-#include "GenericBuffUtils.h"
+#include "Corpse.h"
 #include "CreatureAI.h"
+#include "GenericBuffUtils.h"
 #include "ItemVisitors.h"
 #include "LastSpellCastValue.h"
 #include "ObjectGuid.h"
+#include "Player.h"
+#include "PlayerbotAI.h"
 #include "PlayerbotAIConfig.h"
 #include "Playerbots.h"
 #include "PositionValue.h"
 #include "SharedDefines.h"
+#include "TargetValue.h"
 #include "TemporarySummon.h"
 #include "ThreatManager.h"
 #include "Timer.h"
-#include "PlayerbotAI.h"
-#include "Player.h"
-#include "Corpse.h"
+#include <string>
 
 bool LowManaTrigger::IsActive()
 {
     return AI_VALUE2(bool, "has mana", "self target") &&
-           AI_VALUE2(uint8, "mana", "self target") < sPlayerbotAIConfig.lowMana;
+           AI_VALUE2(uint8, "mana", "self target") < sPlayerbotAIConfig.LowMana;
 }
 
 bool MediumManaTrigger::IsActive()
 {
     return AI_VALUE2(bool, "has mana", "self target") &&
-           AI_VALUE2(uint8, "mana", "self target") < sPlayerbotAIConfig.mediumMana;
+           AI_VALUE2(uint8, "mana", "self target") < sPlayerbotAIConfig.MediumMana;
 }
 
 bool LowEnergyTrigger::IsActive()
@@ -78,7 +77,7 @@ bool PetAttackTrigger::IsActive()
 bool HighManaTrigger::IsActive()
 {
     return AI_VALUE2(bool, "has mana", "self target") &&
-           AI_VALUE2(uint8, "mana", "self target") < sPlayerbotAIConfig.highMana;
+           AI_VALUE2(uint8, "mana", "self target") < sPlayerbotAIConfig.HighMana;
 }
 
 bool AlmostFullManaTrigger::IsActive()
@@ -90,7 +89,7 @@ bool AlmostFullManaTrigger::IsActive()
 bool EnoughManaTrigger::IsActive()
 {
     return AI_VALUE2(bool, "has mana", "self target") &&
-           AI_VALUE2(uint8, "mana", "self target") > sPlayerbotAIConfig.highMana;
+           AI_VALUE2(uint8, "mana", "self target") > sPlayerbotAIConfig.HighMana;
 }
 
 bool RageAvailable::IsActive() { return AI_VALUE2(uint8, "rage", "self target") >= amount; }
@@ -111,69 +110,15 @@ bool TargetWithComboPointsLowerHealTrigger::IsActive()
            (target->GetHealth() / AI_VALUE(float, "estimated group dps")) <= lifeTime;
 }
 
-// PvPThreatFix: players have no threat, so threat-based rules against them only burn GCDs and cooldowns
-static bool PvPThreatFixOn(Player* bot)
-{
-    Battleground* bg = bot->GetBattleground();
-    return bg && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::PvPThreatFix);
-}
-
 bool LoseAggroTrigger::IsActive()
 {
-    if (PvPThreatFixOn(bot))
-        if (Unit* target = AI_VALUE(Unit*, "current target"); target && target->IsPlayer())
-            return false;  // no taunts at players
+    Unit* target = AI_VALUE(Unit*, "current target");
+    if (target && target->IsPlayer())
+        return false;  // players have no threat: taunts only waste the cooldown
     return !AI_VALUE2(bool, "has aggro", "current target");
 }
 
 bool HasAggroTrigger::IsActive() { return AI_VALUE2(bool, "has aggro", "current target"); }
-
-bool PanicTrigger::IsActive()
-{
-    return AI_VALUE2(uint8, "health", "self target") < sPlayerbotAIConfig.criticalHealth &&
-           (!AI_VALUE2(bool, "has mana", "self target") ||
-            AI_VALUE2(uint8, "mana", "self target") < sPlayerbotAIConfig.lowMana);
-}
-
-bool OutNumberedTrigger::IsActive()
-{
-    if (bot->GetMap() && (bot->GetMap()->IsDungeon() || bot->GetMap()->IsRaid()))
-        return false;
-
-    if (bot->GetGroup() && bot->GetGroup()->isRaidGroup())
-        return false;
-
-    int32 botLevel = bot->GetLevel();
-    uint32 friendPower = 200;
-    uint32 foePower = 0;
-    for (auto& attacker : botAI->GetAiObjectContext()->GetValue<GuidVector>("attackers")->Get())
-    {
-        Creature* creature = botAI->GetCreature(attacker);
-        if (!creature)
-            continue;
-
-        int32 dLevel = creature->GetLevel() - botLevel;
-        if (dLevel > -10)
-            foePower = std::max(100 + 10 * dLevel, dLevel * 200);
-    }
-
-    if (!foePower)
-        return false;
-
-    for (auto& helper : botAI->GetAiObjectContext()->GetValue<GuidVector>("nearest friendly players")->Get())
-    {
-        Unit* player = botAI->GetUnit(helper);
-        if (!player || player == bot)
-            continue;
-
-        int32 dLevel = player->GetLevel() - botLevel;
-
-        if (dLevel > -10 && bot->GetDistance(player) < 10.0f)
-            friendPower += std::max(200 + 20 * dLevel, dLevel * 200);
-    }
-
-    return friendPower < foePower;
-}
 
 bool BuffTrigger::IsActive()
 {
@@ -182,10 +127,7 @@ bool BuffTrigger::IsActive()
         return false;
 
     Aura* aura = botAI->GetAura(spell, target, checkIsOwner, checkDuration);
-    if (!aura || (beforeDuration && uint32(aura->GetDuration()) < beforeDuration))
-        return true;
-
-    return false;
+    return ai::buff::BuffBelowRefreshTarget(botAI, aura, beforeDuration);
 }
 
 Value<Unit*>* BuffOnPartyTrigger::GetTargetValue()
@@ -231,9 +173,6 @@ bool MyAttackerCountTrigger::IsActive()
 
 bool MediumThreatTrigger::IsActive()
 {
-    if (PvPThreatFixOn(bot))
-        if (Unit* target = AI_VALUE(Unit*, "current target"); target && target->IsPlayer())
-            return false;  // no Fade / Soulshatter / Cower / Vanish against players
     if (!AI_VALUE(Unit*, "main tank"))
         return false;
 
@@ -242,15 +181,12 @@ bool MediumThreatTrigger::IsActive()
 
 bool LowTankThreatTrigger::IsActive()
 {
-    if (PvPThreatFixOn(bot))
-        if (Unit* target = AI_VALUE(Unit*, "current target"); target && target->IsPlayer())
-            return false;  // no Tricks of the Trade / Misdirection for threat on players
+    Unit* current_target = AI_VALUE(Unit*, "current target");
+    if (!current_target || current_target->IsPlayer())
+        return false;  // players have no threat: Tricks of the Trade / Misdirection would be wasted
+
     Unit* mainTank = AI_VALUE(Unit*, "main tank");
     if (!mainTank)
-        return false;
-
-    Unit* current_target = AI_VALUE(Unit*, "current target");
-    if (!current_target)
         return false;
 
     ThreatManager& mgr = current_target->GetThreatMgr();
@@ -265,36 +201,28 @@ bool AoeTrigger::IsActive()
     if (!current_target)
         return false;
 
-    GuidVector attackers = context->GetValue<GuidVector>("attackers")->Get();
-    int attackers_count = 0;
-    for (ObjectGuid const guid : attackers)
-    {
-        Unit* unit = botAI->GetUnit(guid);
-        if (!unit || !unit->IsAlive())
-            continue;
-
-        if (unit->GetDistance(current_target->GetPosition()) <= range)
-            attackers_count++;
-    }
-    // PvPAoE (battleground arm): "attackers" come from threat lists, which only NPCs keep, so enemy players never
-    // counted and area spells never fired at player packs. With the arm, living enemy players within range of the
-    // target (the target included) count too.
-    // PvPAoEFix: players already in "attackers" (PvPAttackers puts them there) were counted a second time
-    if (attackers_count < amount)
+    bool active = HasEnoughAoeTargets(botAI, current_target->GetPosition(), range, static_cast<uint32>(amount));
+    // PvPAoE (battleground arm): enemy players within range of the target that are not in "attackers" count too
+    if (!active)
         if (Battleground* bg = bot->GetBattleground())
             if (bg->GetStatus() == STATUS_IN_PROGRESS && BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::PvPAoE))
             {
-                bool const once = BGTacticArms::IsOn(bg, bot->GetTeamId(), BGTactic::PvPAoEFix);
+                GuidVector attackers = context->GetValue<GuidVector>("attackers")->Get();
+                int count = 0;
+                for (ObjectGuid const guid : attackers)
+                    if (Unit* unit = botAI->GetUnit(guid); unit && unit->IsAlive() &&
+                                                           unit->GetDistance(current_target->GetPosition()) <= range)
+                        ++count;
                 for (auto const& ref : bg->GetBgMap()->GetPlayers())
                 {
                     Player* p = ref.GetSource();
                     if (p && p->IsInWorld() && p->IsAlive() && p->GetTeamId() != bot->GetTeamId() &&
                         p->GetDistance(current_target->GetPosition()) <= range &&
-                        !(once && std::find(attackers.begin(), attackers.end(), p->GetGUID()) != attackers.end()))
-                        attackers_count++;
+                        std::find(attackers.begin(), attackers.end(), p->GetGUID()) == attackers.end())
+                        ++count;
                 }
+                active = count >= amount;
             }
-    bool const active = attackers_count >= amount;
     BGCastLog::AoeCheck(bot, amount, active);
     return active;
 }
@@ -369,11 +297,11 @@ RandomTrigger::RandomTrigger(PlayerbotAI* botAI, std::string const name, int32 p
 
 bool RandomTrigger::IsActive()
 {
-    if (getMSTime() - lastCheck < sPlayerbotAIConfig.repeatDelay)
+    if (getMSTime() - lastCheck < sPlayerbotAIConfig.RepeatDelay)
         return false;
 
     lastCheck = getMSTime();
-    int32 k = (int32)(probability / sPlayerbotAIConfig.randomChangeMultiplier);
+    int32 k = (int32)(probability / sPlayerbotAIConfig.RandomChangeMultiplier);
     if (k < 1)
         k = 1;
 
@@ -434,10 +362,10 @@ bool GenericBoostTrigger::IsActive()
 
 bool HealerShouldAttackTrigger::IsActive()
 {
-    if (botAI->GetNearGroupMemberCount(sPlayerbotAIConfig.sightDistance) <= 1)
+    if (botAI->GetNearGroupMemberCount(sPlayerbotAIConfig.SightDistance) <= 1)
         return true;
 
-    if (AI_VALUE2(uint8, "health", "party member to heal") < sPlayerbotAIConfig.almostFullHealth)
+    if (AI_VALUE2(uint8, "health", "party member to heal") < sPlayerbotAIConfig.AlmostFullHealth)
         return false;
 
     if (bot->GetAura(33891)) // Tree of Life
@@ -452,9 +380,9 @@ bool HealerShouldAttackTrigger::IsActive()
     if (balance <= 50)
         manaThreshold = 85;
     else if (balance <= 100)
-        manaThreshold = sPlayerbotAIConfig.highMana;
+        manaThreshold = sPlayerbotAIConfig.HighMana;
     else
-        manaThreshold = sPlayerbotAIConfig.mediumMana;
+        manaThreshold = sPlayerbotAIConfig.MediumMana;
 
     if (AI_VALUE2(bool, "has mana", "self target") && AI_VALUE2(uint8, "mana", "self target") < manaThreshold)
         return false;
@@ -622,7 +550,23 @@ bool IsNotFacingTargetTrigger::IsActive()
 
 bool HasCcTargetTrigger::IsActive()
 {
-    return AI_VALUE2(Unit*, "cc target", getName()) && !AI_VALUE2(Unit*, "current cc target", getName());
+    Unit* rtiCcTarget = nullptr;
+    if (botAI->IsInNonRaidDungeon())
+    {
+        rtiCcTarget = AI_VALUE(Unit*, "rti cc target");
+        if (!rtiCcTarget)
+            return false;
+    }
+
+    return IsCcTargetFree(AI_VALUE2(Unit*, "cc target", getName()), rtiCcTarget);
+}
+
+bool HasCcTargetTrigger::IsCcTargetFree(Unit* ccTarget, Unit* rtiCcTarget)
+{
+    if (!ccTarget || (rtiCcTarget && ccTarget != rtiCcTarget))
+        return false;
+
+    return !AI_VALUE2(Unit*, "current cc target", getName());
 }
 
 bool NoMovementTrigger::IsActive() { return !AI_VALUE2(bool, "moving", "self target"); }
@@ -665,12 +609,6 @@ bool NotDpsAoeTargetActiveTrigger::IsActive()
 }
 
 bool IsSwimmingTrigger::IsActive() { return AI_VALUE2(bool, "swimming", "self target"); }
-
-bool HasNearestAddsTrigger::IsActive()
-{
-    GuidVector targets = AI_VALUE(GuidVector, "nearest adds");
-    return targets.size();
-}
 
 bool HasItemForSpellTrigger::IsActive()
 {
@@ -716,7 +654,7 @@ bool ReturnToStayPositionTrigger::IsActive()
     if (stayPosition.isSet())
     {
         const float distance = bot->GetDistance(stayPosition.x, stayPosition.y, stayPosition.z);
-        return distance > sPlayerbotAIConfig.followDistance;
+        return distance > sPlayerbotAIConfig.FollowDistance;
     }
 
     return false;
@@ -794,4 +732,9 @@ bool NewPetTrigger::IsActive()
     }
 
     return false;
+}
+
+bool ForceRebuffPendingTrigger::IsActive()
+{
+    return botAI->forceRebuff.IsPending();
 }

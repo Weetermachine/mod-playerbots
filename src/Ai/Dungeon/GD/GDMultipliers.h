@@ -12,19 +12,19 @@
 class SladranMultiplier : public Multiplier
 {
     public:
-        SladranMultiplier(PlayerbotAI* ai) : Multiplier(ai, "slad'ran") {}
+        SladranMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "slad'ran") {}
 
     public:
-        virtual float GetValue(Action* action);
+        float GetValue(Action* action) override;
 };
 
 class GaldarahMultiplier : public Multiplier
 {
     public:
-        GaldarahMultiplier(PlayerbotAI* ai) : Multiplier(ai, "gal'darah") {}
+        GaldarahMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "gal'darah") {}
 
     public:
-        virtual float GetValue(Action* action);
+        float GetValue(Action* action) override;
 };
 
 #endif

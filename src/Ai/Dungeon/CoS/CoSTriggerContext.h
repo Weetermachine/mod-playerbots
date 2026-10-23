@@ -7,9 +7,8 @@
 #ifndef PLAYERBOTS_COSTRIGGERCONTEXT_H
 #define PLAYERBOTS_COSTRIGGERCONTEXT_H
 
-#include "NamedObjectContext.h"
-#include "AiObjectContext.h"
 #include "CoSTriggers.h"
+#include "NamedObjectContext.h"
 
 class WotlkDungeonCoSTriggerContext : public NamedObjectContext<Trigger>
 {
@@ -21,8 +20,8 @@ class WotlkDungeonCoSTriggerContext : public NamedObjectContext<Trigger>
 
         }
     private:
-        static Trigger* explode_ghoul(PlayerbotAI* ai) { return new ExplodeGhoulTrigger(ai); }
-        static Trigger* epoch_ranged(PlayerbotAI* ai) { return new EpochRangedTrigger(ai); }
+        static Trigger* explode_ghoul(PlayerbotAI* botAI) { return new ExplodeGhoulTrigger(botAI); }
+        static Trigger* epoch_ranged(PlayerbotAI* botAI) { return new EpochRangedTrigger(botAI); }
 };
 
 #endif

@@ -7,10 +7,10 @@
 #ifndef PLAYERBOTS_ANTRIGGERS_H
 #define PLAYERBOTS_ANTRIGGERS_H
 
-#include "Trigger.h"
-#include "PlayerbotAIConfig.h"
-#include "GenericTriggers.h"
 #include "DungeonStrategyUtils.h"
+#include "GenericTriggers.h"
+#include "PlayerbotAIConfig.h"
+#include "Trigger.h"
 
 enum AzjolNerubIDs
 {
@@ -39,28 +39,28 @@ enum AzjolNerubIDs
 class KrikthirWebWrapTrigger : public Trigger
 {
 public:
-    KrikthirWebWrapTrigger(PlayerbotAI* ai) : Trigger(ai, "krik'thir web wrap") {}
+    KrikthirWebWrapTrigger(PlayerbotAI* botAI) : Trigger(botAI, "krik'thir web wrap") {}
     bool IsActive() override;
 };
 
 class KrikthirWatchersTrigger : public Trigger
 {
 public:
-    KrikthirWatchersTrigger(PlayerbotAI* ai) : Trigger(ai, "krik'thir watchers") {}
+    KrikthirWatchersTrigger(PlayerbotAI* botAI) : Trigger(botAI, "krik'thir watchers") {}
     bool IsActive() override;
 };
 
 // class AnubarakImpaleTrigger : public Trigger
 // {
 // public:
-//     AnubarakImpaleTrigger(PlayerbotAI* ai) : Trigger(ai, "anub'arak impale") {}
+//     AnubarakImpaleTrigger(PlayerbotAI* botAI) : Trigger(botAI, "anub'arak impale") {}
 //     bool IsActive() override;
 // };
 
 class AnubarakPoundTrigger : public Trigger
 {
 public:
-    AnubarakPoundTrigger(PlayerbotAI* ai) : Trigger(ai, "anub'arak pound") {}
+    AnubarakPoundTrigger(PlayerbotAI* botAI) : Trigger(botAI, "anub'arak pound") {}
     bool IsActive() override;
 };
 

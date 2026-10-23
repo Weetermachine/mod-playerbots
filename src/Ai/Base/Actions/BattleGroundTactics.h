@@ -62,11 +62,6 @@ struct BGStrategyData
     uint8 hordeStrategy = 0;
 };
 
-// Written when a BG starts/ends and read by its bots, on that BG's map thread; with MapUpdate.Threads > 1
-// different BGs touch it concurrently, so every access takes bgStrategiesLock.
-extern std::unordered_map<uint32, BGStrategyData> bgStrategies;
-extern std::mutex bgStrategiesLock;
-
 struct BattleBotWaypoint
 {
     BattleBotWaypoint(float x_, float y_, float z_, BattleBotWaypointFunc func) : x(x_), y(y_), z(z_), pFunc(func){};
@@ -119,6 +114,8 @@ public:
     static bool CanCatchEnemyFC(PlayerbotAI* botAI, Unit* fc);
     // Is this bot one of our carrier's escorts: an escort role (FCEscort, bg role 6+) or the allocator's escort slot?
     static bool IsEscort(Player* bot);
+    static void SetBotStrategies(uint32 instanceId, BGStrategyData const& data);
+    static void ClearBotStrategies(uint32 instanceId);
 
     BGTactics(PlayerbotAI* botAI, std::string const name = "bg tactics") : MovementAction(botAI, name) {}
 

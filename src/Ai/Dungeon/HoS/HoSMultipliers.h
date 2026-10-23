@@ -12,19 +12,19 @@
 class KrystallusMultiplier : public Multiplier
 {
     public:
-        KrystallusMultiplier(PlayerbotAI* ai) : Multiplier(ai, "krystallus") {}
+        KrystallusMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "krystallus") {}
 
     public:
-        virtual float GetValue(Action* action);
+        float GetValue(Action* action) override;
 };
 
 class SjonnirMultiplier : public Multiplier
 {
     public:
-        SjonnirMultiplier(PlayerbotAI* ai) : Multiplier(ai, "sjonnir the ironshaper") {}
+        SjonnirMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "sjonnir the ironshaper") {}
 
     public:
-        virtual float GetValue(Action* action);
+        float GetValue(Action* action) override;
 };
 
 #endif

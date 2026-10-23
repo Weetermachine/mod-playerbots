@@ -7,9 +7,8 @@
 #ifndef PLAYERBOTS_ACTRIGGERCONTEXT_H
 #define PLAYERBOTS_ACTRIGGERCONTEXT_H
 
-#include "AiObjectContext.h"
-#include "TriggerContext.h"
 #include "ACTriggers.h"
+#include "NamedObjectContext.h"
 
 class TbcDungeonAuchenaiCryptsTriggerContext : public NamedObjectContext<Trigger>
 {

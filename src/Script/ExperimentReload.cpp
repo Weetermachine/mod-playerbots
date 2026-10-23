@@ -45,7 +45,7 @@ public:
             return;
         _timer = 0;
 
-        if (!sConfigMgr->GetOption<bool>("AiPlayerbot.ExperimentHotReload", false, false))
+        if (!sConfigMgr->GetOption<bool>("Playerbots.ExperimentHotReload", false, false))
             return;
 
         std::string const path = sConfigMgr->GetConfigPath() + "modules/playerbots.conf";
@@ -70,30 +70,30 @@ private:
         auto count = [](uint32& v) { return [&v](std::string const& s) { v = std::stoul(s); }; };
         auto text = [](std::string& v) { return [&v](std::string const& s) { v = s; }; };
         std::map<std::string, std::function<void(std::string const&)>> const keys = {
-            {"AiPlayerbot.BGTactics.WSG.Arms", text(c.wsgTacticArms)},
-            {"AiPlayerbot.BGTactics.AB.Arms", text(c.abTacticArms)},
-            {"AiPlayerbot.BGTactics.EY.Arms", [](std::string const& s) { BGTacticArms::SetArms(BATTLEGROUND_EY, s); }},
-            {"AiPlayerbot.BGTactics.WSG.Baseline", [](std::string const& s) { BGTacticArms::SetBaseline(BATTLEGROUND_WS, s); }},
-            {"AiPlayerbot.BGTactics.AB.Baseline", [](std::string const& s) { BGTacticArms::SetBaseline(BATTLEGROUND_AB, s); }},
-            {"AiPlayerbot.BGTactics.EY.Baseline", [](std::string const& s) { BGTacticArms::SetBaseline(BATTLEGROUND_EY, s); }},
-            {"AiPlayerbot.BGTactics.AV.Arms", [](std::string const& s) { BGTacticArms::SetArms(BATTLEGROUND_AV, s); }},
-            {"AiPlayerbot.BGTactics.IC.Arms", [](std::string const& s) { BGTacticArms::SetArms(BATTLEGROUND_IC, s); }},
-            {"AiPlayerbot.BGTactics.AV.Baseline", [](std::string const& s) { BGTacticArms::SetBaseline(BATTLEGROUND_AV, s); }},
-            {"AiPlayerbot.BGTactics.IC.Baseline", [](std::string const& s) { BGTacticArms::SetBaseline(BATTLEGROUND_IC, s); }},
-            {"AiPlayerbot.BGTactics.SA.Arms", [](std::string const& s) { BGTacticArms::SetArms(BATTLEGROUND_SA, s); }},
-            {"AiPlayerbot.BGTactics.SA.Baseline", [](std::string const& s) { BGTacticArms::SetBaseline(BATTLEGROUND_SA, s); }},
-            {"AiPlayerbot.RandomBotAutoJoinBGSACount", count(c.randomBotAutoJoinBGSACount)},
-            {"AiPlayerbot.BGTactics.WSG.FCEscort.Alliance", flag(c.wsgFCEscort[TEAM_ALLIANCE])},
-            {"AiPlayerbot.BGTactics.WSG.FCEscort.Horde", flag(c.wsgFCEscort[TEAM_HORDE])},
-            {"AiPlayerbot.BGTactics.WSG.FCChase.Alliance", flag(c.wsgFCChase[TEAM_ALLIANCE])},
-            {"AiPlayerbot.BGTactics.WSG.FCChase.Horde", flag(c.wsgFCChase[TEAM_HORDE])},
-            {"AiPlayerbot.BGTactics.AB.NodeGuard.Alliance", flag(c.abNodeGuard[TEAM_ALLIANCE])},
-            {"AiPlayerbot.BGTactics.AB.NodeGuard.Horde", flag(c.abNodeGuard[TEAM_HORDE])},
-            {"AiPlayerbot.RandomBotAutoJoinBGWSCount", count(c.randomBotAutoJoinBGWSCount)},
-            {"AiPlayerbot.RandomBotAutoJoinBGABCount", count(c.randomBotAutoJoinBGABCount)},
-            {"AiPlayerbot.RandomBotAutoJoinBGAVCount", count(c.randomBotAutoJoinBGAVCount)},
-            {"AiPlayerbot.RandomBotAutoJoinBGEYCount", count(c.randomBotAutoJoinBGEYCount)},
-            {"AiPlayerbot.RandomBotAutoJoinBGICCount", count(c.randomBotAutoJoinBGICCount)},
+            {"Playerbots.BGTactics.WSG.Arms", text(c.wsgTacticArms)},
+            {"Playerbots.BGTactics.AB.Arms", text(c.abTacticArms)},
+            {"Playerbots.BGTactics.EY.Arms", [](std::string const& s) { BGTacticArms::SetArms(BATTLEGROUND_EY, s); }},
+            {"Playerbots.BGTactics.WSG.Baseline", [](std::string const& s) { BGTacticArms::SetBaseline(BATTLEGROUND_WS, s); }},
+            {"Playerbots.BGTactics.AB.Baseline", [](std::string const& s) { BGTacticArms::SetBaseline(BATTLEGROUND_AB, s); }},
+            {"Playerbots.BGTactics.EY.Baseline", [](std::string const& s) { BGTacticArms::SetBaseline(BATTLEGROUND_EY, s); }},
+            {"Playerbots.BGTactics.AV.Arms", [](std::string const& s) { BGTacticArms::SetArms(BATTLEGROUND_AV, s); }},
+            {"Playerbots.BGTactics.IC.Arms", [](std::string const& s) { BGTacticArms::SetArms(BATTLEGROUND_IC, s); }},
+            {"Playerbots.BGTactics.AV.Baseline", [](std::string const& s) { BGTacticArms::SetBaseline(BATTLEGROUND_AV, s); }},
+            {"Playerbots.BGTactics.IC.Baseline", [](std::string const& s) { BGTacticArms::SetBaseline(BATTLEGROUND_IC, s); }},
+            {"Playerbots.BGTactics.SA.Arms", [](std::string const& s) { BGTacticArms::SetArms(BATTLEGROUND_SA, s); }},
+            {"Playerbots.BGTactics.SA.Baseline", [](std::string const& s) { BGTacticArms::SetBaseline(BATTLEGROUND_SA, s); }},
+            {"Playerbots.RandomBotAutoJoinBGSACount", count(c.randomBotAutoJoinBGSACount)},
+            {"Playerbots.BGTactics.WSG.FCEscort.Alliance", flag(c.wsgFCEscort[TEAM_ALLIANCE])},
+            {"Playerbots.BGTactics.WSG.FCEscort.Horde", flag(c.wsgFCEscort[TEAM_HORDE])},
+            {"Playerbots.BGTactics.WSG.FCChase.Alliance", flag(c.wsgFCChase[TEAM_ALLIANCE])},
+            {"Playerbots.BGTactics.WSG.FCChase.Horde", flag(c.wsgFCChase[TEAM_HORDE])},
+            {"Playerbots.BGTactics.AB.NodeGuard.Alliance", flag(c.abNodeGuard[TEAM_ALLIANCE])},
+            {"Playerbots.BGTactics.AB.NodeGuard.Horde", flag(c.abNodeGuard[TEAM_HORDE])},
+            {"Playerbots.RandomBotAutoJoinBGWSCount", count(c.randomBotAutoJoinBGWSCount)},
+            {"Playerbots.RandomBotAutoJoinBGABCount", count(c.randomBotAutoJoinBGABCount)},
+            {"Playerbots.RandomBotAutoJoinBGAVCount", count(c.randomBotAutoJoinBGAVCount)},
+            {"Playerbots.RandomBotAutoJoinBGEYCount", count(c.randomBotAutoJoinBGEYCount)},
+            {"Playerbots.RandomBotAutoJoinBGICCount", count(c.randomBotAutoJoinBGICCount)},
         };
 
         std::ifstream in(path);

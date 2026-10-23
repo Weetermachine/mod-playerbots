@@ -351,10 +351,8 @@ bool TeamFlagCarrierNear::IsActive()
     bool const v2 = BGTacticArms::IsOn(bot->GetBattleground(), bot->GetBgTeamId(), BGTactic::FCEscort2);
     if (!v2 && !BGTacticArms::IsOn(bot->GetBattleground(), bot->GetBgTeamId(), BGTactic::FCEscort))
     {
-        // StockEscort: the upstream rule for a team without an escort arm: every bot within 200 yd protects our
-        // carrier, except in WSG while both flags are away
-        if (!BGTacticArms::IsOn(bot->GetBattleground(), bot->GetBgTeamId(), BGTactic::StockEscort))
-            return false;
+        // without an escort arm, the upstream rule: every bot within 200 yd protects our carrier, except in WSG
+        // while both flags are away
         if (RealBgType(bot) == BATTLEGROUND_WS)
             if (BattlegroundWS* bg = dynamic_cast<BattlegroundWS*>(bot->GetBattleground()))
                 if (bg->GetFlagState(TEAM_ALLIANCE) != BG_WS_FLAG_STATE_ON_BASE &&
@@ -438,33 +436,3 @@ bool VehicleNearTrigger::IsActive()
 }
 
 bool InVehicleTrigger::IsActive() { return botAI->IsInVehicle(); }
-
-bool AllianceNoSnowfallGY::IsActive()
-{
-    if (!bot || bot->GetTeamId() != TEAM_ALLIANCE)
-        return false;
-    // AVFixes: this Alliance-only trigger re-issues the objective move at emergency priority (above eating, drinking,
-    // buffs) all game once the Horde holds Snowfall; the Horde has no counterpart
-    if (Battleground* bg = bot->GetBattleground())
-        if (BGTacticArms::IsOn(bg, TEAM_ALLIANCE, BGTactic::AVFixes))
-            return false;
-
-    Battleground* bg = bot->GetBattleground();
-    if (bg && BGTactics::GetBotStrategyForTeam(bg, TEAM_ALLIANCE) != AV_STRATEGY_BALANCED)
-        return false;
-
-    float botX = bot->GetPositionX();
-    if (botX <= -562.0f)
-        return false;
-
-    if (RealBgType(bot) != BATTLEGROUND_AV)
-        return false;
-
-    if (BattlegroundAV* av = dynamic_cast<BattlegroundAV*>(bg))
-    {
-        const BG_AV_NodeInfo& snowfall = av->GetAVNodeInfo(BG_AV_NODES_SNOWFALL_GRAVE);
-        return snowfall.OwnerId != TEAM_ALLIANCE; // Active if the Snowfall Graveyard is NOT fully controlled by the Alliance
-    }
-
-    return false;
-}

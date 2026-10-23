@@ -7,10 +7,10 @@
 #ifndef PLAYERBOTS_DTKTRIGGERS_H
 #define PLAYERBOTS_DTKTRIGGERS_H
 
-#include "Trigger.h"
-#include "PlayerbotAIConfig.h"
-#include "GenericTriggers.h"
 #include "DungeonStrategyUtils.h"
+#include "GenericTriggers.h"
+#include "PlayerbotAIConfig.h"
+#include "Trigger.h"
 
 enum DrakTharonIDs
 {
@@ -32,28 +32,28 @@ enum DrakTharonIDs
 class CorpseExplodeTrigger : public Trigger
 {
 public:
-    CorpseExplodeTrigger(PlayerbotAI* ai) : Trigger(ai, "corpse explode") {}
+    CorpseExplodeTrigger(PlayerbotAI* botAI) : Trigger(botAI, "corpse explode") {}
     bool IsActive() override;
 };
 
 class ArcaneFieldTrigger : public Trigger
 {
 public:
-    ArcaneFieldTrigger(PlayerbotAI* ai) : Trigger(ai, "arcane field") {}
+    ArcaneFieldTrigger(PlayerbotAI* botAI) : Trigger(botAI, "arcane field") {}
     bool IsActive() override;
 };
 
 // class CrystalHandlerTrigger : public Trigger
 // {
 // public:
-//     CrystalHandlerTrigger(PlayerbotAI* ai) : Trigger(ai, "crystal handler") {}
+//     CrystalHandlerTrigger(PlayerbotAI* botAI) : Trigger(botAI, "crystal handler") {}
 //     bool IsActive() override;
 // };
 
 class GiftOfTharonjaTrigger : public Trigger
 {
 public:
-    GiftOfTharonjaTrigger(PlayerbotAI* ai) : Trigger(ai, "gift of tharon'ja") {}
+    GiftOfTharonjaTrigger(PlayerbotAI* botAI) : Trigger(botAI, "gift of tharon'ja") {}
     bool IsActive() override;
 };
 

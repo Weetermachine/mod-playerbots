@@ -9,13 +9,17 @@
 
 #include "Multiplier.h"
 
-/* class tocMultiplier : public Multiplier
+class ToCJoustMultiplier : public Multiplier
 {
-    public:
-    tocMultiplier(PlayerbotAI* ai) : Multiplier(ai, "toc") {}
+public:
+    ToCJoustMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "toc joust") {}
+    float GetValue(Action* action) override;
 
-    public:
-        virtual float GetValue(Action* action);
+private:
+    bool SpareMountNearby();
+
+    uint32 mountCheckAt = 0;
+    bool spareMount = false;
 };
-*/
+
 #endif

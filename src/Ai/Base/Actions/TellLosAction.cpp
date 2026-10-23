@@ -5,8 +5,6 @@
  */
 
 #include "TellLosAction.h"
-#include <sstream>
-
 #include "ChatHelper.h"
 #include "Event.h"
 #include "ItemTemplate.h"
@@ -14,6 +12,7 @@
 #include "Playerbots.h"
 #include "StatsWeightCalculator.h"
 #include "World.h"
+#include <sstream>
 
 bool TellLosAction::Execute(Event event)
 {
@@ -141,7 +140,7 @@ bool TellCalculateItemAction::Execute(Event event)
     ItemWithRandomProperty item = chat->parseItemWithRandomProperty(text);
     StatsWeightCalculator calculator(bot);
 
-    const ItemTemplate* proto = sObjectMgr->GetItemTemplate(item.itemId);
+    ItemTemplate const* proto = sObjectMgr->GetItemTemplate(item.itemId);
     if (!proto)
         return false;
     float score = calculator.CalculateItem(item.itemId, item.randomPropertyId);

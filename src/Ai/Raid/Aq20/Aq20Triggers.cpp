@@ -5,7 +5,6 @@
  */
 
 #include "Aq20Triggers.h"
-
 #include "Aq20Utils.h"
 
 bool Aq20MoveToCrystalTrigger::IsActive()
@@ -32,7 +31,7 @@ bool Aq20MoveToCrystalTrigger::IsActive()
                     float timeToReach = botDist / bot->GetSpeed(MOVE_RUN);
                     // bot should ideally activate crystal a ~5 seconds early (due to time it takes for crystal
                     // to activate) so aim to get there in time to do so
-                    return debuffTimeRemaining - 5000 < timeToReach * 1000.0f;
+                    return debuffTimeRemaining - 5 * IN_MILLISECONDS < timeToReach * IN_MILLISECONDS;
                 }
             }
         }

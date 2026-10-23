@@ -5,14 +5,14 @@
  */
 
 #include "OCMultipliers.h"
-#include "OCActions.h"
-#include "GenericSpellActions.h"
 #include "ChooseTargetActions.h"
-#include "MovementActions.h"
-#include "OCTriggers.h"
 #include "FollowActions.h"
-#include "ReachTargetActions.h"
+#include "GenericSpellActions.h"
+#include "MovementActions.h"
+#include "OCActions.h"
+#include "OCTriggers.h"
 #include "Playerbots.h"
+#include "ReachTargetActions.h"
 
 float MountingDrakeMultiplier::GetValue(Action* action)
 {
@@ -65,7 +65,7 @@ float UromMultiplier::GetValue(Action* action)
     }
 
     // Don't bother avoiding Frostbomb for melee
-    if (botAI->IsMelee(bot))
+    if (PlayerbotAI::IsMelee(bot))
     {
         if (dynamic_cast<AvoidAoeAction*>(action))
             return 0.0f;

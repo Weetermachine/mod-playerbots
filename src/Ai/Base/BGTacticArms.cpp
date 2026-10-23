@@ -62,7 +62,7 @@ std::string const& ArmsConfig(BattlegroundTypeId type)
             {
                 char const* key = BGName(type);
                 itr = localArms.emplace(type, sConfigMgr->GetOption<std::string>(
-                                                  std::string("AiPlayerbot.BGTactics.") + key + ".Arms", "")).first;
+                                                  std::string("Playerbots.BGTactics.") + key + ".Arms", "")).first;
             }
             return itr->second;
         }
@@ -255,7 +255,7 @@ std::bitset<TACTIC_BITS> BaselineMask(BattlegroundTypeId type)
     {
         char const* name = BGName(type);
         std::string const cfg =
-            name ? sConfigMgr->GetOption<std::string>(std::string("AiPlayerbot.BGTactics.") + name + ".Baseline", "") : "";
+            name ? sConfigMgr->GetOption<std::string>(std::string("Playerbots.BGTactics.") + name + ".Baseline", "") : "";
         itr = baselines.emplace(type, cfg).first;
     }
     std::bitset<TACTIC_BITS> mask;

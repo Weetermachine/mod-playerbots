@@ -1331,7 +1331,7 @@ std::unordered_map<ObjectGuid::LowType, std::pair<bool, bool>> supplyRoll;  // g
 
 bool SupplyClaims(Player* p)
 {
-    static int32 const pct = sConfigMgr->GetOption<int32>("AiPlayerbot.BGTactics.SA.SupplyClaimPct", 100, false);
+    static int32 const pct = sConfigMgr->GetOption<int32>("Playerbots.BGTactics.SA.SupplyClaimPct", 100, false);
     std::lock_guard<std::mutex> guard(supplyLock);
     auto& roll = supplyRoll[p->GetGUID().GetCounter()];
     if (!p->IsAlive() || p->GetVehicle())

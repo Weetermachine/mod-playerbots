@@ -27,9 +27,9 @@
 #include "NewRpgStrategy.h"
 #include "ObjectAccessor.h"
 #include "Playerbots.h"
-#include "RtiTargetValue.h"
 #include "PossibleRpgTargetsValue.h"
 #include "PvpTriggers.h"
+#include "RtiTargetValue.h"
 #include "ServerFacade.h"
 #include "Spell.h"
 #include "SpellInfo.h"
@@ -143,6 +143,24 @@ bool DropTargetAction::Execute(Event /*event*/)
     return true;
 }
 
+bool TargetRequesterAction::Execute(Event event)
+{
+    Player* requester = event.getOwner();
+
+    if (!requester)
+        return false;
+
+    bot->SetSelection(requester->GetGUID());
+
+    botAI->TellMasterNoFacing(
+        PlayerbotTextMgr::instance().GetBotTextOrDefault(
+            "target_requester_success",
+            "Targeting %target",
+            {{"%target", requester->GetName()}}));
+
+    return true;
+}
+
 bool AttackAnythingAction::Execute(Event event)
 {
     bool result = AttackAction::Execute(event);
@@ -150,12 +168,9 @@ bool AttackAnythingAction::Execute(Event event)
     {
         if (Unit* grindTarget = GetTarget())
         {
-            if (char const* grindName = grindTarget->GetName().c_str())
-            {
-                context->GetValue<ObjectGuid>("pull target")->Set(grindTarget->GetGUID());
-                bot->GetMotionMaster()->Clear();
-                // bot->StopMoving();
-            }
+            context->GetValue<ObjectGuid>("pull target")->Set(grindTarget->GetGUID());
+            bot->GetMotionMaster()->Clear();
+            // bot->StopMoving();
         }
     }
 

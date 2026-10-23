@@ -33,7 +33,7 @@ uint32 Find(uint32 spell, uint32 fallback)
 
 void Load()
 {
-    if (!sConfigMgr->GetOption<bool>("AiPlayerbot.MountLevelsFromTrainers", true))
+    if (!sConfigMgr->GetOption<bool>("Playerbots.MountLevelsFromTrainers", true))
         return;
     QueryResult result = WorldDatabase.Query(
         "SELECT SpellId, MIN(ReqLevel) FROM trainer_spell WHERE SpellId IN ({}, {}, {}, {}) AND ReqLevel > 0 "
@@ -48,10 +48,10 @@ void Load()
     } while (result->NextRow());
     // read the table directly: the getters would call_once on the flag Load is running under (a deadlock)
     LOG_INFO("playerbots", "Bot riding levels from trainers: ground {}, fast ground {}, flying {}, fast flying {}",
-             Find(APPRENTICE_RIDING, sPlayerbotAIConfig.useGroundMountAtMinLevel),
-             Find(JOURNEYMAN_RIDING, sPlayerbotAIConfig.useFastGroundMountAtMinLevel),
-             Find(EXPERT_RIDING, sPlayerbotAIConfig.useFlyMountAtMinLevel),
-             Find(ARTISAN_RIDING, sPlayerbotAIConfig.useFastFlyMountAtMinLevel));
+             Find(APPRENTICE_RIDING, sPlayerbotAIConfig.UseGroundMountAtMinLevel),
+             Find(JOURNEYMAN_RIDING, sPlayerbotAIConfig.UseFastGroundMountAtMinLevel),
+             Find(EXPERT_RIDING, sPlayerbotAIConfig.UseFlyMountAtMinLevel),
+             Find(ARTISAN_RIDING, sPlayerbotAIConfig.UseFastFlyMountAtMinLevel));
 }
 
 uint32 Level(uint32 spell, uint32 fallback)
@@ -61,7 +61,7 @@ uint32 Level(uint32 spell, uint32 fallback)
 }
 }  // namespace
 
-uint32 MountLevels::Ground() { return Level(APPRENTICE_RIDING, sPlayerbotAIConfig.useGroundMountAtMinLevel); }
-uint32 MountLevels::FastGround() { return Level(JOURNEYMAN_RIDING, sPlayerbotAIConfig.useFastGroundMountAtMinLevel); }
-uint32 MountLevels::Fly() { return Level(EXPERT_RIDING, sPlayerbotAIConfig.useFlyMountAtMinLevel); }
-uint32 MountLevels::FastFly() { return Level(ARTISAN_RIDING, sPlayerbotAIConfig.useFastFlyMountAtMinLevel); }
+uint32 MountLevels::Ground() { return Level(APPRENTICE_RIDING, sPlayerbotAIConfig.UseGroundMountAtMinLevel); }
+uint32 MountLevels::FastGround() { return Level(JOURNEYMAN_RIDING, sPlayerbotAIConfig.UseFastGroundMountAtMinLevel); }
+uint32 MountLevels::Fly() { return Level(EXPERT_RIDING, sPlayerbotAIConfig.UseFlyMountAtMinLevel); }
+uint32 MountLevels::FastFly() { return Level(ARTISAN_RIDING, sPlayerbotAIConfig.UseFastFlyMountAtMinLevel); }

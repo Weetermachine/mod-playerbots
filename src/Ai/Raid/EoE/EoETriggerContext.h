@@ -7,8 +7,8 @@
 #ifndef PLAYERBOTS_EOETRIGGERCONTEXT_H
 #define PLAYERBOTS_EOETRIGGERCONTEXT_H
 
-#include "NamedObjectContext.h"
 #include "EoETriggers.h"
+#include "NamedObjectContext.h"
 
 class RaidEoETriggerContext : public NamedObjectContext<Trigger>
 {
@@ -20,8 +20,8 @@ public:
     }
 
 private:
-    static Trigger* power_spark(PlayerbotAI* ai) { return new PowerSparkTrigger(ai); }
-    static Trigger* malygos(PlayerbotAI* ai) { return new MalygosTrigger(ai); }
+    static Trigger* power_spark(PlayerbotAI* botAI) { return new PowerSparkTrigger(botAI); }
+    static Trigger* malygos(PlayerbotAI* botAI) { return new MalygosTrigger(botAI); }
 };
 
 #endif

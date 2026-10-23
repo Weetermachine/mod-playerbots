@@ -7,8 +7,8 @@
 #ifndef PLAYERBOTS_AQ20TRIGGERCONTEXT_H
 #define PLAYERBOTS_AQ20TRIGGERCONTEXT_H
 
-#include "NamedObjectContext.h"
 #include "Aq20Triggers.h"
+#include "NamedObjectContext.h"
 
 class RaidAq20TriggerContext : public NamedObjectContext<Trigger>
 {
@@ -19,7 +19,7 @@ public:
     }
 
 private:
-    static Trigger* move_to_crystal(PlayerbotAI* ai) { return new Aq20MoveToCrystalTrigger(ai); }
+    static Trigger* move_to_crystal(PlayerbotAI* botAI) { return new Aq20MoveToCrystalTrigger(botAI); }
 };
 
 #endif

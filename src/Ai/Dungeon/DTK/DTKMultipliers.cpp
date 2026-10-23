@@ -5,12 +5,12 @@
  */
 
 #include "DTKMultipliers.h"
-#include "DTKActions.h"
-#include "GenericSpellActions.h"
-#include "ChooseTargetActions.h"
-#include "MovementActions.h"
-#include "DTKTriggers.h"
 #include "Action.h"
+#include "ChooseTargetActions.h"
+#include "DTKActions.h"
+#include "DTKTriggers.h"
+#include "GenericSpellActions.h"
+#include "MovementActions.h"
 
 float NovosMultiplier::GetValue(Action* action)
 {
@@ -49,7 +49,7 @@ float TharonjaMultiplier::GetValue(Action* action)
     }
 
     // Tanks should only taunt, no slaying strike
-    if (botAI->IsTank(bot))
+    if (PlayerbotAI::IsTank(bot))
     {
         if (dynamic_cast<CastSlayingStrikeAction*>(action))
         {

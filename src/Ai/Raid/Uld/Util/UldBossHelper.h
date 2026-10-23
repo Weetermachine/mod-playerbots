@@ -7,10 +7,6 @@
 #ifndef PLAYERBOTS_ULDBOSSHELPER_H
 #define PLAYERBOTS_ULDBOSSHELPER_H
 
-#include <string>
-#include <unordered_map>
-#include <vector>
-
 #include "AiObject.h"
 #include "AiObjectContext.h"
 #include "EventMap.h"
@@ -19,6 +15,9 @@
 #include "PlayerbotAI.h"
 #include "Playerbots.h"
 #include "ScriptedCreature.h"
+#include <string>
+#include <unordered_map>
+#include <vector>
 
 constexpr uint32 ULDUAR_MAP_ID = 603;
 
@@ -263,7 +262,7 @@ public:
     static void SetHarpoonOnCooldown(GameObject* harpoonGO);
     GameObject* FindNearestHarpoon(float x, float y, float z) const;
 
-    static const std::vector<HarpoonData>& GetHarpoonData();
+    static std::vector<HarpoonData> const& GetHarpoonData();
 
     void AssignRolesBasedOnHealth();
     bool AreRolesAssigned() const;

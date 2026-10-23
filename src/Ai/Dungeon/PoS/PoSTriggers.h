@@ -7,10 +7,10 @@
 #ifndef PLAYERBOTS_POSTRIGGERS_H
 #define PLAYERBOTS_POSTRIGGERS_H
 
-#include "Trigger.h"
-#include "PlayerbotAIConfig.h"
-#include "GenericTriggers.h"
 #include "DungeonStrategyUtils.h"
+#include "GenericTriggers.h"
+#include "PlayerbotAIConfig.h"
+#include "Trigger.h"
 
 enum PitOfSaronIDs
 {
@@ -38,7 +38,7 @@ enum PitOfSaronIDs
 class IckAndKrickTrigger : public Trigger
 {
 public:
-    IckAndKrickTrigger(PlayerbotAI* ai) : Trigger(ai, "ick and krick") {}
+    IckAndKrickTrigger(PlayerbotAI* botAI) : Trigger(botAI, "ick and krick") {}
 
     bool IsActive() override;
 };
@@ -46,7 +46,7 @@ public:
 class TyrannusTrigger : public Trigger
 {
 public:
-    TyrannusTrigger(PlayerbotAI* ai) : Trigger(ai, "tyrannus") {}
+    TyrannusTrigger(PlayerbotAI* botAI) : Trigger(botAI, "tyrannus") {}
 
     bool IsActive() override;
 };

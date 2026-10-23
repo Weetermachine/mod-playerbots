@@ -8,7 +8,6 @@
 #define PLAYERBOTS_POSTRIGGERCONTEXT_H
 
 #include "NamedObjectContext.h"
-#include "AiObjectContext.h"
 #include "PoSTriggers.h"
 
 class WotlkDungeonPoSTriggerContext : public NamedObjectContext<Trigger>
@@ -21,8 +20,8 @@ public:
     }
 
 private:
-    static Trigger* ick_and_krick(PlayerbotAI* ai) { return new IckAndKrickTrigger(ai); }
-    static Trigger* tyrannus(PlayerbotAI* ai) { return new TyrannusTrigger(ai); }
+    static Trigger* ick_and_krick(PlayerbotAI* botAI) { return new IckAndKrickTrigger(botAI); }
+    static Trigger* tyrannus(PlayerbotAI* botAI) { return new TyrannusTrigger(botAI); }
 };
 
 #endif

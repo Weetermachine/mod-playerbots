@@ -4,10 +4,9 @@
  * or (at your option) any later version.
  */
 
-#include "Playerbots.h"
 #include "CoSTriggers.h"
-#include "AiObject.h"
 #include "AiObjectContext.h"
+#include "Playerbots.h"
 
 bool ExplodeGhoulTrigger::IsActive()
 {
@@ -33,5 +32,5 @@ bool ExplodeGhoulTrigger::IsActive()
 
 bool EpochRangedTrigger::IsActive()
 {
-    return !botAI->IsMelee(bot) && AI_VALUE2(Unit*, "find target", "chrono-lord epoch");
+    return !PlayerbotAI::IsMelee(bot) && AI_VALUE2(Unit*, "find target", "chrono-lord epoch");
 }

@@ -12,28 +12,28 @@
 class ElderNadoxMultiplier : public Multiplier
 {
     public:
-        ElderNadoxMultiplier(PlayerbotAI* ai) : Multiplier(ai, "elder nadox") {}
+        ElderNadoxMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "elder nadox") {}
 
     public:
-        virtual float GetValue(Action* action);
+        float GetValue(Action* action) override;
 };
 
 class JedogaShadowseekerMultiplier : public Multiplier
 {
     public:
-        JedogaShadowseekerMultiplier(PlayerbotAI* ai) : Multiplier(ai, "jedoga shadowseeker") {}
+        JedogaShadowseekerMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "jedoga shadowseeker") {}
 
     public:
-        virtual float GetValue(Action* action);
+        float GetValue(Action* action) override;
 };
 
 class ForgottenOneMultiplier : public Multiplier
 {
     public:
-        ForgottenOneMultiplier(PlayerbotAI* ai) : Multiplier(ai, "forgotten one") {}
+        ForgottenOneMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "forgotten one") {}
 
     public:
-        virtual float GetValue(Action* action);
+        float GetValue(Action* action) override;
 };
 
 #endif

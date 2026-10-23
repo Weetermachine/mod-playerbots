@@ -7,10 +7,10 @@
 #ifndef PLAYERBOTS_COSTRIGGERS_H
 #define PLAYERBOTS_COSTRIGGERS_H
 
-#include "Trigger.h"
-#include "PlayerbotAIConfig.h"
-#include "GenericTriggers.h"
 #include "DungeonStrategyUtils.h"
+#include "GenericTriggers.h"
+#include "PlayerbotAIConfig.h"
+#include "Trigger.h"
 
 enum CullingOfStratholmeIDs
 {
@@ -21,14 +21,14 @@ enum CullingOfStratholmeIDs
 class ExplodeGhoulTrigger : public Trigger
 {
 public:
-    ExplodeGhoulTrigger(PlayerbotAI* ai) : Trigger(ai, "explode ghoul") {}
+    ExplodeGhoulTrigger(PlayerbotAI* botAI) : Trigger(botAI, "explode ghoul") {}
     bool IsActive() override;
 };
 
 class EpochRangedTrigger : public Trigger
 {
 public:
-    EpochRangedTrigger(PlayerbotAI* ai) : Trigger(ai, "chrono-lord epoch ranged") {}
+    EpochRangedTrigger(PlayerbotAI* botAI) : Trigger(botAI, "chrono-lord epoch ranged") {}
     bool IsActive() override;
 };
 

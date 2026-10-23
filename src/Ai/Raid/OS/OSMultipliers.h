@@ -12,10 +12,10 @@
 class SartharionMultiplier : public Multiplier
 {
 public:
-    SartharionMultiplier(PlayerbotAI* ai) : Multiplier(ai, "sartharion") {}
+    SartharionMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "sartharion") {}
 
 public:
-    virtual float GetValue(Action* action);
+    float GetValue(Action* action) override;
 };
 
 #endif

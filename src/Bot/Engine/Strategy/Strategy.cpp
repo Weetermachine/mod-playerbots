@@ -5,7 +5,6 @@
  */
 
 #include "Strategy.h"
-
 #include "Playerbots.h"
 
 class ActionNodeFactoryInternal : public NamedObjectFactory<ActionNode>
@@ -23,7 +22,6 @@ public:
         creators["drink"] = &drink;
         creators["mana potion"] = &mana_potion;
         creators["healing potion"] = &healing_potion;
-        creators["flee"] = &flee;
     }
 
 private:
@@ -123,16 +121,6 @@ private:
             "healing potion",
             /*P*/ {},
             /*A*/ { NextAction("food") },
-            /*C*/ {}
-        );
-    }
-
-    static ActionNode* flee([[maybe_unused]] PlayerbotAI* botAI)
-    {
-        return new ActionNode(
-            "flee",
-            /*P*/ {},
-            /*A*/ {},
             /*C*/ {}
         );
     }

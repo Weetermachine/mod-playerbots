@@ -5,15 +5,14 @@
  */
 
 #include "PaladinAiObjectContext.h"
-
 #include "DpsPaladinStrategy.h"
 #include "GenericPaladinNonCombatStrategy.h"
-#include "PaladinGreaterBlessingAction.h"
 #include "HealPaladinStrategy.h"
 #include "NamedObjectContext.h"
 #include "OffhealRetPaladinStrategy.h"
 #include "PaladinActions.h"
 #include "PaladinBuffStrategies.h"
+#include "PaladinGreaterBlessingAction.h"
 #include "PaladinPullStrategy.h"
 #include "PaladinTriggers.h"
 #include "Playerbots.h"
@@ -90,16 +89,19 @@ class PaladinCombatStrategyFactoryInternal : public NamedObjectContext<Strategy>
 public:
     PaladinCombatStrategyFactoryInternal() : NamedObjectContext<Strategy>(false, true)
     {
-        creators["tank"] = &PaladinCombatStrategyFactoryInternal::tank;
-        creators["dps"] = &PaladinCombatStrategyFactoryInternal::dps;
-        creators["heal"] = &PaladinCombatStrategyFactoryInternal::heal;
+        creators["prot"] = &PaladinCombatStrategyFactoryInternal::prot;
+        creators["tank"] = &PaladinCombatStrategyFactoryInternal::prot;
+        creators["ret"] = &PaladinCombatStrategyFactoryInternal::ret;
+        creators["dps"] = &PaladinCombatStrategyFactoryInternal::ret;
+        creators["holy"] = &PaladinCombatStrategyFactoryInternal::holy;
+        creators["heal"] = &PaladinCombatStrategyFactoryInternal::holy;
         creators["offheal"] = &PaladinCombatStrategyFactoryInternal::offheal;
     }
 
 private:
-    static Strategy* tank(PlayerbotAI* botAI) { return new TankPaladinStrategy(botAI); }
-    static Strategy* dps(PlayerbotAI* botAI) { return new DpsPaladinStrategy(botAI); }
-    static Strategy* heal(PlayerbotAI* botAI) { return new HealPaladinStrategy(botAI); }
+    static Strategy* prot(PlayerbotAI* botAI) { return new TankPaladinStrategy(botAI); }
+    static Strategy* ret(PlayerbotAI* botAI) { return new DpsPaladinStrategy(botAI); }
+    static Strategy* holy(PlayerbotAI* botAI) { return new HealPaladinStrategy(botAI); }
     static Strategy* offheal(PlayerbotAI* botAI) { return new OffhealRetPaladinStrategy(botAI); }
 };
 

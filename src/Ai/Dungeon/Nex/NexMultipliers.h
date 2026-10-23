@@ -12,37 +12,37 @@
 class FactionCommanderMultiplier : public Multiplier
 {
     public:
-        FactionCommanderMultiplier(PlayerbotAI* ai) : Multiplier(ai, "faction commander") {}
+        FactionCommanderMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "faction commander") {}
 
     public:
-        virtual float GetValue(Action* action);
+        float GetValue(Action* action) override;
 };
 
 class TelestraMultiplier : public Multiplier
 {
     public:
-        TelestraMultiplier(PlayerbotAI* ai) : Multiplier(ai, "grand magus telestra") {}
+        TelestraMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "grand magus telestra") {}
 
     public:
-        virtual float GetValue(Action* action);
+        float GetValue(Action* action) override;
 };
 
 class AnomalusMultiplier : public Multiplier
 {
     public:
-        AnomalusMultiplier(PlayerbotAI* ai) : Multiplier(ai, "anomalus") {}
+        AnomalusMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "anomalus") {}
 
     public:
-        virtual float GetValue(Action* action);
+        float GetValue(Action* action) override;
 };
 
 class OrmorokMultiplier : public Multiplier
 {
     public:
-        OrmorokMultiplier(PlayerbotAI* ai) : Multiplier(ai, "ormorok the tree-shaper") {}
+        OrmorokMultiplier(PlayerbotAI* botAI) : Multiplier(botAI, "ormorok the tree-shaper") {}
 
     public:
-        virtual float GetValue(Action* action);
+        float GetValue(Action* action) override;
 };
 
 #endif

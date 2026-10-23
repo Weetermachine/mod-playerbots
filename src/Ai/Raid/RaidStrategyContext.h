@@ -7,26 +7,26 @@
 #ifndef PLAYERBOTS_RAIDSTRATEGYCONTEXT_H
 #define PLAYERBOTS_RAIDSTRATEGYCONTEXT_H
 
-#include "Strategy.h"
 #include "Aq20Strategy.h"
-#include "MCStrategy.h"
+#include "BTStrategy.h"
 #include "BWLStrategy.h"
-#include "KaraStrategy.h"
+#include "EoEStrategy.h"
 #include "GruulStrategy.h"
+#include "HyjalStrategy.h"
+#include "ICCStrategy.h"
+#include "KaraStrategy.h"
+#include "MCStrategy.h"
 #include "MagStrategy.h"
 #include "NaxxStrategy.h"
-#include "SSCStrategy.h"
-#include "TKStrategy.h"
-#include "HyjalStrategy.h"
-#include "BTStrategy.h"
-#include "ZAStrategy.h"
 #include "OSStrategy.h"
-#include "EoEStrategy.h"
-#include "VoAStrategy.h"
-#include "UldStrategy.h"
 #include "OnyStrategy.h"
-#include "ICCStrategy.h"
 #include "RSStrategy.h"
+#include "SSCStrategy.h"
+#include "Strategy.h"
+#include "TKStrategy.h"
+#include "UldStrategy.h"
+#include "VoAStrategy.h"
+#include "ZAStrategy.h"
 
 class RaidStrategyContext : public NamedObjectContext<Strategy>
 {
@@ -62,9 +62,9 @@ private:
     static Strategy* gruulslair(PlayerbotAI* botAI) { return new RaidGruulsLairStrategy(botAI); }
     static Strategy* magtheridon(PlayerbotAI* botAI) { return new RaidMagtheridonStrategy(botAI); }
     static Strategy* naxx(PlayerbotAI* botAI) { return new RaidNaxxStrategy(botAI); }
-    static Strategy* ssc(PlayerbotAI* botAI) { return new RaidSSCStrategy(botAI); }
+    static Strategy* ssc(PlayerbotAI* botAI) { return new RaidSscStrategy(botAI); }
     static Strategy* tempestkeep(PlayerbotAI* botAI) { return new RaidTempestKeepStrategy(botAI); }
-    static Strategy* hyjal(PlayerbotAI* botAI) { return new RaidHyjalSummitStrategy(botAI); }
+    static Strategy* hyjal(PlayerbotAI* botAI) { return new RaidHyjalStrategy(botAI); }
     static Strategy* blacktemple(PlayerbotAI* botAI) { return new RaidBlackTempleStrategy(botAI); }
     static Strategy* zulaman(PlayerbotAI* botAI) { return new RaidZulAmanStrategy(botAI); }
     static Strategy* wotlk_os(PlayerbotAI* botAI) { return new RaidOsStrategy(botAI); }
