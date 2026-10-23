@@ -1083,6 +1083,16 @@ private:
     }
 };
 
+void BGEventLogStall(char const* reason, Battleground* bg, Player* bot, float toX, float toY)
+{
+    if (!BGEventLogEnabled())
+        return;
+    LogPlayer("stall", bg, bot,
+              " reason=" + std::string(reason) + " xyz=" + std::to_string(int32(bot->GetPositionX())) + "," +
+                  std::to_string(int32(bot->GetPositionY())) + "," + std::to_string(int32(bot->GetPositionZ())) +
+                  " to_xy=" + std::to_string(int32(toX)) + "," + std::to_string(int32(toY)));
+}
+
 void AddPlayerbotsBGEventLogScripts()
 {
     new PlayerbotsBGEventLogScript();

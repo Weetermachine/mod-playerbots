@@ -57,6 +57,8 @@
 #include <algorithm>
 #include <mutex>
 
+void BGEventLogStall(char const* reason, Battleground* bg, Player* bot, float toX, float toY);  // BGEventLog.cpp
+
 // a game from the random queue records BATTLEGROUND_RB as the player's type: use the rolled map
 static BattlegroundTypeId RealBgType(Player* bot)
 {
@@ -6253,6 +6255,8 @@ int BGTactics::moveDirectRoute(bool evade)
                 r.complete = false;
             r.next = r.pts.size() > 1 ? 1 : 0;
             DirectStat(bgType, r.complete ? 0 : 1);
+            if (!r.complete)
+                BGEventLogStall("noroute", bg, bot, pos.x, pos.y);
             if (evade && r.complete)  // escorts walk ahead on it
             {
                 std::lock_guard<std::mutex> cg(carrierRouteLock);
@@ -6271,6 +6275,7 @@ int BGTactics::moveDirectRoute(bool evade)
         else if (getMSTimeDiff(r.progressMs, now) > 15 * IN_MILLISECONDS)
         {
             DirectStat(bgType, 2);
+            BGEventLogStall("noprogress", bg, bot, pos.x, pos.y);
             r.complete = false;
             r.builtMs = now;
             return 0;
