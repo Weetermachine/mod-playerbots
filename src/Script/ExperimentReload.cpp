@@ -82,18 +82,18 @@ private:
             {"Playerbots.BGTactics.IC.Baseline", [](std::string const& s) { BGTacticArms::SetBaseline(BATTLEGROUND_IC, s); }},
             {"Playerbots.BGTactics.SA.Arms", [](std::string const& s) { BGTacticArms::SetArms(BATTLEGROUND_SA, s); }},
             {"Playerbots.BGTactics.SA.Baseline", [](std::string const& s) { BGTacticArms::SetBaseline(BATTLEGROUND_SA, s); }},
-            {"Playerbots.RandomBotAutoJoinBGSACount", count(c.randomBotAutoJoinBGSACount)},
+            {"Playerbots.RandomBotAutoJoinBGSACount", count(c.RandomBotAutoJoinBGSACount)},
             {"Playerbots.BGTactics.WSG.FCEscort.Alliance", flag(c.wsgFCEscort[TEAM_ALLIANCE])},
             {"Playerbots.BGTactics.WSG.FCEscort.Horde", flag(c.wsgFCEscort[TEAM_HORDE])},
             {"Playerbots.BGTactics.WSG.FCChase.Alliance", flag(c.wsgFCChase[TEAM_ALLIANCE])},
             {"Playerbots.BGTactics.WSG.FCChase.Horde", flag(c.wsgFCChase[TEAM_HORDE])},
             {"Playerbots.BGTactics.AB.NodeGuard.Alliance", flag(c.abNodeGuard[TEAM_ALLIANCE])},
             {"Playerbots.BGTactics.AB.NodeGuard.Horde", flag(c.abNodeGuard[TEAM_HORDE])},
-            {"Playerbots.RandomBotAutoJoinBGWSCount", count(c.randomBotAutoJoinBGWSCount)},
-            {"Playerbots.RandomBotAutoJoinBGABCount", count(c.randomBotAutoJoinBGABCount)},
-            {"Playerbots.RandomBotAutoJoinBGAVCount", count(c.randomBotAutoJoinBGAVCount)},
-            {"Playerbots.RandomBotAutoJoinBGEYCount", count(c.randomBotAutoJoinBGEYCount)},
-            {"Playerbots.RandomBotAutoJoinBGICCount", count(c.randomBotAutoJoinBGICCount)},
+            {"Playerbots.RandomBotAutoJoinBGWSCount", count(c.RandomBotAutoJoinBGWSCount)},
+            {"Playerbots.RandomBotAutoJoinBGABCount", count(c.RandomBotAutoJoinBGABCount)},
+            {"Playerbots.RandomBotAutoJoinBGAVCount", count(c.RandomBotAutoJoinBGAVCount)},
+            {"Playerbots.RandomBotAutoJoinBGEYCount", count(c.RandomBotAutoJoinBGEYCount)},
+            {"Playerbots.RandomBotAutoJoinBGICCount", count(c.RandomBotAutoJoinBGICCount)},
         };
 
         std::ifstream in(path);
@@ -120,9 +120,9 @@ private:
 
         LOG_INFO("server",
                  "Experiment reload: {} settings from {} (WSG arms \"{}\", AB arms \"{}\", auto-join WS {} AB {} AV {} EY {} IC {} SA {})",
-                 applied, path, c.wsgTacticArms, c.abTacticArms, c.randomBotAutoJoinBGWSCount,
-                 c.randomBotAutoJoinBGABCount, c.randomBotAutoJoinBGAVCount, c.randomBotAutoJoinBGEYCount,
-                 c.randomBotAutoJoinBGICCount, c.randomBotAutoJoinBGSACount);
+                 applied, path, c.wsgTacticArms, c.abTacticArms, c.RandomBotAutoJoinBGWSCount,
+                 c.RandomBotAutoJoinBGABCount, c.RandomBotAutoJoinBGAVCount, c.RandomBotAutoJoinBGEYCount,
+                 c.RandomBotAutoJoinBGICCount, c.RandomBotAutoJoinBGSACount);
     }
 
     uint32 _timer = 0;
